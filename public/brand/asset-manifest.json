@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "policy": "Only reviewed brand assets may be copied from the read-only Flutter reference.",
+  "assets": [
+    {
+      "path": "/brand/logo.png",
+      "source": "wiggle_draw/assets/images/logo.png",
+      "sourceRole": "read-only reference",
+      "sha256": "5564884B4CDDBE68192923D57282CE8037E883FF21D0231EA6FB1055C0F1E79E",
+      "approvedFor": ["web navigation brand mark"]
+    },
+    {
+      "path": "/brand/app_icon.png",
+      "source": "wiggle_draw/assets/icon/app_icon.png",
+      "sourceRole": "read-only reference",
+      "sha256": "9F028F6C5A55786BED046AE5C9F2187F743453E8ECC9D548A7817D7592A084F4",
+      "approvedFor": ["favicon", "installed web shortcut"]
+    }
+  ],
+  "notApproved": "All other wiggle_draw assets remain outside wiggle_web until provenance and service-use permission are reviewed."
+}
