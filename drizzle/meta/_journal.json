@@ -29,6 +29,13 @@
       "when": 1784683391754,
       "tag": "0003_perfect_smasher",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784722092319,
+      "tag": "0004_purple_swordsman",
+      "breakpoints": true
     }
   ]
 }

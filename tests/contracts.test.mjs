@@ -21,11 +21,11 @@ test("enforces ownership, hashing, expiry, rate limits and idempotent revisions"
 });
 
 test("keeps canvas contracts and guide data separate", async () => {
-  const [model, studio, lessons] = await Promise.all([read("../lib/drawing-model.ts"), read("../app/components/DrawingStudio.tsx"), read("../lib/lesson-content.ts")]);
+  const [model, studio, lessons, catalog] = await Promise.all([read("../lib/drawing-model.ts"), read("../app/components/DrawingStudio.tsx"), read("../lib/lesson-content.ts"), import("../lib/lesson-content.ts")]);
   assert.match(model, /DOCUMENT_SIZE = 1024/); assert.match(model, /schemaVersion/); assert.match(model, /rendererVersion/); assert.match(model, /clientOpId/); assert.match(model, /STICKER_ALLOWLIST/);
   assert.match(studio, />= 2\.5/); assert.match(studio, /guideRef/); assert.match(studio, /imageData\(canvasRef\.current, 256\)/); assert.match(studio, /imageData\(canvasRef\.current, 1024\)/);
-  const stepLists = [...lessons.matchAll(/steps: \[([^\]]+)\]/g)].map((match) => match[1].split("\",").length); assert.ok(stepLists.length >= 5); assert.ok(stepLists.every((count) => count >= 6 && count <= 15));
-  assert.match(lessons, /openSteps: \[[^\]]+,\s*[^\]]+\]/); assert.match(lessons, /내 마음대로/);
+  assert.ok(catalog.LESSONS.length >= 5); assert.ok(catalog.LESSONS.every((lesson) => lesson.steps.length >= 6 && lesson.steps.length <= 15));
+  assert.ok(catalog.LESSONS.every((lesson) => lesson.steps.filter((step) => step.choices?.length >= 2).length >= 2)); assert.match(lessons, /내 마음대로/);
 });
 
 test("offline queue uses IndexedDB and keeps starter files out", async () => {

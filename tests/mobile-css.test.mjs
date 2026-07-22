@@ -46,6 +46,10 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(css, /\.studio-header>\.grimi-button:before \{ content:"✨"; \}/);
   assert.match(css, /\.studio-header>\.button\.primary\.compact:before \{ content:"✓"; \}/);
   assert.match(css, /\.save-conflict \{ top:auto; bottom:calc\(72px \+ env\(safe-area-inset-bottom\)\); \}/);
+  assert.ok(css.lastIndexOf(".step-panel .choice-chips { display:flex") > css.lastIndexOf(".step-panel .choice-chips,.step-actions,.step-panel>.text-button { display:none"));
+  assert.match(css, /\.step-panel \.choice-chips \{ display:flex; grid-column:1\/-1;[^}]*overflow-x:auto;/);
+  assert.match(css, /\.step-panel \.choice-chips button \{[^}]*min-height:44px;/);
+  assert.match(css, /\.step-panel \.step-actions \{ display:grid; grid-column:1\/-1;[^}]*overflow:visible;/);
   assert.match(teacher, /className="modal-close" aria-label="학생 그림 미리보기 닫기" onClick=\{\(\) => \{ setViewingStudent\(null\)/);
 });
 

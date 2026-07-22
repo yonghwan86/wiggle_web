@@ -4,8 +4,14 @@ import { ensureLocalTeacher, issueTeacherSession } from "@/lib/demo-seed";
 import { cleanText, id, isLocalDemoRequest, jsonError, noStoreJson, randomToken, rateLimit, requireTeacher, revokeTeacherSession, sameOrigin, sha256 } from "@/lib/security";
 import { prepareTeacherMessageInsert, validateTeacherMessageTarget } from "@/lib/teacher-messages";
 import { createFamilyShare, revokeFamilyShare } from "@/lib/family-sharing";
+import { activityLabel, DEFAULT_ACTIVITY_KEY, isActivityKey, normalizeActivityKey } from "@/lib/lesson-content";
 
 type ClassroomRow = { id: string; displayName: string; classCode: string; joinToken: string; admissionOpen: number; currentActivity: string; studentCount: number; updatedAt: string };
+
+function presentClassroom<T extends { currentActivity: string }>(classroom: T) {
+  const currentActivityKey = normalizeActivityKey(classroom.currentActivity);
+  return { ...classroom, currentActivity: activityLabel(currentActivityKey), currentActivityKey, currentActivityLabel: activityLabel(currentActivityKey) };
+}
 
 function clientKey(request: Request, scope: string) {
   return `${scope}:${request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? "local"}`;
@@ -22,7 +28,8 @@ async function uniqueClassCode() {
 }
 
 async function ownedClassroom(teacherId: string, classroomId: string) {
-  return bindings().DB.prepare(`SELECT id, display_name AS displayName, class_code AS classCode, join_token AS joinToken, admission_open AS admissionOpen, current_activity AS currentActivity FROM classrooms WHERE id = ? AND teacher_id = ? AND active = 1`).bind(classroomId, teacherId).first<{ id: string; displayName: string; classCode: string; joinToken: string; admissionOpen: number; currentActivity: string }>();
+  const classroom = await bindings().DB.prepare(`SELECT id, display_name AS displayName, class_code AS classCode, join_token AS joinToken, admission_open AS admissionOpen, current_activity AS currentActivity FROM classrooms WHERE id = ? AND teacher_id = ? AND active = 1`).bind(classroomId, teacherId).first<{ id: string; displayName: string; classCode: string; joinToken: string; admissionOpen: number; currentActivity: string }>();
+  return classroom ? presentClassroom(classroom) : null;
 }
 
 async function toDataUrl(key: string | null) {
@@ -43,7 +50,7 @@ export async function GET(request: Request) {
   const db = bindings().DB;
   if (!classroomId) {
     const result = await db.prepare(`SELECT c.id, c.display_name AS displayName, c.class_code AS classCode, c.join_token AS joinToken, c.admission_open AS admissionOpen, c.current_activity AS currentActivity, c.updated_at AS updatedAt, COUNT(s.id) AS studentCount FROM classrooms c LEFT JOIN student_profiles s ON s.classroom_id = c.id WHERE c.teacher_id = ? AND c.active = 1 GROUP BY c.id ORDER BY c.created_at DESC`).bind(teacher.id).all<ClassroomRow>();
-    return noStoreJson({ teacher, classrooms: result.results });
+    return noStoreJson({ teacher, classrooms: result.results.map(presentClassroom) });
   }
 
   const classroom = await ownedClassroom(teacher.id, classroomId);
@@ -85,7 +92,7 @@ export async function POST(request: Request) {
     const displayName = cleanText(payload.displayName, 30);
     if (displayName.length < 2) return jsonError("학급 이름을 두 글자 이상 적어 주세요.");
     const classroom = { id: id("class"), classCode: await uniqueClassCode(), joinToken: randomToken(18) };
-    await db.prepare(`INSERT INTO classrooms(id, teacher_id, display_name, class_code, join_token, admission_open, active, current_activity) VALUES (?, ?, ?, ?, ?, 1, 1, ?)`).bind(classroom.id, teacher.id, displayName, classroom.classCode, classroom.joinToken, "자유롭게 그리기").run();
+    await db.prepare(`INSERT INTO classrooms(id, teacher_id, display_name, class_code, join_token, admission_open, active, current_activity) VALUES (?, ?, ?, ?, ?, 1, 1, ?)`).bind(classroom.id, teacher.id, displayName, classroom.classCode, classroom.joinToken, DEFAULT_ACTIVITY_KEY).run();
     return noStoreJson({ classroom }, { status: 201 });
   }
 
@@ -125,7 +132,7 @@ export async function POST(request: Request) {
   }
   if (action === "setActivity") {
     const activity = cleanText(payload.activity, 50);
-    if (!activity) return jsonError("활동 이름을 적어 주세요.");
+    if (!isActivityKey(activity)) return jsonError("목록에 있는 활동을 골라 주세요.");
     await db.prepare(`UPDATE classrooms SET current_activity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND teacher_id = ?`).bind(activity, classroomId, teacher.id).run();
     return noStoreJson({ activity });
   }

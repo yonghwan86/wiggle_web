@@ -2,10 +2,10 @@ import { bindings } from "@/db/runtime";
 import { validateDrawDocument } from "@/lib/drawing-model";
 import { cleanText, id, jsonError, noStoreJson, randomToken, rateLimit, sameOrigin, studentFromRequest } from "@/lib/security";
 
-type Artwork = { id: string; studentId: string; classroomId: string; title: string; topic: string; learningMode: string; intent: string; opsJson: string; currentStep: number; revision: number; status: string; versionCount: number; thumbnailKey: string | null; finalImageKey: string | null; updatedAt: string };
+type Artwork = { id: string; studentId: string; classroomId: string; title: string; topic: string; learningMode: string; lessonSlug: string | null; intent: string; opsJson: string; currentStep: number; revision: number; status: string; versionCount: number; thumbnailKey: string | null; finalImageKey: string | null; updatedAt: string };
 
 async function ownedArtwork(artworkId: string, studentId: string) {
-  return bindings().DB.prepare(`SELECT id, student_id AS studentId, classroom_id AS classroomId, title, topic, learning_mode AS learningMode, intent, ops_json AS opsJson, current_step AS currentStep, revision, status, version_count AS versionCount, thumbnail_key AS thumbnailKey, final_image_key AS finalImageKey, updated_at AS updatedAt FROM artworks WHERE id = ? AND student_id = ?`).bind(artworkId, studentId).first<Artwork>();
+  return bindings().DB.prepare(`SELECT id, student_id AS studentId, classroom_id AS classroomId, title, topic, learning_mode AS learningMode, lesson_slug AS lessonSlug, intent, ops_json AS opsJson, current_step AS currentStep, revision, status, version_count AS versionCount, thumbnail_key AS thumbnailKey, final_image_key AS finalImageKey, updated_at AS updatedAt FROM artworks WHERE id = ? AND student_id = ?`).bind(artworkId, studentId).first<Artwork>();
 }
 
 function decodeImage(dataUrl: unknown, maxBytes: number) {

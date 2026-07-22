@@ -1,5 +1,6 @@
 import { bindings, ensureSchema } from "@/db/runtime";
 import { cleanText, deriveSecret, id, jsonError, noStoreJson, normalizePicturePassword, picturePasswordLength, randomToken, rateLimit, sameOrigin, sha256, studentFromRequest, verifySecret } from "@/lib/security";
+import { activityLabel, normalizeActivityKey } from "@/lib/lesson-content";
 
 type RecoveredStudent = { id: string; nickname: string; animal: string; classroomName: string; pictureHash: string; pictureSalt: string };
 
@@ -29,11 +30,13 @@ export async function GET(request: Request) {
   const student = await studentFromRequest(request);
   if (!student) return jsonError("이 기기의 학생 정보를 찾지 못했어요.", 401);
   const db = bindings().DB;
-  const artworks = await db.prepare(`SELECT id, title, topic, learning_mode AS learningMode, status, current_step AS currentStep, revision, updated_at AS updatedAt, completed_at AS completedAt FROM artworks WHERE student_id = ? ORDER BY updated_at DESC, id DESC LIMIT 40`).bind(student.id).all();
+  const artworks = await db.prepare(`SELECT id, title, topic, learning_mode AS learningMode, lesson_slug AS lessonSlug, status, current_step AS currentStep, revision, updated_at AS updatedAt, completed_at AS completedAt FROM artworks WHERE student_id = ? ORDER BY updated_at DESC, id DESC LIMIT 40`).bind(student.id).all();
+  const classroom = await db.prepare(`SELECT current_activity AS currentActivity FROM classrooms WHERE id = ?`).bind(student.classroomId).first<{ currentActivity: string }>();
+  const currentActivityKey = normalizeActivityKey(classroom?.currentActivity);
   const messages = await db.prepare(`SELECT id, body, createdAt, audience FROM (SELECT m.id, m.body, m.created_at AS createdAt, CASE WHEN m.student_id IS NULL THEN 'all' ELSE 'student' END AS audience FROM teacher_messages m WHERE m.classroom_id = ? AND (m.student_id IS NULL OR m.student_id = ?) ORDER BY m.created_at DESC, m.id DESC LIMIT 50) recent ORDER BY createdAt ASC, id ASC`).bind(student.classroomId, student.id).all<{ id: string; body: string; createdAt: string; audience: string }>();
   if (messages.results.length) await db.batch(messages.results.map((message) => db.prepare(`INSERT OR IGNORE INTO message_receipts(message_id, student_id, seen_at) VALUES (?, ?, CURRENT_TIMESTAMP)`).bind(message.id, student.id)));
   const teacherViewing = Boolean(await db.prepare(`SELECT 1 FROM teacher_views WHERE student_id = ? AND classroom_id = ? AND expires_at > ? LIMIT 1`).bind(student.id, student.classroomId, new Date().toISOString()).first());
-  return noStoreJson({ student, artworks: artworks.results, messages: messages.results, teacherViewing });
+  return noStoreJson({ student, artworks: artworks.results, messages: messages.results, teacherViewing, currentActivityKey, currentActivityLabel: activityLabel(currentActivityKey) });
 }
 
 async function studentPost(request: Request) {

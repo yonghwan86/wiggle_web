@@ -12,7 +12,7 @@ import { VoiceWhisperStatus } from "./VoiceWhisper";
 
 const PALETTE = ["#1B3A57", "#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#8D6E63", "#F06292", "#4DD0E1", "#FFCC80", "#FFFFFF"];
 type Tool = "pen" | "crayon" | "eraser";
-type ArtworkPayload = { id: string; title: string; topic: string; learningMode: string; intent: string; document: DrawDocument; currentStep: number; revision: number; status: string };
+type ArtworkPayload = { id: string; title: string; topic: string; learningMode: string; lessonSlug: string | null; intent: string; document: DrawDocument; currentStep: number; revision: number; status: string };
 type CoachingChoice = { emoji: string; label: string; answer: string };
 type StudentCoaching = { question: string; choices: CoachingChoice[]; nextAction: string; observedElements: string[]; uncertain: boolean; growthEvent: string };
 type GuideStep = { instruction: string; openChoice: boolean; choices: string[]; guideShape: "none" | "line" | "circle" | "triangle" | "rectangle" };
@@ -25,18 +25,19 @@ function renderDocument(canvas: HTMLCanvasElement, document: DrawDocument, size 
   for (const op of document.ops) renderDrawOperation(context, op, size);
 }
 
-function renderGuide(canvas: HTMLCanvasElement, lesson: Lesson | undefined, aiShape: GuideStep["guideShape"] = "none") {
+function renderGuide(canvas: HTMLCanvasElement, lesson: Lesson | undefined, lessonStep = 0, aiShape: GuideStep["guideShape"] = "none") {
   canvas.width = 1024; canvas.height = 1024;
   const context = canvas.getContext("2d"); if (!context) return;
   context.clearRect(0, 0, 1024, 1024); if (!lesson && aiShape === "none") return;
   context.save(); context.strokeStyle = "#1AB8E8"; context.fillStyle = "#1AB8E8"; context.globalAlpha = 0.42; context.lineWidth = 7; context.setLineDash([18, 18]); context.lineCap = "round";
   const circle = (x: number, y: number, radius: number) => { context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2); context.stroke(); };
   const line = (...points: number[]) => { context.beginPath(); context.moveTo(points[0], points[1]); for (let i = 2; i < points.length; i += 2) context.lineTo(points[i], points[i + 1]); context.stroke(); };
-  if (lesson?.guide === "lines") { line(210, 220, 210, 780); line(360, 260, 800, 260); context.beginPath(); context.moveTo(330, 520); context.bezierCurveTo(450, 350, 570, 700, 780, 500); context.stroke(); }
-  if (lesson?.guide === "shapes") { circle(300, 360, 130); line(520, 480, 660, 220, 800, 480, 520, 480); context.strokeRect(420, 600, 280, 210); }
-  if (lesson?.guide === "dog") { circle(510, 410, 220); line(350, 270, 265, 145, 420, 210); line(670, 270, 755, 145, 600, 210); circle(430, 390, 18); circle(590, 390, 18); }
-  if (lesson?.guide === "bike") { circle(300, 650, 180); circle(730, 650, 180); line(300, 650, 480, 390, 600, 650, 300, 650, 520, 650, 730, 650); }
-  if (lesson?.guide === "hanok") { line(170, 390, 510, 180, 850, 390); line(230, 420, 790, 420); line(300, 420, 300, 800); line(720, 420, 720, 800); }
+  for (const mark of lesson?.guide.filter((item) => item.step <= lessonStep + 1) ?? []) {
+    if (mark.kind === "line") line(...mark.points.flatMap(([x, y]) => [x * 1024, y * 1024]));
+    if (mark.kind === "ellipse") { context.beginPath(); context.ellipse(mark.x * 1024, mark.y * 1024, mark.rx * 1024, mark.ry * 1024, 0, 0, Math.PI * 2); context.stroke(); }
+    if (mark.kind === "rect") context.strokeRect(mark.x * 1024, mark.y * 1024, mark.width * 1024, mark.height * 1024);
+    if (mark.kind === "curve") { const [start, first, second, end] = mark.points; context.beginPath(); context.moveTo(start[0] * 1024, start[1] * 1024); context.bezierCurveTo(first[0] * 1024, first[1] * 1024, second[0] * 1024, second[1] * 1024, end[0] * 1024, end[1] * 1024); context.stroke(); }
+  }
   if (!lesson && aiShape === "line") line(260, 520, 764, 520);
   if (!lesson && aiShape === "circle") circle(512, 512, 230);
   if (!lesson && aiShape === "triangle") line(512, 250, 270, 760, 754, 760, 512, 250);
@@ -56,8 +57,9 @@ function coachingRequestId() { return `coaching_${crypto.randomUUID().replaceAll
 
 export function DrawingStudio() {
   const params = useParams<{ id: string }>(); const search = useSearchParams();
-  const lesson = useMemo(() => lessonBySlug(search.get("lesson") ?? ""), [search]);
+  const requestedLesson = useMemo(() => lessonBySlug(search.get("lesson") ?? ""), [search]);
   const [artwork, setArtwork] = useState<ArtworkPayload | null>(null); const [documentState, setDocumentState] = useState<DrawDocument>(emptyDocument());
+  const lesson = useMemo(() => params.id === "new" ? requestedLesson : lessonBySlug(artwork?.lessonSlug), [artwork?.lessonSlug, params.id, requestedLesson]);
   const [tool, setTool] = useState<Tool>("pen"); const [color, setColor] = useState(PALETTE[0]); const [width, setWidth] = useState<8 | 16 | 30>(16);
   const [redo, setRedo] = useState<DrawOp[]>([]); const [guideVisible, setGuideVisible] = useState(false); const [saveState, setSaveState] = useState("불러오는 중");
   const [reflectionOpen, setReflectionOpen] = useState(false); const [favoritePart, setFavoritePart] = useState(""); const [favoriteReason, setFavoriteReason] = useState(""); const [message, setMessage] = useState("");
@@ -75,8 +77,8 @@ export function DrawingStudio() {
       const mode = lesson?.mode ?? (search.get("mode") === "free" ? "free" : "free");
       const title = lesson?.title ?? "내 마음 그림"; const topic = lesson?.topic ?? "자유 창작";
       const clientArtworkId = `artwork_${crypto.randomUUID().replaceAll("-", "")}`;
-      const response = await studentFetch("/api/artworks", { method: "POST", body: JSON.stringify({ clientArtworkId, learningMode: mode, title, topic, intent: lesson ? `${topic}을 보고 내 생각을 더한다.` : "내 마음대로 그리고 싶다." }) });
-      const data = await response.json() as { error?: string; artwork: ArtworkPayload }; if (!response.ok) throw new Error(data.error); location.replace(`/student/draw/${data.artwork.id}${lesson ? `?lesson=${lesson.slug}` : ""}`); return;
+      const response = await studentFetch("/api/artworks", { method: "POST", body: JSON.stringify({ clientArtworkId, learningMode: mode, lessonSlug: lesson?.slug ?? null, title, topic, intent: lesson ? `${topic}을 보고 내 생각을 더한다.` : "내 마음대로 그리고 싶다." }) });
+      const data = await response.json() as { error?: string; artwork: ArtworkPayload }; if (!response.ok) throw new Error(data.error); location.replace(`/student/draw/${data.artwork.id}`); return;
     }
     const response = await studentFetch(`/api/artworks/${encodeURIComponent(params.id)}`); const data = await response.json() as { error?: string; artwork: ArtworkPayload }; if (!response.ok) throw new Error(data.error);
     setArtwork(data.artwork); setDocumentState(data.artwork.document); revisionRef.current = data.artwork.revision; initialized.current = true; setSaveState("저장됨");
@@ -85,7 +87,7 @@ export function DrawingStudio() {
   useEffect(() => { createOrLoad().catch((cause) => setSaveState(cause instanceof Error ? cause.message : "불러오지 못했어요")); }, [createOrLoad]);
   useEffect(() => { if (canvasRef.current) renderDocument(canvasRef.current, documentState); }, [documentState]);
   const aiGuideShape = aiGuide?.steps[aiGuideStep]?.guideShape ?? "none";
-  useEffect(() => { if (guideRef.current) renderGuide(guideRef.current, aiGuide ? undefined : lesson, aiGuideShape); }, [aiGuide, aiGuideShape, lesson]);
+  useEffect(() => { if (guideRef.current) renderGuide(guideRef.current, aiGuide ? undefined : lesson, artwork?.currentStep ?? 0, aiGuideShape); }, [aiGuide, aiGuideShape, artwork?.currentStep, lesson]);
   useEffect(() => { const poll = async () => { try { const response = await studentFetch("/api/student"); const data = await response.json() as { messages?: Array<{ body: string }>; teacherViewing?: boolean }; setMessage(data.messages?.at(-1)?.body ?? ""); setTeacherViewing(Boolean(data.teacherViewing)); } catch {} }; void poll(); const timer = window.setInterval(poll, 5000); return () => clearInterval(timer); }, []);
 
   const save = useCallback(async (nextDocument: DrawDocument, options?: { complete?: boolean; reflection?: Record<string, string> }) => {
@@ -122,7 +124,7 @@ export function DrawingStudio() {
   async function saveAsCopy() {
     if (!artwork || !canvasRef.current) return; setSaveState("새 사본을 만드는 중…");
     const clientArtworkId = `artwork_${crypto.randomUUID().replaceAll("-", "")}`;
-    const created = await studentFetch("/api/artworks", { method: "POST", body: JSON.stringify({ clientArtworkId, learningMode: artwork.learningMode, title: `${artwork.title} 사본`, topic: artwork.topic, intent: artwork.intent }) });
+    const created = await studentFetch("/api/artworks", { method: "POST", body: JSON.stringify({ clientArtworkId, learningMode: artwork.learningMode, lessonSlug: artwork.lessonSlug, title: `${artwork.title} 사본`, topic: artwork.topic, intent: artwork.intent }) });
     const createdData = await created.json() as { error?: string; artwork?: { id: string } }; if (!created.ok || !createdData.artwork) { setSaveState(createdData.error ?? "사본을 만들지 못했어요"); return; }
     const response = await studentFetch(`/api/artworks/${createdData.artwork.id}`, { method: "PUT", body: JSON.stringify({ requestId: mutationId(), expectedRevision: 0, document: documentState, currentStep: artwork.currentStep, thumbnailDataUrl: imageData(canvasRef.current, 256), complete: false }) });
     if (!response.ok) { const data = await response.json() as { error?: string }; setSaveState(data.error ?? "사본을 저장하지 못했어요"); return; }
@@ -211,7 +213,7 @@ export function DrawingStudio() {
         {aiGuide && !grimiLoading && <div className="ai-guide"><p className="eyebrow">{aiGuide.topic} · {aiGuideStep + 1}/{aiGuide.steps.length}</p><h2>{aiGuide.steps[aiGuideStep].instruction}</h2>{aiGuide.steps[aiGuideStep].openChoice && <div className="grimi-chips">{aiGuide.steps[aiGuideStep].choices.map((choice) => <button aria-pressed={childChoice === choice} onClick={() => setChildChoice(choice)} key={choice}>{choice}</button>)}</div>}{aiGuideShape !== "none" && <button className="guide-toggle" aria-pressed={guideVisible} onClick={() => setGuideVisible((value) => !value)}>{guideVisible ? "점선 숨기기" : "점선 보여줘"}</button>}<div className="step-actions"><button disabled={aiGuideStep === 0} onClick={() => chooseGuideStep(aiGuideStep - 1)}>이전</button><button onClick={() => aiGuideStep === aiGuide.steps.length - 1 ? void finishGuide("completed") : chooseGuideStep(aiGuideStep + 1)}>{aiGuideStep === aiGuide.steps.length - 1 ? "이제 내 마음대로" : "다음"}</button></div></div>}
         {!aiGuide && !grimiLoading && <div className="guide-request"><label>그리고 싶은 게 있어?<input maxLength={60} value={guideTopic} onChange={(event) => setGuideTopic(event.target.value)} placeholder="예: 우주 자전거" /></label><button className="button secondary full" disabled={guideTopic.trim().length < 2} onClick={requestAiGuide}>단계 가이드 만들기</button></div>}
         <button className="text-button free-exit" onClick={dismissGrimi}>그냥 내 마음대로 그릴래</button>
-      </aside> : lesson && <aside className="step-panel"><div className="reference-tile"><span>{lesson.emoji}</span><small>{lesson.topic} 관찰하기</small></div><p className="eyebrow">지금 할 일</p><h2>{lesson.steps[step]}</h2>{lesson.openSteps.includes(step + 1) && <div className="choice-chips"><button>둥글게</button><button>뾰족하게</button></div>}<button className="guide-toggle" aria-pressed={guideVisible} onClick={() => setGuideVisible((value) => !value)}>{guideVisible ? "점선 숨기기" : "점선 보여줘"}</button><div className="step-actions"><button disabled={step === 0} onClick={() => { setGuideVisible(false); setArtwork((value) => value && ({ ...value, currentStep: Math.max(0, value.currentStep - 1) })); }}>이전</button><button onClick={() => { setGuideVisible(false); setArtwork((value) => value && ({ ...value, currentStep: Math.min(lesson.steps.length - 1, value.currentStep + 1) })); }}>{step === lesson.steps.length - 1 ? "이대로 그릴래" : "다음"}</button></div><button className="text-button" onClick={() => setGuideVisible(false)}>그냥 그릴래</button></aside>}
+      </aside> : lesson && <aside className="step-panel"><div className="reference-tile"><span>{lesson.emoji}</span><small>{lesson.topic} {lesson.mode === "observe" ? "관찰하기" : "그려 보기"}</small></div><p className="eyebrow">지금 할 일</p><h2>{lesson.steps[step].instruction}</h2>{lesson.steps[step].choices?.length && <div className="choice-chips">{lesson.steps[step].choices.map((choice) => <button aria-pressed={childChoice === choice} onClick={() => setChildChoice(choice)} key={choice}>{choice}</button>)}</div>}<button className="guide-toggle" aria-pressed={guideVisible} onClick={() => setGuideVisible((value) => !value)}>{guideVisible ? "점선 숨기기" : "점선 보여줘"}</button><div className="step-actions"><button disabled={step === 0} onClick={() => { setGuideVisible(false); setArtwork((value) => value && ({ ...value, currentStep: Math.max(0, value.currentStep - 1) })); }}>이전</button><button onClick={() => { setGuideVisible(false); setArtwork((value) => value && ({ ...value, currentStep: Math.min(lesson.steps.length - 1, value.currentStep + 1) })); }}>{step === lesson.steps.length - 1 ? "이대로 그릴래" : "다음"}</button></div><button className="text-button" onClick={() => setGuideVisible(false)}>그냥 그릴래</button></aside>}
       <section className="canvas-zone"><div className="canvas-wrap"><canvas ref={guideRef} className={guideVisible && (aiGuide ? aiGuideShape !== "none" : Boolean(lesson)) ? "guide-canvas" : "guide-canvas hidden"} aria-hidden="true" /><canvas ref={canvasRef} className="draw-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} aria-label="그림 그리는 도화지" /></div></section>
       <aside className="tool-panel"><div className="tool-group" aria-label="그리기 도구"><button aria-pressed={tool === "pen"} onClick={() => setTool("pen")}><span>✒️</span>펜</button><button aria-pressed={tool === "crayon"} onClick={() => setTool("crayon")}><span>🖍️</span>크레용</button><button aria-pressed={tool === "eraser"} onClick={() => setTool("eraser")}><span>▱</span>지우개</button></div><div className="width-row" aria-label="선 굵기">{([8, 16, 30] as const).map((value) => <button aria-label={`${value} 굵기`} aria-pressed={width === value} onClick={() => setWidth(value)} key={value}><i style={{ width: Math.max(8, value * .72), height: Math.max(8, value * .72) }} /></button>)}</div><div className="palette" aria-label="색 고르기">{PALETTE.map((value) => <button aria-label={`${value} 색`} aria-pressed={color === value} onClick={() => { setColor(value); if (tool === "eraser") setTool("pen"); }} key={value} style={{ background: value }} />)}</div><div className="history-row"><button onClick={undo} disabled={!documentState.ops.length}>↶ 되돌리기</button><button onClick={redoLast} disabled={!redo.length}>↷ 다시하기</button></div></aside></div>
     {timelapseOpen && <TimelapsePlayer document={documentState} onClose={() => setTimelapseOpen(false)} />}
