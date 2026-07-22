@@ -23,10 +23,12 @@ const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS artwork_versions (id TEXT PRIMARY KEY NOT NULL, artwork_id TEXT NOT NULL REFERENCES artworks(id) ON DELETE CASCADE, sequence INTEGER NOT NULL, ops_json TEXT NOT NULL, image_key TEXT, reason TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(artwork_id, sequence))`,
   `CREATE TABLE IF NOT EXISTS artwork_mutations (request_id TEXT NOT NULL, artwork_id TEXT NOT NULL REFERENCES artworks(id) ON DELETE CASCADE, student_id TEXT NOT NULL REFERENCES student_profiles(id) ON DELETE CASCADE, result_revision INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(artwork_id, student_id, request_id))`,
   `CREATE TABLE IF NOT EXISTS coaching_events (id TEXT PRIMARY KEY NOT NULL, artwork_id TEXT NOT NULL REFERENCES artworks(id) ON DELETE CASCADE, actor TEXT NOT NULL, question TEXT NOT NULL, student_answer TEXT, applied_hint TEXT, before_version_id TEXT, after_version_id TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS coaching_event_details (event_id TEXT PRIMARY KEY NOT NULL REFERENCES coaching_events(id) ON DELETE CASCADE, response_kind TEXT NOT NULL, choices_json TEXT NOT NULL DEFAULT '[]', guide_steps_json TEXT NOT NULL DEFAULT '[]', new_elements_json TEXT NOT NULL DEFAULT '[]', growth_event TEXT, current_step INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'open', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS reflections (artwork_id TEXT PRIMARY KEY NOT NULL REFERENCES artworks(id) ON DELETE CASCADE, favorite_part TEXT NOT NULL, favorite_reason TEXT NOT NULL, spoken_description TEXT NOT NULL DEFAULT '', story_text TEXT NOT NULL DEFAULT '', next_suggestion TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS teacher_messages (id TEXT PRIMARY KEY NOT NULL, classroom_id TEXT NOT NULL REFERENCES classrooms(id), student_id TEXT REFERENCES student_profiles(id), teacher_id TEXT NOT NULL REFERENCES teachers(id), body TEXT NOT NULL, reference_url TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS message_receipts (message_id TEXT NOT NULL REFERENCES teacher_messages(id) ON DELETE CASCADE, student_id TEXT NOT NULL REFERENCES student_profiles(id) ON DELETE CASCADE, seen_at TEXT NOT NULL, PRIMARY KEY(message_id, student_id))`,
   `CREATE TABLE IF NOT EXISTS teacher_views (teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE, classroom_id TEXT NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE, student_id TEXT NOT NULL REFERENCES student_profiles(id) ON DELETE CASCADE, expires_at TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(teacher_id, student_id))`,
+  `CREATE TABLE IF NOT EXISTS teacher_coaching_drafts (id TEXT PRIMARY KEY NOT NULL, teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE, classroom_id TEXT NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE, student_id TEXT NOT NULL REFERENCES student_profiles(id) ON DELETE CASCADE, artwork_id TEXT NOT NULL REFERENCES artworks(id) ON DELETE CASCADE, body TEXT NOT NULL, observation TEXT NOT NULL, next_action TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', approved_message_id TEXT REFERENCES teacher_messages(id), approved_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY NOT NULL, count INTEGER NOT NULL, window_ends_at TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS teacher_sessions_teacher_idx ON teacher_sessions(teacher_id, expires_at)`,
   `CREATE INDEX IF NOT EXISTS students_classroom_idx ON student_profiles(classroom_id, last_activity_at)`,
@@ -35,9 +37,12 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS artworks_student_idx ON artworks(student_id, updated_at)`,
   `CREATE INDEX IF NOT EXISTS artworks_classroom_idx ON artworks(classroom_id, updated_at)`,
   `CREATE INDEX IF NOT EXISTS artwork_mutations_artwork_idx ON artwork_mutations(artwork_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS coaching_details_status_idx ON coaching_event_details(status, updated_at)`,
   `CREATE INDEX IF NOT EXISTS messages_classroom_idx ON teacher_messages(classroom_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS message_receipts_student_idx ON message_receipts(student_id, seen_at)`,
   `CREATE INDEX IF NOT EXISTS teacher_views_student_idx ON teacher_views(student_id, expires_at)`,
+  `CREATE INDEX IF NOT EXISTS teacher_drafts_owner_idx ON teacher_coaching_drafts(teacher_id, classroom_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS teacher_drafts_student_idx ON teacher_coaching_drafts(student_id, created_at)`,
 ];
 
 const expectedMutationPrimaryKey = ["artwork_id", "student_id", "request_id"];

@@ -45,7 +45,13 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
       if (op.tool !== "eraser" && !/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "")) return null;
       if (op.points.some((point) => !finiteUnit(point.x) || !finiteUnit(point.y) || (point.pressure !== undefined && !finiteUnit(point.pressure)))) return null;
     }
-    if (op.type === "sticker" && !STICKER_ALLOWLIST.includes(op.sticker as (typeof STICKER_ALLOWLIST)[number])) return null;
+    if (op.type === "fill") {
+      if (!/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "") || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some((point) => !finiteUnit(point.x) || !finiteUnit(point.y))) return null;
+    }
+    if (op.type === "shape") {
+      if (!op.shape || !["circle", "triangle", "rectangle", "line"].includes(op.shape) || !/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "") || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length !== 2 || op.points.some((point) => !finiteUnit(point.x) || !finiteUnit(point.y))) return null;
+    }
+    if (op.type === "sticker" && (!STICKER_ALLOWLIST.includes(op.sticker as (typeof STICKER_ALLOWLIST)[number]) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some((point) => !finiteUnit(point.x) || !finiteUnit(point.y)))) return null;
   }
   return value as DrawDocument;
 }

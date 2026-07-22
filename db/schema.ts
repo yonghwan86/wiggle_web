@@ -114,6 +114,18 @@ export const coachingEvents = sqliteTable("coaching_events", {
   createdAt: createdAt(),
 });
 
+export const coachingEventDetails = sqliteTable("coaching_event_details", {
+  eventId: text("event_id").primaryKey().references(() => coachingEvents.id, { onDelete: "cascade" }),
+  responseKind: text("response_kind", { enum: ["question", "guide"] }).notNull(),
+  choicesJson: text("choices_json").notNull().default("[]"),
+  guideStepsJson: text("guide_steps_json").notNull().default("[]"),
+  newElementsJson: text("new_elements_json").notNull().default("[]"),
+  growthEvent: text("growth_event"),
+  currentStep: integer("current_step").notNull().default(0),
+  status: text("status", { enum: ["open", "active", "answered", "dismissed"] }).notNull().default("open"),
+  updatedAt: updatedAt(),
+}, (table) => [index("coaching_details_status_idx").on(table.status, table.updatedAt)]);
+
 export const artworkMutations = sqliteTable("artwork_mutations", {
   requestId: text("request_id").notNull(),
   artworkId: text("artwork_id").notNull().references(() => artworks.id, { onDelete: "cascade" }),
@@ -164,6 +176,26 @@ export const teacherViews = sqliteTable("teacher_views", {
 }, (table) => [
   primaryKey({ columns: [table.teacherId, table.studentId] }),
   index("teacher_views_student_idx").on(table.studentId, table.expiresAt),
+]);
+
+export const teacherCoachingDrafts = sqliteTable("teacher_coaching_drafts", {
+  id: text("id").primaryKey(),
+  teacherId: text("teacher_id").notNull().references(() => teachers.id, { onDelete: "cascade" }),
+  classroomId: text("classroom_id").notNull().references(() => classrooms.id, { onDelete: "cascade" }),
+  studentId: text("student_id").notNull().references(() => studentProfiles.id, { onDelete: "cascade" }),
+  artworkId: text("artwork_id").notNull().references(() => artworks.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  observation: text("observation").notNull(),
+  nextAction: text("next_action").notNull(),
+  model: text("model").notNull(),
+  status: text("status", { enum: ["draft", "approved"] }).notNull().default("draft"),
+  approvedMessageId: text("approved_message_id").references(() => teacherMessages.id),
+  approvedAt: text("approved_at"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  index("teacher_drafts_owner_idx").on(table.teacherId, table.classroomId, table.createdAt),
+  index("teacher_drafts_student_idx").on(table.studentId, table.createdAt),
 ]);
 
 export const rateLimits = sqliteTable("rate_limits", {

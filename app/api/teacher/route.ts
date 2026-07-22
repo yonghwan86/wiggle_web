@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { bindings } from "@/db/runtime";
 import { ensureLocalTeacher, issueTeacherSession } from "@/lib/demo-seed";
 import { cleanText, id, isLocalDemoRequest, jsonError, noStoreJson, randomToken, rateLimit, requireTeacher, revokeTeacherSession, sameOrigin, sha256 } from "@/lib/security";
+import { prepareTeacherMessageInsert, validateTeacherMessageTarget } from "@/lib/teacher-messages";
 
 type ClassroomRow = { id: string; displayName: string; classCode: string; joinToken: string; admissionOpen: number; currentActivity: string; studentCount: number; updatedAt: string };
 
@@ -90,16 +91,13 @@ export async function POST(request: Request) {
   const classroom = await ownedClassroom(teacher.id, classroomId);
   if (!classroom) return jsonError("이 학급을 바꿀 권한이 없어요.", 403);
   if (action === "sendMessage") {
-    const body = cleanText(payload.body, 180);
     const studentId = cleanText(payload.studentId, 40) || null;
-    if (!body) return jsonError("보낼 말을 적어 주세요.");
-    if (studentId) {
-      const student = await db.prepare(`SELECT id FROM student_profiles WHERE id = ? AND classroom_id = ?`).bind(studentId, classroomId).first();
-      if (!student) return jsonError("이 학급 학생이 아니에요.", 403);
-    }
-    const messageId = id("message");
-    await db.prepare(`INSERT INTO teacher_messages(id, classroom_id, student_id, teacher_id, body) VALUES (?, ?, ?, ?, ?)`).bind(messageId, classroomId, studentId, teacher.id, body).run();
-    return noStoreJson({ messageId }, { status: 201 });
+    const validated = await validateTeacherMessageTarget(db, { teacherId: teacher.id, classroomId, studentId, body: payload.body });
+    if (!validated.ok && validated.reason === "empty_body") return jsonError("보낼 말을 적어 주세요.");
+    if (!validated.ok) return jsonError(validated.reason === "student_forbidden" ? "이 학급 학생이 아니에요." : "이 학급을 바꿀 권한이 없어요.", 403);
+    const inserted = await prepareTeacherMessageInsert(db, validated.target).run();
+    if (!inserted.meta.changes) return jsonError("메시지 대상을 다시 확인해 주세요.", 403);
+    return noStoreJson({ messageId: validated.target.messageId }, { status: 201 });
   }
   if (action === "toggleAdmission") {
     await db.prepare(`UPDATE classrooms SET admission_open = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND teacher_id = ?`).bind(payload.open ? 1 : 0, classroomId, teacher.id).run();

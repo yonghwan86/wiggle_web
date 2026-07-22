@@ -6,9 +6,11 @@ const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("declares D1 and R2 and ships a migration", async () => {
   const files = await readdir(new URL("../drizzle/", import.meta.url)); const migrationName = files.find((name) => name.endsWith(".sql")); assert.ok(migrationName);
-  const [hosting, migration] = await Promise.all([read("../.openai/hosting.json"), read(`../drizzle/${migrationName}`)]);
-  assert.deepEqual(JSON.parse(hosting), { d1: "DB", r2: "ARTWORKS" });
+  const [hosting, migration, snapshot] = await Promise.all([read("../.openai/hosting.json"), read(`../drizzle/${migrationName}`), read("../drizzle/meta/0002_snapshot.json")]);
+  const hostingConfig = JSON.parse(hosting);
+  assert.equal(hostingConfig.d1, "DB"); assert.equal(hostingConfig.r2, "ARTWORKS");
   for (const table of ["teachers", "classrooms", "student_profiles", "device_sessions", "recovery_credentials", "artworks", "artwork_mutations", "reflections", "teacher_messages", "rate_limits"]) assert.match(migration, new RegExp(`CREATE TABLE .${table}.`));
+  assert.match(snapshot, /coaching_event_details/); assert.match(snapshot, /teacher_coaching_drafts/);
 });
 
 test("enforces ownership, hashing, expiry, rate limits and idempotent revisions", async () => {
