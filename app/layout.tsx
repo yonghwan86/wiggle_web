@@ -1,10 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 
 const title = "Wiggle — 함께 그리며 생각해요";
 const description =
   "설치 없이 교실에서 기초 도형부터 자유 창작까지 이어지는 어린이 그림 학습 웹앱";
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
