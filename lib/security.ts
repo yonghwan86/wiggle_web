@@ -1,3 +1,5 @@
+import "server-only";
+import { pbkdf2 } from "node:crypto";
 import { cookies } from "next/headers";
 import { bindings, ensureSchema } from "@/db/runtime";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
@@ -6,16 +8,16 @@ import { id, sha256 } from "@/lib/token-crypto";
 export { id, randomToken, sha256 } from "@/lib/token-crypto";
 export { normalizePicturePassword, picturePasswordLength } from "@/lib/picture-password";
 
-const encoder = new TextEncoder();
+export const PBKDF2_ITERATIONS = 120_000;
+const PBKDF2_KEY_BYTES = 32;
 
 export async function deriveSecret(value: string, salt: string) {
-  const key = await crypto.subtle.importKey("raw", encoder.encode(value), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: encoder.encode(salt), iterations: 120_000, hash: "SHA-256" },
-    key,
-    256,
-  );
-  return [...new Uint8Array(bits)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const key = await new Promise<Buffer>((resolve, reject) => {
+    pbkdf2(value, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_BYTES, "sha256", (error, derivedKey) => {
+      if (error) reject(error); else resolve(derivedKey);
+    });
+  });
+  return key.toString("hex");
 }
 
 function equalConstantTime(left: string, right: string) {

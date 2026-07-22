@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { activeProfile, deviceProfiles, DeviceProfile, storeProfile } from "@/lib/client-session";
 import { LEGACY_PICTURE_PASSWORD_LENGTH, NEW_PICTURE_PASSWORD_LENGTH } from "@/lib/picture-password";
+import { readStudentEntryResponse, StudentEntryResponseError } from "@/lib/student-entry-client";
 import { Logo } from "./Logo";
 import { QrCode } from "./QrCode";
 
@@ -65,13 +66,13 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
       const payload = action === "switchProfile" ? { action, studentId: selectedProfile?.studentId, picturePassword: pictures } : action === "join"
         ? { action, entry, nickname, animal, picturePassword: pictures }
         : recoveryToken ? { action, personalQrToken: recoveryToken } : { action, classCode: entry, nickname, animal, picturePassword: pictures };
-      const response = await fetch("/api/student", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-      const data = await response.json() as { error?: string; student?: { id: string; nickname: string; animal: string; classroomName: string }; deviceToken?: string; expiresAt?: string; personalQrToken?: string };
-      if (!response.ok || !data.student || !data.deviceToken || !data.expiresAt) throw new Error(data.error ?? "입장할 수 없어요.");
+      const response = await fetch("/api/student", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), cache: "no-store" });
+      const data = await readStudentEntryResponse(response);
+      if (!response.ok || !data.student || !data.deviceToken || !data.expiresAt) throw new StudentEntryResponseError(data.error ?? "입장할 수 없어요.");
       storeProfile({ studentId: data.student.id, nickname: data.student.nickname, animal: data.student.animal, classroomName: data.student.classroomName, deviceToken: data.deviceToken, expiresAt: data.expiresAt });
       setPersonalQrToken(data.personalQrToken ?? ""); setMode(data.personalQrToken ? "done" : "profiles");
       if (!data.personalQrToken) location.href = "/student";
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "다시 해 주세요."); }
+    } catch (cause) { setError(cause instanceof StudentEntryResponseError ? cause.message : "입장 중 연결을 확인하지 못했어요. 잠시 뒤 다시 해 주세요."); }
     finally { setBusy(false); }
   }
 

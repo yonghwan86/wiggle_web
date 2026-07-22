@@ -3,11 +3,19 @@ import { cleanText, deriveSecret, id, jsonError, noStoreJson, normalizePicturePa
 
 type RecoveredStudent = { id: string; nickname: string; animal: string; classroomName: string; pictureHash: string; pictureSalt: string };
 
-async function issueDeviceSession(studentId: string) {
+async function prepareDeviceSession(db: D1Database, studentId: string) {
   const token = randomToken(32); const now = new Date();
   const expiresAt = new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString();
-  await bindings().DB.prepare(`INSERT INTO device_sessions(token_hash, student_id, expires_at, last_used_at) VALUES (?, ?, ?, ?)`).bind(await sha256(token), studentId, expiresAt, now.toISOString()).run();
-  return { token, expiresAt };
+  const tokenHash = await sha256(token);
+  const insert = db.prepare(`INSERT INTO device_sessions(token_hash, student_id, expires_at, last_used_at) VALUES (?, ?, ?, ?)`).bind(tokenHash, studentId, expiresAt, now.toISOString());
+  return { token, expiresAt, insert };
+}
+
+async function issueDeviceSession(studentId: string) {
+  const db = bindings().DB;
+  const device = await prepareDeviceSession(db, studentId);
+  await device.insert.run();
+  return { token: device.token, expiresAt: device.expiresAt };
 }
 
 async function classroomForEntry(codeOrToken: string) {
@@ -28,7 +36,7 @@ export async function GET(request: Request) {
   return noStoreJson({ student, artworks: artworks.results, messages: messages.results, teacherViewing });
 }
 
-export async function POST(request: Request) {
+async function studentPost(request: Request) {
   if (!sameOrigin(request)) return jsonError("요청 출처를 확인할 수 없어요.", 403);
   await ensureSchema();
   const payload = await request.json().catch(() => ({})) as Record<string, unknown>;
@@ -49,12 +57,18 @@ export async function POST(request: Request) {
     if (!classroom.admissionOpen) return jsonError("선생님이 입장을 열 때까지 기다려 주세요.", 403);
     const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
     if (nickname.length < 2 || !animal || pictureLength !== 3) return jsonError("별명, 동물, 그림 비밀번호 세 개를 모두 골라 주세요.");
+    const db = bindings().DB;
     const studentId = id("student"); const salt = randomToken(16); const personalQrToken = randomToken(28); const now = new Date().toISOString();
-    await bindings().DB.batch([
-      bindings().DB.prepare(`INSERT INTO student_profiles(id, classroom_id, nickname, animal, last_activity_at) VALUES (?, ?, ?, ?, ?)`).bind(studentId, classroom.id, nickname, animal, now),
-      bindings().DB.prepare(`INSERT INTO recovery_credentials(student_id, picture_hash, picture_salt, personal_qr_hash) VALUES (?, ?, ?, ?)`).bind(studentId, await deriveSecret(picture, salt), salt, await sha256(personalQrToken)),
+    const [pictureHash, personalQrHash, device] = await Promise.all([
+      deriveSecret(picture, salt),
+      sha256(personalQrToken),
+      prepareDeviceSession(db, studentId),
     ]);
-    const device = await issueDeviceSession(studentId);
+    await db.batch([
+      db.prepare(`INSERT INTO student_profiles(id, classroom_id, nickname, animal, last_activity_at) VALUES (?, ?, ?, ?, ?)`).bind(studentId, classroom.id, nickname, animal, now),
+      db.prepare(`INSERT INTO recovery_credentials(student_id, picture_hash, picture_salt, personal_qr_hash) VALUES (?, ?, ?, ?)`).bind(studentId, pictureHash, salt, personalQrHash),
+      device.insert,
+    ]);
     return noStoreJson({ student: { id: studentId, nickname, animal, classroomName: classroom.displayName }, deviceToken: device.token, expiresAt: device.expiresAt, personalQrToken }, { status: 201 });
   }
 
@@ -90,4 +104,13 @@ export async function POST(request: Request) {
     return noStoreJson({ student: { id: student.id, nickname: student.nickname, animal: student.animal, classroomName: student.classroomName }, deviceToken: device.token, expiresAt: device.expiresAt });
   }
   return jsonError("지원하지 않는 요청이에요.");
+}
+
+export async function POST(request: Request) {
+  try {
+    return await studentPost(request);
+  } catch (error) {
+    console.error("Unexpected student API error", error);
+    return jsonError("입장을 처리하지 못했어요. 잠시 뒤 다시 해 주세요.", 500);
+  }
 }

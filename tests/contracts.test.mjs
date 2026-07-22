@@ -15,7 +15,7 @@ test("declares D1 and R2 and ships a migration", async () => {
 
 test("enforces ownership, hashing, expiry, rate limits and idempotent revisions", async () => {
   const [security, artwork, teacher, student] = await Promise.all([read("../lib/security.ts"), read("../app/api/artworks/[id]/route.ts"), read("../app/api/teacher/route.ts"), read("../app/api/student/route.ts")]);
-  assert.match(security, /PBKDF2/); assert.match(security, /120_000/); assert.match(security, /expires_at >/); assert.match(security, /sameOrigin/); assert.match(security, /rateLimits|rate_limits/);
+  assert.match(security, /PBKDF2/); assert.match(security, /PBKDF2_ITERATIONS = 120_000/); assert.match(security, /from "node:crypto"/); assert.doesNotMatch(security, /crypto\.subtle|deriveBits/); assert.match(security, /expires_at >/); assert.match(security, /sameOrigin/); assert.match(security, /rateLimits|rate_limits/);
   assert.match(artwork, /student_id = \?/); assert.match(artwork, /REVISION_CONFLICT/); assert.match(artwork, /artwork_mutations/); assert.match(artwork, /ARTWORKS\.put/); assert.match(artwork, /last_mutation_id/);
   assert.match(teacher, /teacher_id = \?/); assert.match(teacher, /student_profiles WHERE id = \? AND classroom_id = \?/); assert.match(student, /picture_hash/); assert.match(student, /personal_qr_hash/);
 });
