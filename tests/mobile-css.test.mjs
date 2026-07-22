@@ -48,3 +48,23 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(css, /\.save-conflict \{ top:auto; bottom:calc\(72px \+ env\(safe-area-inset-bottom\)\); \}/);
   assert.match(teacher, /className="modal-close" aria-label="학생 그림 미리보기 닫기" onClick=\{\(\) => \{ setViewingStudent\(null\)/);
 });
+
+test("desktop teacher controls use a compact two-row layout without changing smaller breakpoints", async () => {
+  const css = await read("../app/globals.css");
+  const desktop = css.match(/@media \(min-width:1001px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  const tablet = css.match(/@media \(max-width:1000px\) \{([^}]*(?:\}[^@]*)?)/)?.[1] ?? "";
+  const mobileStart = css.indexOf("@media (max-width:720px)");
+
+  assert.match(desktop, /\.room-controls \{ grid-template-columns:390px minmax\(0,1fr\); grid-template-rows:min-content min-content; align-items:start; \}/);
+  assert.match(desktop, /\.qr-panel \{ grid-row:1 \/ span 2; align-self:stretch; \}/);
+  assert.match(desktop, /\.control-stack,\.message-compose \{ grid-column:2; align-self:start; \}/);
+  assert.match(css, /\.room-controls \{ padding:20px 24px; display:grid; grid-template-columns:390px 1fr 1\.3fr; align-items:start;/);
+  assert.match(css, /\.room-controls>div,\.message-compose \{ min-width:0;/);
+  assert.match(tablet, /\.room-controls \{ grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\); \}/);
+  assert.match(tablet, /\.qr-code-teacher \{ width:clamp\(160px,18vw,190px\); min-width:160px; \}/);
+  assert.ok(mobileStart >= 0);
+  assert.match(css.slice(mobileStart), /\.room-controls \{ grid-template-columns:1fr; padding:14px; \}/);
+  assert.match(css, /\.control-stack select,\.message-compose select \{ min-height:44px;/);
+  assert.match(css, /input,textarea,select \{ font-size:16px; \}/);
+  assert.match(css, /button \{ min-height:44px; touch-action:manipulation; \}/);
+});
