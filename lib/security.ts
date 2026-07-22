@@ -4,6 +4,7 @@ import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { id, sha256 } from "@/lib/token-crypto";
 
 export { id, randomToken, sha256 } from "@/lib/token-crypto";
+export { normalizePicturePassword, picturePasswordLength } from "@/lib/picture-password";
 
 const encoder = new TextEncoder();
 
@@ -125,9 +126,4 @@ export async function rateLimit(key: string, max: number, seconds: number) {
   if (current.count >= max) return false;
   await db.prepare(`UPDATE rate_limits SET count = count + 1 WHERE key = ?`).bind(key).run();
   return true;
-}
-
-export function normalizePicturePassword(value: unknown) {
-  if (!Array.isArray(value)) return "";
-  return value.map(String).slice(0, 4).join("→");
 }

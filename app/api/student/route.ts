@@ -1,5 +1,5 @@
 import { bindings, ensureSchema } from "@/db/runtime";
-import { cleanText, deriveSecret, id, jsonError, noStoreJson, normalizePicturePassword, randomToken, rateLimit, sameOrigin, sha256, studentFromRequest, verifySecret } from "@/lib/security";
+import { cleanText, deriveSecret, id, jsonError, noStoreJson, normalizePicturePassword, picturePasswordLength, randomToken, rateLimit, sameOrigin, sha256, studentFromRequest, verifySecret } from "@/lib/security";
 
 type RecoveredStudent = { id: string; nickname: string; animal: string; classroomName: string; pictureHash: string; pictureSalt: string };
 
@@ -47,8 +47,8 @@ export async function POST(request: Request) {
     const entry = cleanText(payload.entry, 80); const classroom = await classroomForEntry(entry);
     if (!classroom) return jsonError("수업 코드를 다시 확인해 주세요.", 404);
     if (!classroom.admissionOpen) return jsonError("선생님이 입장을 열 때까지 기다려 주세요.", 403);
-    const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const picture = normalizePicturePassword(payload.picturePassword);
-    if (nickname.length < 2 || !animal || picture.split("→").length !== 4) return jsonError("별명, 동물, 그림 비밀번호를 모두 골라 주세요.");
+    const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
+    if (nickname.length < 2 || !animal || pictureLength !== 3) return jsonError("별명, 동물, 그림 비밀번호 세 개를 모두 골라 주세요.");
     const studentId = id("student"); const salt = randomToken(16); const personalQrToken = randomToken(28); const now = new Date().toISOString();
     await bindings().DB.batch([
       bindings().DB.prepare(`INSERT INTO student_profiles(id, classroom_id, nickname, animal, last_activity_at) VALUES (?, ?, ?, ?, ?)`).bind(studentId, classroom.id, nickname, animal, now),
@@ -60,7 +60,8 @@ export async function POST(request: Request) {
 
   if (action === "switchProfile") {
     if (!(await rateLimit(entryRateKey(request), 8, 10 * 60))) return jsonError("확인 시도가 많아요. 잠시 기다려 주세요.", 429);
-    const studentId = cleanText(payload.studentId, 40); const picture = normalizePicturePassword(payload.picturePassword);
+    const studentId = cleanText(payload.studentId, 40); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
+    if (pictureLength !== 3 && pictureLength !== 4) return jsonError("그림 비밀번호는 세 개 또는 예전에 만든 네 개를 골라 주세요.");
     const candidate = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id JOIN recovery_credentials r ON r.student_id = s.id WHERE s.id = ? AND c.active = 1`).bind(studentId).first<RecoveredStudent>();
     const valid = candidate ? await verifySecret(picture, candidate.pictureSalt, candidate.pictureHash) : Boolean(await deriveSecret(picture, "missing-profile-salt")) && false;
     if (!candidate || !valid) return jsonError("그림 비밀번호를 다시 확인해 주세요.", 401);
@@ -74,7 +75,8 @@ export async function POST(request: Request) {
     if (personalQrToken) {
       student = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM recovery_credentials r JOIN student_profiles s ON s.id = r.student_id JOIN classrooms c ON c.id = s.classroom_id WHERE r.personal_qr_hash = ? AND c.active = 1`).bind(await sha256(personalQrToken)).first<RecoveredStudent>();
     } else {
-      const classCode = cleanText(payload.classCode, 12); const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const picture = normalizePicturePassword(payload.picturePassword);
+      const classCode = cleanText(payload.classCode, 12); const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
+      if (pictureLength !== 3 && pictureLength !== 4) return jsonError("그림 비밀번호는 세 개 또는 예전에 만든 네 개를 골라 주세요.");
       const candidates = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id JOIN recovery_credentials r ON r.student_id = s.id WHERE c.class_code = ? AND s.nickname = ? AND s.animal = ? AND c.active = 1 ORDER BY s.id`).bind(classCode, nickname, animal).all<RecoveredStudent>();
       const checks = await Promise.all(candidates.results.map((candidate) => verifySecret(picture, candidate.pictureSalt, candidate.pictureHash)));
       if (!candidates.results.length) await deriveSecret(picture, "missing-recovery-salt");

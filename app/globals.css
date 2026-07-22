@@ -67,6 +67,11 @@ legend small { color:var(--primary-dark); }
 .emoji-chip,.picture-chip { min-width:52px; min-height:52px; border:2px solid var(--soft-border); border-radius:15px; background:#f8fcfe; font-size:26px; cursor:pointer; }
 .emoji-chip.selected,.picture-chip.selected { background:#dff7ff; border-color:var(--primary); transform:translateY(-2px); box-shadow:0 4px 0 var(--border); }
 .picture-chip { font-size:18px; font-weight:900; }
+.picture-chip:disabled { opacity:.48; cursor:not-allowed; }
+.legacy-password-toggle { display:flex; align-items:center; gap:9px; width:max-content; max-width:100%; margin:10px 0 13px; color:var(--secondary); font-size:13px; }
+.legacy-password-toggle input { width:22px; min-height:22px; margin:0; padding:0; }
+.password-actions { display:flex; justify-content:flex-end; margin-top:10px; }
+.password-actions button:disabled { opacity:.45; cursor:not-allowed; }
 .password-preview { margin-top:12px; background:#fff9d7; padding:11px; border-radius:12px; text-align:center; font-size:22px; }
 .text-button { display:block; width:100%; border:0; background:transparent; color:var(--primary-dark); text-align:center; font-weight:900; padding:16px 8px; cursor:pointer; }
 .error-box { background:#fff0f0; color:#9f2f2f; border:1px solid #f0bebe; padding:12px 14px; border-radius:12px; font-weight:700; }
