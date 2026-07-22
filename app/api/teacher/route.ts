@@ -3,6 +3,7 @@ import { bindings } from "@/db/runtime";
 import { ensureLocalTeacher, issueTeacherSession } from "@/lib/demo-seed";
 import { cleanText, id, isLocalDemoRequest, jsonError, noStoreJson, randomToken, rateLimit, requireTeacher, revokeTeacherSession, sameOrigin, sha256 } from "@/lib/security";
 import { prepareTeacherMessageInsert, validateTeacherMessageTarget } from "@/lib/teacher-messages";
+import { createFamilyShare, revokeFamilyShare } from "@/lib/family-sharing";
 
 type ClassroomRow = { id: string; displayName: string; classCode: string; joinToken: string; admissionOpen: number; currentActivity: string; studentCount: number; updatedAt: string };
 
@@ -47,10 +48,11 @@ export async function GET(request: Request) {
 
   const classroom = await ownedClassroom(teacher.id, classroomId);
   if (!classroom) return jsonError("이 학급을 볼 권한이 없어요.", 403);
-  const students = await db.prepare(`SELECT s.id, s.nickname, s.animal, s.last_activity_at AS lastActivityAt, a.id AS artworkId, a.title AS artworkTitle, a.status, a.current_step AS currentStep, a.revision, a.thumbnail_key AS thumbnailKey, a.updated_at AS artworkUpdatedAt FROM student_profiles s LEFT JOIN artworks a ON a.id = (SELECT a2.id FROM artworks a2 WHERE a2.student_id = s.id ORDER BY a2.updated_at DESC LIMIT 1) WHERE s.classroom_id = ? ORDER BY s.nickname COLLATE NOCASE, s.id`).bind(classroomId).all<{ id: string; nickname: string; animal: string; lastActivityAt: string; artworkId: string | null; artworkTitle: string | null; status: string | null; currentStep: number | null; revision: number | null; thumbnailKey: string | null; artworkUpdatedAt: string | null }>();
-  const hydrated = await Promise.all(students.results.map(async ({ thumbnailKey, ...student }: { id: string; nickname: string; animal: string; lastActivityAt: string; artworkId: string | null; artworkTitle: string | null; status: string | null; currentStep: number | null; revision: number | null; thumbnailKey: string | null; artworkUpdatedAt: string | null }) => ({ ...student, thumbnail: await toDataUrl(thumbnailKey) })));
+  const students = await db.prepare(`SELECT s.id, s.nickname, s.animal, s.last_activity_at AS lastActivityAt, a.id AS artworkId, a.title AS artworkTitle, a.status, a.current_step AS currentStep, a.revision, a.thumbnail_key AS thumbnailKey, a.updated_at AS artworkUpdatedAt, (SELECT a3.id FROM artworks a3 WHERE a3.student_id = s.id AND a3.classroom_id = s.classroom_id AND a3.status = 'complete' AND a3.final_image_key IS NOT NULL ORDER BY a3.completed_at DESC, a3.id DESC LIMIT 1) AS completedArtworkId FROM student_profiles s LEFT JOIN artworks a ON a.id = (SELECT a2.id FROM artworks a2 WHERE a2.student_id = s.id ORDER BY a2.updated_at DESC LIMIT 1) WHERE s.classroom_id = ? ORDER BY s.nickname COLLATE NOCASE, s.id`).bind(classroomId).all<{ id: string; nickname: string; animal: string; lastActivityAt: string; artworkId: string | null; artworkTitle: string | null; status: string | null; currentStep: number | null; revision: number | null; thumbnailKey: string | null; artworkUpdatedAt: string | null; completedArtworkId: string | null }>();
+  const hydrated = await Promise.all(students.results.map(async ({ thumbnailKey, ...student }: { id: string; nickname: string; animal: string; lastActivityAt: string; artworkId: string | null; artworkTitle: string | null; status: string | null; currentStep: number | null; revision: number | null; thumbnailKey: string | null; artworkUpdatedAt: string | null; completedArtworkId: string | null }) => ({ ...student, thumbnail: await toDataUrl(thumbnailKey) })));
   const messages = await db.prepare(`SELECT m.id, m.student_id AS studentId, m.body, m.created_at AS createdAt, s.nickname, COUNT(r.student_id) AS seenCount FROM teacher_messages m LEFT JOIN student_profiles s ON s.id = m.student_id LEFT JOIN message_receipts r ON r.message_id = m.id WHERE m.classroom_id = ? GROUP BY m.id ORDER BY m.created_at DESC, m.id DESC LIMIT 30`).bind(classroomId).all();
-  return noStoreJson({ teacher, classroom, students: hydrated, messages: messages.results });
+  const familyLinks = await db.prepare(`SELECT l.id, l.student_id AS studentId, l.scope, l.expires_at AS expiresAt, l.revoked_at AS revokedAt, l.created_at AS createdAt, COUNT(f.artwork_id) AS artworkCount FROM family_share_links l JOIN student_profiles s ON s.id = l.student_id LEFT JOIN family_share_artworks f ON f.link_id = l.id WHERE l.teacher_id = ? AND s.classroom_id = ? GROUP BY l.id ORDER BY l.created_at DESC LIMIT 50`).bind(teacher.id, classroomId).all();
+  return noStoreJson({ teacher, classroom, students: hydrated, messages: messages.results, familyLinks: familyLinks.results });
 }
 
 export async function POST(request: Request) {
@@ -90,6 +92,18 @@ export async function POST(request: Request) {
   const classroomId = cleanText(payload.classroomId, 40);
   const classroom = await ownedClassroom(teacher.id, classroomId);
   if (!classroom) return jsonError("이 학급을 바꿀 권한이 없어요.", 403);
+  if (action === "createFamilyShare") {
+    const studentId = cleanText(payload.studentId, 40);
+    const artworkIds = Array.isArray(payload.artworkIds) ? payload.artworkIds.map((value) => cleanText(value, 80)).filter(Boolean) : [];
+    const result = await createFamilyShare(db, { teacherId: teacher.id, classroomId, studentId, artworkIds, guardianConsentConfirmed: payload.guardianConsentConfirmed === true, consentMethod: cleanText(payload.consentMethod, 30), expiresInDays: Number(payload.expiresInDays) || 7 });
+    if (!result.ok) return jsonError(result.reason === "guardian_consent_required" ? "확인된 보호자 사전 동의 기록이 필요해요." : result.reason === "invalid_consent_method" ? "보호자 동의 확인 방법을 다시 골라 주세요." : result.reason === "artwork_forbidden" ? "완성되고 승인할 작품만 공유할 수 있어요." : result.reason === "invalid_scope" ? "공유할 작품을 다시 골라 주세요." : "가족 링크를 만들 권한이 없어요.", result.reason === "forbidden" ? 403 : 400);
+    return noStoreJson({ share: { id: result.linkId, token: result.inviteToken, scope: result.scope, linkExpiresAt: result.expiresAt, inviteExpiresAt: result.inviteExpiresAt } }, { status: 201 });
+  }
+  if (action === "revokeFamilyShare") {
+    const revoked = await revokeFamilyShare(db, { teacherId: teacher.id, classroomId, linkId: cleanText(payload.linkId, 50) });
+    if (!revoked) return jsonError("취소할 가족 링크를 찾지 못했어요.", 404);
+    return noStoreJson({ revoked: true });
+  }
   if (action === "sendMessage") {
     const studentId = cleanText(payload.studentId, 40) || null;
     const validated = await validateTeacherMessageTarget(db, { teacherId: teacher.id, classroomId, studentId, body: payload.body });

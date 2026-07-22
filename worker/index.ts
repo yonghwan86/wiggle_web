@@ -6,6 +6,7 @@ interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
   ARTWORKS: R2Bucket;
+  WHISPER_RELAY?: Fetcher;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -41,7 +42,20 @@ const worker = {
       }, allowedWidths);
     }
 
-    return handler.fetch(request, env, ctx);
+    const response = await handler.fetch(request, env, ctx);
+    if (url.pathname.startsWith("/family/") || url.pathname.startsWith("/api/family/")) {
+      const headers = new Headers(response.headers);
+      headers.set("cache-control", "no-store, max-age=0");
+      headers.set("pragma", "no-cache");
+      headers.set("referrer-policy", "no-referrer");
+      headers.set("x-content-type-options", "nosniff");
+      headers.set("x-frame-options", "DENY");
+      headers.set("cross-origin-resource-policy", "same-origin");
+      headers.set("x-robots-tag", "noindex, nofollow, noarchive");
+      headers.set("content-security-policy", "default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+    }
+    return response;
   },
 };
 

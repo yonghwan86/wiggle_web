@@ -1,0 +1,63 @@
+import { bindings } from "@/db/runtime";
+import { familyCookieToken, familyJson, resolveFamilySession } from "@/lib/family-sharing";
+import { buildWeeklyGrowthReport } from "@/lib/growth-reports";
+import { validateDrawDocument } from "@/lib/drawing-model";
+import { rateLimit, sha256 } from "@/lib/security";
+
+function clientAddress(request: Request) {
+  return request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+}
+
+async function imageDataUrl(key: string) {
+  const object = await bindings().ARTWORKS.get(key);
+  if (!object || object.size > 3_500_000) return null;
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `data:image/png;base64,${btoa(binary)}`;
+}
+
+function publicTimelapseOps(serialized: string) {
+  try {
+    const document = validateDrawDocument(JSON.parse(serialized));
+    if (!document) return [];
+    return document.ops.map((operation) => ({
+      type: operation.type,
+      tool: operation.tool,
+      color: operation.color,
+      width: operation.width,
+      points: operation.points,
+      shape: operation.shape,
+      sticker: operation.sticker,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function GET(request: Request) {
+  const sessionToken = familyCookieToken(request);
+  const limiterKey = await sha256(`${clientAddress(request)}:${sessionToken.slice(0, 12)}`);
+  if (!(await rateLimit(`family-session:${limiterKey}`, 45, 60))) return familyJson({ error: "잠시 뒤 다시 확인해 주세요." }, { status: 429 });
+  const share = await resolveFamilySession(bindings().DB, sessionToken);
+  if (!share) return familyJson({ error: "가족 공유 세션이 만료되었거나 취소되었어요." }, { status: 404 });
+  const images = await Promise.all(share.artworks.map((artwork) => imageDataUrl(artwork.finalImageKey)));
+  if (images.some((image) => !image)) return familyJson({ error: "공유 작품을 준비하지 못했어요." }, { status: 404 });
+  const report = await buildWeeklyGrowthReport(bindings().DB, {
+    linkId: share.linkId,
+    studentId: share.studentId,
+    reportStartAt: share.reportStartAt,
+    reportEndAt: share.reportEndAt,
+    sensitiveValues: share.sensitiveValues,
+  });
+  return familyJson({
+    family: { animal: share.animal, scope: share.scope, expiresAt: share.expiresAt },
+    artworks: share.artworks.map((artwork, index) => ({
+      position: artwork.position + 1,
+      anchor: `artwork-${artwork.position + 1}`,
+      imageDataUrl: images[index],
+      timelapseOps: publicTimelapseOps(artwork.opsJson),
+    })),
+    report,
+  });
+}

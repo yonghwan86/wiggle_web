@@ -1,8 +1,10 @@
 import { env } from "cloudflare:workers";
+import { upgradeMvp3Schema } from "@/lib/mvp3-schema-upgrade";
 
 export interface WiggleEnv {
   DB: D1Database;
   ARTWORKS: R2Bucket;
+  WHISPER_RELAY?: Fetcher;
 }
 
 export function bindings(): WiggleEnv {
@@ -30,6 +32,12 @@ const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS teacher_views (teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE, classroom_id TEXT NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE, student_id TEXT NOT NULL REFERENCES student_profiles(id) ON DELETE CASCADE, expires_at TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(teacher_id, student_id))`,
   `CREATE TABLE IF NOT EXISTS teacher_coaching_drafts (id TEXT PRIMARY KEY NOT NULL, teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE, classroom_id TEXT NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE, student_id TEXT NOT NULL REFERENCES student_profiles(id) ON DELETE CASCADE, artwork_id TEXT NOT NULL REFERENCES artworks(id) ON DELETE CASCADE, body TEXT NOT NULL, observation TEXT NOT NULL, next_action TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', approved_message_id TEXT REFERENCES teacher_messages(id), approved_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY NOT NULL, count INTEGER NOT NULL, window_ends_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS family_share_links (id TEXT PRIMARY KEY NOT NULL, teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE, student_id TEXT NOT NULL REFERENCES student_profiles(id) ON DELETE CASCADE, scope TEXT NOT NULL, approval_kind TEXT NOT NULL, guardian_consent_at TEXT NOT NULL, consent_method TEXT NOT NULL, attested_by_teacher_id TEXT NOT NULL REFERENCES teachers(id), report_start_at TEXT NOT NULL, report_end_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT, view_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS family_share_invites (token_hash TEXT PRIMARY KEY NOT NULL, link_id TEXT NOT NULL REFERENCES family_share_links(id) ON DELETE CASCADE, kind TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT, consumed_session_hash TEXT UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS family_share_sessions (token_hash TEXT PRIMARY KEY NOT NULL, link_id TEXT NOT NULL REFERENCES family_share_links(id) ON DELETE CASCADE, expires_at TEXT NOT NULL, last_used_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS family_share_artworks (link_id TEXT NOT NULL REFERENCES family_share_links(id) ON DELETE CASCADE, artwork_id TEXT NOT NULL REFERENCES artworks(id) ON DELETE CASCADE, position INTEGER NOT NULL, approved_at TEXT NOT NULL, PRIMARY KEY(link_id, artwork_id), UNIQUE(link_id, position))`,
+  `CREATE TABLE IF NOT EXISTS subscription_entitlements (teacher_id TEXT PRIMARY KEY NOT NULL REFERENCES teachers(id) ON DELETE CASCADE, plan_code TEXT NOT NULL DEFAULT 'free', status TEXT NOT NULL DEFAULT 'disabled', provider TEXT, external_customer_ref TEXT, external_subscription_ref TEXT, current_period_end TEXT, provider_event_at TEXT, provider_event_id TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS subscription_webhook_events (provider TEXT NOT NULL, event_id TEXT NOT NULL, payload_hash TEXT NOT NULL, occurred_at TEXT NOT NULL, signature_verified INTEGER NOT NULL, stale INTEGER NOT NULL DEFAULT 0, processed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(provider, event_id))`,
   `CREATE INDEX IF NOT EXISTS teacher_sessions_teacher_idx ON teacher_sessions(teacher_id, expires_at)`,
   `CREATE INDEX IF NOT EXISTS students_classroom_idx ON student_profiles(classroom_id, last_activity_at)`,
   `CREATE INDEX IF NOT EXISTS device_sessions_student_idx ON device_sessions(student_id, expires_at)`,
@@ -43,6 +51,13 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS teacher_views_student_idx ON teacher_views(student_id, expires_at)`,
   `CREATE INDEX IF NOT EXISTS teacher_drafts_owner_idx ON teacher_coaching_drafts(teacher_id, classroom_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS teacher_drafts_student_idx ON teacher_coaching_drafts(student_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS family_share_teacher_idx ON family_share_links(teacher_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS family_share_student_idx ON family_share_links(student_id, expires_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS family_invite_session_uq ON family_share_invites(consumed_session_hash)`,
+  `CREATE INDEX IF NOT EXISTS family_invite_link_idx ON family_share_invites(link_id, expires_at)`,
+  `CREATE INDEX IF NOT EXISTS family_session_link_idx ON family_share_sessions(link_id, expires_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS family_share_position_uq ON family_share_artworks(link_id, position)`,
+  `CREATE INDEX IF NOT EXISTS family_share_artwork_idx ON family_share_artworks(artwork_id)`,
 ];
 
 const expectedMutationPrimaryKey = ["artwork_id", "student_id", "request_id"];
@@ -103,6 +118,7 @@ export async function ensureSchema() {
     const { DB } = bindings();
     ready = (async () => {
       await DB.batch(schemaStatements.map((statement) => DB.prepare(statement)));
+      await upgradeMvp3Schema(DB);
       const artworkColumns = await DB.prepare(`PRAGMA table_info(artworks)`).all<{ name: string }>();
       if (!artworkColumns.results.some((column) => column.name === "last_mutation_id")) await DB.prepare(`ALTER TABLE artworks ADD COLUMN last_mutation_id TEXT`).run();
       await ensureArtworkMutationPrimaryKey(DB);

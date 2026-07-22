@@ -203,3 +203,80 @@ export const rateLimits = sqliteTable("rate_limits", {
   count: integer("count").notNull(),
   windowEndsAt: text("window_ends_at").notNull(),
 });
+
+export const familyShareLinks = sqliteTable("family_share_links", {
+  id: text("id").primaryKey(),
+  teacherId: text("teacher_id").notNull().references(() => teachers.id, { onDelete: "cascade" }),
+  studentId: text("student_id").notNull().references(() => studentProfiles.id, { onDelete: "cascade" }),
+  scope: text("scope", { enum: ["artwork", "bundle"] }).notNull(),
+  approvalKind: text("approval_kind", { enum: ["guardian"] }).notNull(),
+  guardianConsentAt: text("guardian_consent_at").notNull(),
+  consentMethod: text("consent_method", { enum: ["paper", "in_person", "phone", "school_portal"] }).notNull(),
+  attestedByTeacherId: text("attested_by_teacher_id").notNull().references(() => teachers.id),
+  reportStartAt: text("report_start_at").notNull(),
+  reportEndAt: text("report_end_at").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  revokedAt: text("revoked_at"),
+  viewCount: integer("view_count").notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  index("family_share_teacher_idx").on(table.teacherId, table.createdAt),
+  index("family_share_student_idx").on(table.studentId, table.expiresAt),
+]);
+
+export const familyShareInvites = sqliteTable("family_share_invites", {
+  tokenHash: text("token_hash").primaryKey(),
+  linkId: text("link_id").notNull().references(() => familyShareLinks.id, { onDelete: "cascade" }),
+  kind: text("kind", { enum: ["initial", "handoff"] }).notNull(),
+  expiresAt: text("expires_at").notNull(),
+  consumedAt: text("consumed_at"),
+  consumedSessionHash: text("consumed_session_hash"),
+  createdAt: createdAt(),
+}, (table) => [
+  uniqueIndex("family_invite_session_uq").on(table.consumedSessionHash),
+  index("family_invite_link_idx").on(table.linkId, table.expiresAt),
+]);
+
+export const familyShareSessions = sqliteTable("family_share_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  linkId: text("link_id").notNull().references(() => familyShareLinks.id, { onDelete: "cascade" }),
+  expiresAt: text("expires_at").notNull(),
+  lastUsedAt: text("last_used_at").notNull(),
+  createdAt: createdAt(),
+}, (table) => [index("family_session_link_idx").on(table.linkId, table.expiresAt)]);
+
+export const familyShareArtworks = sqliteTable("family_share_artworks", {
+  linkId: text("link_id").notNull().references(() => familyShareLinks.id, { onDelete: "cascade" }),
+  artworkId: text("artwork_id").notNull().references(() => artworks.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+  approvedAt: text("approved_at").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.linkId, table.artworkId] }),
+  uniqueIndex("family_share_position_uq").on(table.linkId, table.position),
+  index("family_share_artwork_idx").on(table.artworkId),
+]);
+
+export const subscriptionEntitlements = sqliteTable("subscription_entitlements", {
+  teacherId: text("teacher_id").primaryKey().references(() => teachers.id, { onDelete: "cascade" }),
+  planCode: text("plan_code").notNull().default("free"),
+  status: text("status", { enum: ["disabled", "active", "past_due", "canceled"] }).notNull().default("disabled"),
+  provider: text("provider"),
+  externalCustomerRef: text("external_customer_ref"),
+  externalSubscriptionRef: text("external_subscription_ref"),
+  currentPeriodEnd: text("current_period_end"),
+  providerEventAt: text("provider_event_at"),
+  providerEventId: text("provider_event_id"),
+  updatedAt: updatedAt(),
+});
+
+export const subscriptionWebhookEvents = sqliteTable("subscription_webhook_events", {
+  provider: text("provider").notNull(),
+  eventId: text("event_id").notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  occurredAt: text("occurred_at").notNull(),
+  signatureVerified: integer("signature_verified", { mode: "boolean" }).notNull(),
+  stale: integer("stale", { mode: "boolean" }).notNull().default(false),
+  processedAt: text("processed_at"),
+  createdAt: createdAt(),
+}, (table) => [primaryKey({ columns: [table.provider, table.eventId] })]);

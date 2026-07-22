@@ -8,6 +8,7 @@ import { lessonBySlug, Lesson } from "@/lib/lesson-content";
 import { activeProfile, flushSaves, queueSave, studentFetch } from "@/lib/client-session";
 import { Logo } from "./Logo";
 import { TimelapsePlayer } from "./TimelapsePlayer";
+import { VoiceWhisperStatus } from "./VoiceWhisper";
 
 const PALETTE = ["#1B3A57", "#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#8D6E63", "#F06292", "#4DD0E1", "#FFCC80", "#FFFFFF"];
 type Tool = "pen" | "crayon" | "eraser";
@@ -201,6 +202,7 @@ export function DrawingStudio() {
   return <main className="studio"><header className="studio-header"><a className="icon-button" href="/student" aria-label="그림 나가기">←</a><Logo compact /><div className="artwork-name"><b>{artwork.title}</b><small>{saveState}</small></div>{lesson && !aiGuide && <span className="step-count">{step + 1}/{lesson.steps.length}</span>}<button className="button ghost compact" onClick={() => setTimelapseOpen(true)}>과정 보기</button><button className="button grimi-button compact" disabled={grimiLoading} onClick={askGrimi}>✨ 그리미 부르기</button><button className="button primary compact" onClick={() => setReflectionOpen(true)}>다 그렸어요</button></header>
     {conflictRevision !== null && <div className="save-conflict" role="alert"><b>다른 기기 저장과 겹쳤어요.</b><span>그림을 덮어쓰지 않고 보관했어요.</span><button onClick={saveAsCopy}>새 사본으로 저장</button></div>}
     {teacherViewing && <div className="teacher-viewing" role="status">선생님이 지금 내 그림을 보고 있어요.</div>}
+    <VoiceWhisperStatus />
     {message && <div className="canvas-message"><b>선생님</b> {message}</div>}
     <div className="studio-body">{grimiOpen ? <aside className="grimi-panel" aria-live="polite"><div className="grimi-head"><div><span>✨</span><b>그리미</b></div><button onClick={dismissGrimi} aria-label="그리미 닫기">×</button></div>
         {grimiLoading && <div className="grimi-thinking"><span>●</span><span>●</span><span>●</span><p>그림을 보고 있어요…</p></div>}

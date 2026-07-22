@@ -1,22 +1,11 @@
 import { cookies } from "next/headers";
 import { bindings, ensureSchema } from "@/db/runtime";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { id, sha256 } from "@/lib/token-crypto";
+
+export { id, randomToken, sha256 } from "@/lib/token-crypto";
 
 const encoder = new TextEncoder();
-
-export function id(prefix: string) {
-  return `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
-}
-
-export function randomToken(bytes = 24) {
-  const array = crypto.getRandomValues(new Uint8Array(bytes));
-  return btoa(String.fromCharCode(...array)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-}
-
-export async function sha256(value: string) {
-  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
 
 export async function deriveSecret(value: string, salt: string) {
   const key = await crypto.subtle.importKey("raw", encoder.encode(value), "PBKDF2", false, ["deriveBits"]);
