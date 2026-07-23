@@ -35,7 +35,7 @@ test("keeps canvas contracts and guide data separate", async () => {
     assert.ok(modeLessons.every((lesson) => lesson.guide.some((mark) => mark.step === 1)), `${mode} first-step guides`);
     assert.ok(modeLessons.every((lesson) => !lesson.guide.some((mark) => mark.step === lesson.steps.length)), `${mode} final free steps have no guide`);
   }
-  assert.match(studio, /lessonGuideAvailable && <button className="guide-toggle"/);
+  assert.match(studio, /function guideControls\(\) \{[\s\S]*if \(!lessonGuideAvailable\) return null;[\s\S]*className="guide-demo-button"/);
   assert.match(studio, /step === lesson\.steps\.length - 1\) \{ setReflectionOpen\(true\); return; \}/);
   assert.match(studio, /step === lesson\.steps\.length - 1 \? "그림 다 그렸어요" : "다음"/);
   assert.ok(catalog.LESSONS.every((lesson) => lesson.steps.filter((step) => step.choices?.length >= 2).length >= 2)); assert.match(lessons, /내 마음대로/);

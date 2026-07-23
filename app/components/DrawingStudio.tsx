@@ -13,6 +13,9 @@ import { VoiceWhisperStatus } from "./VoiceWhisper";
 
 const PALETTE = ["#1B3A57", "#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#8D6E63", "#F06292", "#4DD0E1", "#FFCC80", "#FFFFFF"];
 type Tool = "pen" | "crayon" | "eraser";
+type GuidePhase = "independent" | "demo" | "practice";
+type TracePoint = { x: number; y: number };
+type GuideTrace = TracePoint[];
 type ArtworkPayload = { id: string; title: string; topic: string; learningMode: string; lessonSlug: string | null; intent: string; document: DrawDocument; currentStep: number; revision: number; status: string };
 type CoachingChoice = { emoji: string; label: string; answer: string };
 type StudentCoaching = { question: string; choices: CoachingChoice[]; nextAction: string; observedElements: string[]; uncertain: boolean; growthEvent: string };
@@ -27,23 +30,117 @@ function renderDocument(canvas: HTMLCanvasElement, document: DrawDocument, size 
   for (const op of document.ops) renderDrawOperation(context, op, size);
 }
 
-function renderGuide(canvas: HTMLCanvasElement, lesson: Lesson | undefined, lessonStep = 0, aiShape: GuideStep["guideShape"] = "none") {
-  canvas.width = 1024; canvas.height = 1024;
-  const context = canvas.getContext("2d"); if (!context) return;
-  context.clearRect(0, 0, 1024, 1024); if (!lesson && aiShape === "none") return;
-  context.save(); context.strokeStyle = "#087EA8"; context.fillStyle = "#087EA8"; context.globalAlpha = 0.92; context.lineWidth = 9; context.setLineDash([20, 14]); context.lineCap = "round"; context.lineJoin = "round";
-  const circle = (x: number, y: number, radius: number) => { context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2); context.stroke(); };
-  const line = (...points: number[]) => { context.beginPath(); context.moveTo(points[0], points[1]); for (let i = 2; i < points.length; i += 2) context.lineTo(points[i], points[i + 1]); context.stroke(); };
-  for (const mark of lesson?.guide.filter((item) => item.step === lessonStep + 1) ?? []) {
-    if (mark.kind === "line") line(...mark.points.flatMap(([x, y]) => [x * 1024, y * 1024]));
-    if (mark.kind === "ellipse") { context.beginPath(); context.ellipse(mark.x * 1024, mark.y * 1024, mark.rx * 1024, mark.ry * 1024, 0, 0, Math.PI * 2); context.stroke(); }
-    if (mark.kind === "rect") context.strokeRect(mark.x * 1024, mark.y * 1024, mark.width * 1024, mark.height * 1024);
-    if (mark.kind === "curve") { const [start, first, second, end] = mark.points; context.beginPath(); context.moveTo(start[0] * 1024, start[1] * 1024); context.bezierCurveTo(first[0] * 1024, first[1] * 1024, second[0] * 1024, second[1] * 1024, end[0] * 1024, end[1] * 1024); context.stroke(); }
+function sampleLine(points: Array<[number, number]>) {
+  const trace: GuideTrace = [];
+  for (let index = 1; index < points.length; index += 1) {
+    const [startX, startY] = points[index - 1]; const [endX, endY] = points[index];
+    const distance = Math.hypot(endX - startX, endY - startY); const segments = Math.max(8, Math.ceil(distance * 90));
+    for (let segment = index === 1 ? 0 : 1; segment <= segments; segment += 1) {
+      const amount = segment / segments;
+      trace.push({ x: (startX + (endX - startX) * amount) * 1024, y: (startY + (endY - startY) * amount) * 1024 });
+    }
   }
-  if (!lesson && aiShape === "line") line(260, 520, 764, 520);
-  if (!lesson && aiShape === "circle") circle(512, 512, 230);
-  if (!lesson && aiShape === "triangle") line(512, 250, 270, 760, 754, 760, 512, 250);
-  if (!lesson && aiShape === "rectangle") context.strokeRect(290, 300, 444, 410);
+  return trace;
+}
+
+function sampleEllipse(x: number, y: number, rx: number, ry: number) {
+  const trace: GuideTrace = [];
+  for (let segment = 0; segment <= 96; segment += 1) {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * segment) / 96;
+    trace.push({ x: (x + Math.cos(angle) * rx) * 1024, y: (y + Math.sin(angle) * ry) * 1024 });
+  }
+  return trace;
+}
+
+function sampleCurve(points: [[number, number], [number, number], [number, number], [number, number]]) {
+  const trace: GuideTrace = []; const [start, first, second, end] = points;
+  for (let segment = 0; segment <= 96; segment += 1) {
+    const amount = segment / 96; const remaining = 1 - amount;
+    trace.push({
+      x: (remaining ** 3 * start[0] + 3 * remaining ** 2 * amount * first[0] + 3 * remaining * amount ** 2 * second[0] + amount ** 3 * end[0]) * 1024,
+      y: (remaining ** 3 * start[1] + 3 * remaining ** 2 * amount * first[1] + 3 * remaining * amount ** 2 * second[1] + amount ** 3 * end[1]) * 1024,
+    });
+  }
+  return trace;
+}
+
+function guideTraces(lesson: Lesson | undefined, lessonStep = 0, aiShape: GuideStep["guideShape"] = "none") {
+  const traces: GuideTrace[] = [];
+  for (const mark of lesson?.guide.filter((item) => item.step === lessonStep + 1) ?? []) {
+    if (mark.kind === "line") traces.push(sampleLine(mark.points));
+    if (mark.kind === "ellipse") traces.push(sampleEllipse(mark.x, mark.y, mark.rx, mark.ry));
+    if (mark.kind === "rect") traces.push(sampleLine([[mark.x, mark.y], [mark.x + mark.width, mark.y], [mark.x + mark.width, mark.y + mark.height], [mark.x, mark.y + mark.height], [mark.x, mark.y]]));
+    if (mark.kind === "curve") traces.push(sampleCurve(mark.points));
+  }
+  if (!lesson && aiShape === "line") traces.push(sampleLine([[.25, .51], [.75, .51]]));
+  if (!lesson && aiShape === "circle") traces.push(sampleEllipse(.5, .5, .225, .225));
+  if (!lesson && aiShape === "triangle") traces.push(sampleLine([[.5, .24], [.26, .74], [.74, .74], [.5, .24]]));
+  if (!lesson && aiShape === "rectangle") traces.push(sampleLine([[.28, .29], [.72, .29], [.72, .7], [.28, .7], [.28, .29]]));
+  return traces.filter((trace) => trace.length > 1);
+}
+
+function traceLength(trace: GuideTrace) {
+  let length = 0;
+  for (let index = 1; index < trace.length; index += 1) length += Math.hypot(trace[index].x - trace[index - 1].x, trace[index].y - trace[index - 1].y);
+  return length;
+}
+
+function drawTrace(context: CanvasRenderingContext2D, trace: GuideTrace, distance = Number.POSITIVE_INFINITY) {
+  if (trace.length < 2) return { point: trace[0], previous: trace[0] };
+  context.beginPath(); context.moveTo(trace[0].x, trace[0].y);
+  let travelled = 0; let point = trace[0]; let previous = trace[0];
+  for (let index = 1; index < trace.length; index += 1) {
+    const start = trace[index - 1]; const end = trace[index]; const segment = Math.hypot(end.x - start.x, end.y - start.y);
+    if (travelled + segment >= distance) {
+      const amount = segment > 0 ? Math.max(0, Math.min(1, (distance - travelled) / segment)) : 0;
+      point = { x: start.x + (end.x - start.x) * amount, y: start.y + (end.y - start.y) * amount };
+      previous = start; context.lineTo(point.x, point.y); break;
+    }
+    context.lineTo(end.x, end.y); previous = start; point = end; travelled += segment;
+  }
+  context.stroke();
+  return { point, previous };
+}
+
+function drawStartMarker(context: CanvasRenderingContext2D, trace: GuideTrace) {
+  const start = trace[0]; const next = trace[Math.min(4, trace.length - 1)];
+  context.save(); context.setLineDash([]); context.globalAlpha = 1;
+  context.fillStyle = "#43A047"; context.beginPath(); context.arc(start.x, start.y, 18, 0, Math.PI * 2); context.fill();
+  const angle = Math.atan2(next.y - start.y, next.x - start.x);
+  context.translate(start.x + Math.cos(angle) * 40, start.y + Math.sin(angle) * 40); context.rotate(angle);
+  context.fillStyle = "#43A047"; context.beginPath(); context.moveTo(13, 0); context.lineTo(-9, -10); context.lineTo(-9, 10); context.closePath(); context.fill();
+  context.restore();
+}
+
+function drawPencil(context: CanvasRenderingContext2D, point: TracePoint, previous: TracePoint) {
+  const angle = Math.atan2(point.y - previous.y, point.x - previous.x);
+  context.save(); context.translate(point.x, point.y); context.rotate(angle);
+  context.shadowColor = "rgba(26,59,92,.24)"; context.shadowBlur = 12; context.shadowOffsetY = 6;
+  context.fillStyle = "#FDD835"; context.strokeStyle = "#B88200"; context.lineWidth = 3; context.setLineDash([]);
+  context.beginPath(); context.roundRect(-66, -17, 55, 34, 8); context.fill(); context.stroke();
+  context.fillStyle = "#F2B8B5"; context.fillRect(-66, -17, 15, 34);
+  context.fillStyle = "#F5D2A5"; context.beginPath(); context.moveTo(-11, -17); context.lineTo(4, 0); context.lineTo(-11, 17); context.closePath(); context.fill(); context.stroke();
+  context.fillStyle = "#1B3A57"; context.beginPath(); context.moveTo(-1, -4); context.lineTo(7, 0); context.lineTo(-1, 4); context.closePath(); context.fill();
+  context.restore();
+}
+
+function renderGuideFrame(canvas: HTMLCanvasElement, traces: GuideTrace[], phase: GuidePhase, progress = 0) {
+  if (canvas.width !== 1024) canvas.width = 1024; if (canvas.height !== 1024) canvas.height = 1024;
+  const context = canvas.getContext("2d"); if (!context) return;
+  context.clearRect(0, 0, 1024, 1024); if (phase === "independent" || !traces.length) return;
+  context.save(); context.strokeStyle = "#087EA8"; context.globalAlpha = 0.92; context.lineWidth = 9; context.setLineDash([20, 14]); context.lineCap = "round"; context.lineJoin = "round";
+  if (phase === "demo") context.globalAlpha = .58;
+  for (const trace of traces) { drawTrace(context, trace); drawStartMarker(context, trace); }
+  if (phase === "demo") {
+    const lengths = traces.map(traceLength); const target = lengths.reduce((sum, length) => sum + length, 0) * Math.max(0, Math.min(1, progress));
+    let remaining = target; let pencil = { point: traces[0][0], previous: traces[0][0] };
+    context.strokeStyle = "#FDD835"; context.globalAlpha = .96; context.lineWidth = 16; context.setLineDash([]);
+    for (let index = 0; index < traces.length; index += 1) {
+      if (remaining <= 0) break;
+      const distance = Math.min(lengths[index], remaining); pencil = drawTrace(context, traces[index], distance); remaining -= lengths[index];
+    }
+    drawPencil(context, pencil.point, pencil.previous);
+  }
   context.restore();
 }
 
@@ -63,7 +160,7 @@ export function DrawingStudio() {
   const [artwork, setArtwork] = useState<ArtworkPayload | null>(null); const [documentState, setDocumentState] = useState<DrawDocument>(emptyDocument());
   const lesson = useMemo(() => params.id === "new" ? requestedLesson : lessonBySlug(artwork?.lessonSlug), [artwork?.lessonSlug, params.id, requestedLesson]);
   const [tool, setTool] = useState<Tool>("pen"); const [color, setColor] = useState(PALETTE[0]); const [width, setWidth] = useState<8 | 16 | 30>(16);
-  const [redo, setRedo] = useState<DrawOp[]>([]); const [guideVisible, setGuideVisible] = useState(false); const [saveState, setSaveState] = useState("불러오는 중"); const [editVersion, setEditVersion] = useState(0);
+  const [redo, setRedo] = useState<DrawOp[]>([]); const [guidePhase, setGuidePhase] = useState<GuidePhase>("independent"); const [guideDemoRun, setGuideDemoRun] = useState(0); const [guidePracticeTried, setGuidePracticeTried] = useState(false); const [saveState, setSaveState] = useState("불러오는 중"); const [editVersion, setEditVersion] = useState(0);
   const [reflectionOpen, setReflectionOpen] = useState(false); const [favoritePart, setFavoritePart] = useState(""); const [favoriteReason, setFavoriteReason] = useState(""); const [message, setMessage] = useState("");
   const [teacherViewing, setTeacherViewing] = useState(false); const [conflictRevision, setConflictRevision] = useState<number | null>(null); const [conflictDraft, setConflictDraft] = useState<QueuedArtworkDraft | null>(null);
   const [grimiOpen, setGrimiOpen] = useState(false); const [grimiLoading, setGrimiLoading] = useState(false); const [grimiError, setGrimiError] = useState("");
@@ -72,7 +169,7 @@ export function DrawingStudio() {
   const [timelapseOpen, setTimelapseOpen] = useState(false);
   const [runSerial] = useState(createSerialTaskQueue);
   const [saveBranchId] = useState(() => `branch_${crypto.randomUUID().replaceAll("-", "")}`);
-  const canvasRef = useRef<HTMLCanvasElement>(null); const guideRef = useRef<HTMLCanvasElement>(null); const activePoints = useRef(new Map<number, Array<{ x: number; y: number; pressure: number }>>()); const revisionRef = useRef(0); const initialized = useRef(false); const saveTimer = useRef<number | undefined>(undefined); const conflictDraftRef = useRef<QueuedArtworkDraft | null>(null); const completingRef = useRef(false); const documentStateRef = useRef(documentState); const currentStepRef = useRef(0); const loadingKeyRef = useRef<string | null>(null); const hydratedKeyRef = useRef<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null); const guideRef = useRef<HTMLCanvasElement>(null); const guideAnimationRef = useRef<number | null>(null); const activePoints = useRef(new Map<number, Array<{ x: number; y: number; pressure: number }>>()); const revisionRef = useRef(0); const initialized = useRef(false); const saveTimer = useRef<number | undefined>(undefined); const conflictDraftRef = useRef<QueuedArtworkDraft | null>(null); const completingRef = useRef(false); const documentStateRef = useRef(documentState); const currentStepRef = useRef(0); const loadingKeyRef = useRef<string | null>(null); const hydratedKeyRef = useRef<string | null>(null);
 
   const createOrLoad = useCallback(async () => {
     const loadKey = params.id === "new" ? `new:${search.toString()}` : params.id;
@@ -113,8 +210,66 @@ export function DrawingStudio() {
   useEffect(() => { documentStateRef.current = documentState; if (canvasRef.current) renderDocument(canvasRef.current, documentState); }, [documentState]);
   useEffect(() => { currentStepRef.current = artwork?.currentStep ?? 0; }, [artwork?.currentStep]);
   const aiGuideShape = aiGuide?.steps[aiGuideStep]?.guideShape ?? "none";
-  const lessonGuideAvailable = Boolean(lesson?.guide.some((item) => item.step === (artwork?.currentStep ?? 0) + 1));
-  useEffect(() => { if (guideRef.current) renderGuide(guideRef.current, aiGuide ? undefined : lesson, artwork?.currentStep ?? 0, aiGuideShape); }, [aiGuide, aiGuideShape, artwork?.currentStep, lesson]);
+  const currentGuideTraces = useMemo(() => guideTraces(aiGuide ? undefined : lesson, artwork?.currentStep ?? 0, aiGuideShape), [aiGuide, aiGuideShape, artwork?.currentStep, lesson]);
+  const lessonGuideAvailable = currentGuideTraces.length > 0;
+  const guideSourceKey = aiGuide ? `ai:${aiGuide.eventId}:${aiGuideStep}` : lesson ? `lesson:${lesson.slug}:${artwork?.currentStep ?? 0}` : "none";
+  const markCurrentGuideSeen = useCallback(() => {
+    if (lesson?.stage !== 1 || aiGuide || guideSourceKey === "none") return;
+    const profile = activeProfile(); if (!profile) return;
+    try { localStorage.setItem(`wiggle:guide-demo:v1:${profile.studentId}:${guideSourceKey}`, "seen"); } catch {}
+  }, [aiGuide, guideSourceKey, lesson?.stage]);
+  const startGuideDemo = useCallback(() => {
+    if (!lessonGuideAvailable) return;
+    setGuidePracticeTried(false); setGuidePhase("demo"); setGuideDemoRun((value) => value + 1);
+  }, [lessonGuideAvailable]);
+  const chooseIndependentDrawing = useCallback(() => {
+    markCurrentGuideSeen(); setGuidePhase("independent");
+  }, [markCurrentGuideSeen]);
+  const stopGuideDemoForPractice = useCallback(() => {
+    markCurrentGuideSeen(); setGuidePhase("practice");
+  }, [markCurrentGuideSeen]);
+
+  useEffect(() => {
+    setGuidePracticeTried(false);
+    if (!lessonGuideAvailable) { setGuidePhase("independent"); return; }
+    if (lesson?.stage === 1 && !aiGuide) {
+      const profile = activeProfile(); let seen = true;
+      try { seen = !profile || localStorage.getItem(`wiggle:guide-demo:v1:${profile.studentId}:${guideSourceKey}`) === "seen"; } catch {}
+      if (!seen) { setGuidePhase("demo"); setGuideDemoRun((value) => value + 1); return; }
+    }
+    setGuidePhase("independent");
+  }, [aiGuide, guideSourceKey, lesson?.stage, lessonGuideAvailable]);
+
+  useEffect(() => {
+    if (guideAnimationRef.current !== null) cancelAnimationFrame(guideAnimationRef.current);
+    const canvas = guideRef.current; if (!canvas) return;
+    if (guidePhase !== "demo") { renderGuideFrame(canvas, currentGuideTraces, guidePhase); return; }
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (motionPreference.matches) {
+      renderGuideFrame(canvas, currentGuideTraces, "practice");
+      markCurrentGuideSeen(); setGuidePhase("practice"); return;
+    }
+    const duration = Math.min(3200, 1700 + currentGuideTraces.length * 450); const startedAt = performance.now();
+    const stopForReducedMotion = (event: MediaQueryListEvent) => {
+      if (!event.matches) return;
+      if (guideAnimationRef.current !== null) cancelAnimationFrame(guideAnimationRef.current);
+      guideAnimationRef.current = null; renderGuideFrame(canvas, currentGuideTraces, "practice");
+      markCurrentGuideSeen(); setGuidePhase("practice");
+    };
+    motionPreference.addEventListener("change", stopForReducedMotion);
+    const animate = (now: number) => {
+      const linear = Math.min(1, (now - startedAt) / duration); const eased = 1 - (1 - linear) ** 3;
+      renderGuideFrame(canvas, currentGuideTraces, "demo", eased);
+      if (linear < 1) { guideAnimationRef.current = requestAnimationFrame(animate); return; }
+      guideAnimationRef.current = null; markCurrentGuideSeen(); setGuidePhase("practice");
+    };
+    guideAnimationRef.current = requestAnimationFrame(animate);
+    return () => {
+      motionPreference.removeEventListener("change", stopForReducedMotion);
+      if (guideAnimationRef.current !== null) cancelAnimationFrame(guideAnimationRef.current);
+      guideAnimationRef.current = null;
+    };
+  }, [currentGuideTraces, guideDemoRun, guidePhase, markCurrentGuideSeen]);
   useEffect(() => { const poll = async () => { try { const response = await studentFetch("/api/student"); const data = await response.json() as { messages?: Array<{ body: string }>; teacherViewing?: boolean }; setMessage(data.messages?.at(-1)?.body ?? ""); setTeacherViewing(Boolean(data.teacherViewing)); } catch {} }; void poll(); const timer = window.setInterval(poll, 5000); return () => clearInterval(timer); }, []);
 
   const performSave = useCallback(async (nextDocument: DrawDocument, options?: SaveOptions) => {
@@ -191,7 +346,7 @@ export function DrawingStudio() {
         if (restored) {
           conflictDraftRef.current = restored; setConflictDraft(restored); setConflictRevision(restored.save.conflictRevision ?? null);
           documentStateRef.current = restored.document; currentStepRef.current = restored.currentStep;
-          setDocumentState(restored.document); setRedo([]); setEditVersion(0); setGuideVisible(false);
+          setDocumentState(restored.document); setRedo([]); setEditVersion(0); setGuidePhase("independent");
           setArtwork((current) => current ? { ...current, currentStep: restored.currentStep } : current);
           setSaveState(restored.save.conflict ? "저장 충돌 초안을 복구했어요" : "기기 초안의 전송을 기다리고 있어요");
         } else if (flushed.flushed > 0) {
@@ -212,6 +367,7 @@ export function DrawingStudio() {
   function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) { const rect = event.currentTarget.getBoundingClientRect(); return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)), pressure: event.pressure || 0.5 }; }
   function pointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (conflictDraftRef.current) { setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return; }
+    if (guidePhase === "demo") stopGuideDemoForPractice();
     event.currentTarget.setPointerCapture(event.pointerId); activePoints.current.set(event.pointerId, [canvasPoint(event)]);
   }
   function pointerMove(event: ReactPointerEvent<HTMLCanvasElement>) { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; const points = activePoints.current.get(event.pointerId); if (!points) return; const next = canvasPoint(event); const last = points.at(-1); if (!last || Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= 2.5) points.push(next); }
@@ -224,7 +380,9 @@ export function DrawingStudio() {
     }
     if (!points?.length) return; const operationId = crypto.randomUUID().replaceAll("-", "");
     const op: DrawOp = { opId: `op_${operationId}`, clientOpId: `client_${operationId}`, type: "stroke", at: new Date().toISOString(), tool, color: tool === "eraser" ? undefined : color, width, points };
-    activePoints.current.delete(event.pointerId); setDocumentState((current) => ({ ...current, ops: [...current.ops, op] })); setRedo([]); setEditVersion((value) => value + 1); event.currentTarget.releasePointerCapture(event.pointerId);
+    activePoints.current.delete(event.pointerId); setDocumentState((current) => ({ ...current, ops: [...current.ops, op] })); setRedo([]); setEditVersion((value) => value + 1);
+    if ((guidePhase === "practice" || guidePhase === "demo") && lessonGuideAvailable && tool !== "eraser") setGuidePracticeTried(true);
+    event.currentTarget.releasePointerCapture(event.pointerId);
   }
   function undo() { if (conflictDraftRef.current) return; setDocumentState((current) => { const op = current.ops.at(-1); if (!op) return current; setRedo((items) => [...items, op]); setEditVersion((value) => value + 1); return { ...current, ops: current.ops.slice(0, -1) }; }); }
   function redoLast() { if (conflictDraftRef.current) return; setRedo((items) => { const op = items.at(-1); if (!op) return items; setDocumentState((current) => ({ ...current, ops: [...current.ops, op] })); setEditVersion((value) => value + 1); return items.slice(0, -1); }); }
@@ -253,7 +411,7 @@ export function DrawingStudio() {
 
   async function askGrimi() {
     if (!artwork || !canvasRef.current || grimiLoading) return;
-    setGrimiOpen(true); setGrimiLoading(true); setGrimiError(""); setCoaching(null); setAnswer(""); setAnswerLabel(""); setAnswerSaved(false); setAiGuide(null); setGuideVisible(false);
+    setGrimiOpen(true); setGrimiLoading(true); setGrimiError(""); setCoaching(null); setAnswer(""); setAnswerLabel(""); setAnswerSaved(false); setAiGuide(null); setGuidePhase("independent");
     window.clearTimeout(saveTimer.current);
     const saved = await save(documentState); if (!saved) { setGrimiLoading(false); setGrimiError("그림을 먼저 저장한 뒤 다시 불러 줘."); return; }
     try {
@@ -267,14 +425,14 @@ export function DrawingStudio() {
 
   async function requestAiGuide() {
     if (!artwork || !canvasRef.current || guideTopic.trim().length < 2 || grimiLoading) return;
-    setGrimiLoading(true); setGrimiError(""); setCoaching(null); setAnswer(""); setGuideVisible(false);
+    setGrimiLoading(true); setGrimiError(""); setCoaching(null); setAnswer(""); setGuidePhase("independent");
     window.clearTimeout(saveTimer.current);
     const saved = await save(documentState); if (!saved) { setGrimiLoading(false); setGrimiError("그림을 먼저 저장한 뒤 다시 해 줘."); return; }
     try {
       const response = await studentFetch("/api/ai/coaching", { method: "POST", body: JSON.stringify({ action: "guide", requestId: coachingRequestId(), artworkId: artwork.id, expectedRevision: revisionRef.current, document: documentState, imageDataUrl: imageData(canvasRef.current, 1024), requestedTopic: guideTopic, childChoice }) });
       const data = await response.json() as { error?: string; eventId?: string; guide?: AiGuide };
       if (!response.ok || !data.eventId || !data.guide) throw new Error(data.error ?? "가이드를 만들지 못했어요.");
-      setAiGuide({ ...data.guide, eventId: data.eventId }); setAiGuideStep(0); setGuideVisible(false);
+      setAiGuide({ ...data.guide, eventId: data.eventId }); setAiGuideStep(0); setGuidePhase("independent");
     } catch (cause) { setGrimiError(cause instanceof Error ? cause.message : "가이드를 만들지 못했어요."); }
     finally { setGrimiLoading(false); }
   }
@@ -292,7 +450,7 @@ export function DrawingStudio() {
 
   function chooseGuideStep(next: number) {
     if (!aiGuide || conflictDraftRef.current) { if (conflictDraftRef.current) setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return; }
-    const bounded = Math.max(0, Math.min(aiGuide.steps.length - 1, next)); setAiGuideStep(bounded); setGuideVisible(false);
+    const bounded = Math.max(0, Math.min(aiGuide.steps.length - 1, next)); setAiGuideStep(bounded); setGuidePhase("independent");
     if (artwork?.currentStep !== bounded) { currentStepRef.current = bounded; setEditVersion((value) => value + 1); }
     setArtwork((value) => value && ({ ...value, currentStep: bounded }));
   }
@@ -301,11 +459,11 @@ export function DrawingStudio() {
     if (!artwork || !lesson || conflictDraftRef.current) { if (conflictDraftRef.current) setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return; }
     const next = Math.max(0, Math.min(lesson.steps.length - 1, artwork.currentStep + delta));
     if (next === artwork.currentStep) return;
-    currentStepRef.current = next; setGuideVisible(false); setEditVersion((value) => value + 1); setArtwork({ ...artwork, currentStep: next });
+    currentStepRef.current = next; setGuidePhase("independent"); setEditVersion((value) => value + 1); setArtwork({ ...artwork, currentStep: next });
   }
 
   function closeGrimiState() {
-    setGrimiOpen(false); setCoaching(null); setAiGuide(null); setGuideVisible(false); setGrimiError("");
+    setGrimiOpen(false); setCoaching(null); setAiGuide(null); setGuidePhase("independent"); setGrimiError("");
   }
 
   async function finishGuide(outcome: "completed" | "free_exit") {
@@ -328,8 +486,25 @@ export function DrawingStudio() {
     closeGrimiState();
   }
 
+  function guideControls() {
+    if (!lessonGuideAvailable) return null;
+    return <div className="guide-actions" aria-label="그리기 시범과 점선">
+      <button className="guide-demo-button" type="button" aria-pressed={guidePhase === "demo"} disabled={Boolean(conflictDraft)} onClick={() => guidePhase === "demo" ? stopGuideDemoForPractice() : startGuideDemo()}>
+        {guidePhase === "demo" ? "시범 멈추기" : guidePhase === "practice" ? "✏️ 다시 보기" : "✏️ 먼저 보여줘"}
+      </button>
+      {guidePhase === "practice"
+        ? <button className="guide-toggle" type="button" disabled={Boolean(conflictDraft)} onClick={chooseIndependentDrawing}>{guidePracticeTried ? "이제 혼자 해볼래" : "점선 숨기기"}</button>
+        : guidePhase === "independent" && <button className="guide-toggle" type="button" disabled={Boolean(conflictDraft)} onClick={() => setGuidePhase("practice")}>점선만 보기</button>}
+    </div>;
+  }
+
   if (!artwork) return <main className="drawing-loading">{saveState}</main>;
   const step = lesson ? Math.min(artwork.currentStep, lesson.steps.length - 1) : 0;
+  const guideNotice = guidePhase === "demo"
+    ? "연필이 먼저 보여줄게!"
+    : guidePhase === "practice"
+      ? guidePracticeTried ? "한 번 따라 했어! 이제 점선 없이도 해볼까?" : "이제 네 차례야. 초록 점에서 시작해 봐."
+      : "";
   return <main className="studio"><header className="studio-header"><a className="icon-button" href="/student" aria-label="그림 나가기">←</a><Logo compact /><div className="artwork-name"><b>{artwork.title}</b><small>{saveState}</small></div>{lesson && !aiGuide && <span className="step-count">{step + 1}/{lesson.steps.length}</span>}<button className="button ghost compact" onClick={() => setTimelapseOpen(true)}>과정 보기</button><button className="button grimi-button compact" disabled={grimiLoading || Boolean(conflictDraft)} onClick={askGrimi}>✨ 그리미 부르기</button><button className="button primary compact" disabled={Boolean(conflictDraft)} onClick={() => setReflectionOpen(true)}>다 그렸어요</button></header>
     {conflictDraft && <div className="save-conflict" role="alert"><b>{conflictDraft.save.conflict ? "다른 기기 저장과 겹쳤어요." : "아직 서버에 보내지 못한 그림이 있어요."}</b><span>{conflictDraft.save.conflict ? "이 작품의 충돌 초안을 복구했어요." : "인터넷이 연결되면 다시 저장해요."} 지금은 편집을 멈추고 새 사본으로도 보관할 수 있어요.{conflictRevision !== null ? ` (서버 버전 ${conflictRevision})` : ""}</span>{!conflictDraft.save.conflict && <button onClick={flushCurrentArtwork}>다시 저장</button>}<button onClick={saveAsCopy}>새 사본으로 저장</button></div>}
     {teacherViewing && <div className="teacher-viewing" role="status">선생님이 지금 내 그림을 보고 있어요.</div>}
@@ -339,11 +514,11 @@ export function DrawingStudio() {
         {grimiLoading && <div className="grimi-thinking"><span>●</span><span>●</span><span>●</span><p>그림을 보고 있어요…</p></div>}
         {grimiError && <p className="error-box">{grimiError}</p>}
         {coaching && !grimiLoading && <div className="grimi-coaching"><p className="eyebrow">그리미가 궁금해요</p><h2>{coaching.question}</h2><div className="grimi-chips">{coaching.choices.map((choice) => <button aria-pressed={answer === choice.answer} onClick={() => { setAnswer(choice.answer); setAnswerLabel(choice.label); setAnswerSaved(false); }} key={choice.label}><span>{choice.emoji}</span>{choice.label}</button>)}</div><label className="direct-answer">직접 말하기<input maxLength={80} value={answerLabel ? "" : answer} onChange={(event) => { setAnswer(event.target.value); setAnswerLabel(""); setAnswerSaved(false); }} placeholder="내 생각을 짧게 적어도 돼요" /></label>{answer && <div className="next-action"><small>이제 그려 볼 일</small><b>{coaching.nextAction}</b><button className="button primary full" disabled={grimiLoading || answerSaved} onClick={recordCoachingAnswer}>{answerSaved ? "과정에 남겼어요" : "그린 뒤 ‘했어요’"}</button></div>}</div>}
-        {aiGuide && !grimiLoading && <div className="ai-guide"><p className="eyebrow">{aiGuide.topic} · {aiGuideStep + 1}/{aiGuide.steps.length}</p><h2>{aiGuide.steps[aiGuideStep].instruction}</h2>{aiGuide.steps[aiGuideStep].openChoice && <div className="grimi-chips">{aiGuide.steps[aiGuideStep].choices.map((choice) => <button aria-pressed={childChoice === choice} onClick={() => setChildChoice(choice)} key={choice}>{choice}</button>)}</div>}{aiGuideShape !== "none" && <button className="guide-toggle" aria-pressed={guideVisible} onClick={() => setGuideVisible((value) => !value)}>{guideVisible ? "점선 숨기기" : "점선 보여줘"}</button>}<div className="step-actions"><button disabled={Boolean(conflictDraft) || aiGuideStep === 0} onClick={() => chooseGuideStep(aiGuideStep - 1)}>이전</button><button disabled={Boolean(conflictDraft)} onClick={() => aiGuideStep === aiGuide.steps.length - 1 ? void finishGuide("completed") : chooseGuideStep(aiGuideStep + 1)}>{aiGuideStep === aiGuide.steps.length - 1 ? "이제 내 마음대로" : "다음"}</button></div></div>}
+        {aiGuide && !grimiLoading && <div className="ai-guide"><p className="eyebrow">{aiGuide.topic} · {aiGuideStep + 1}/{aiGuide.steps.length}</p><h2>{aiGuide.steps[aiGuideStep].instruction}</h2>{aiGuide.steps[aiGuideStep].openChoice && <div className="grimi-chips">{aiGuide.steps[aiGuideStep].choices.map((choice) => <button aria-pressed={childChoice === choice} onClick={() => setChildChoice(choice)} key={choice}>{choice}</button>)}</div>}{guideControls()}<div className="step-actions"><button disabled={Boolean(conflictDraft) || aiGuideStep === 0} onClick={() => chooseGuideStep(aiGuideStep - 1)}>이전</button><button disabled={Boolean(conflictDraft)} onClick={() => aiGuideStep === aiGuide.steps.length - 1 ? void finishGuide("completed") : chooseGuideStep(aiGuideStep + 1)}>{aiGuideStep === aiGuide.steps.length - 1 ? "이제 내 마음대로" : "다음"}</button></div></div>}
         {!aiGuide && !grimiLoading && <div className="guide-request"><label>그리고 싶은 게 있어?<input maxLength={60} value={guideTopic} onChange={(event) => setGuideTopic(event.target.value)} placeholder="예: 우주 자전거" /></label><button className="button secondary full" disabled={guideTopic.trim().length < 2} onClick={requestAiGuide}>단계 가이드 만들기</button></div>}
         <button className="text-button free-exit" onClick={dismissGrimi}>그냥 내 마음대로 그릴래</button>
-      </aside> : lesson && <aside className="step-panel"><div className="reference-tile"><span>{lesson.emoji}</span><small>{lesson.topic} {lesson.mode === "observe" ? "관찰하기" : "그려 보기"}</small></div><p className="eyebrow">지금 할 일</p><h2>{lesson.steps[step].instruction}</h2>{lesson.steps[step].choices?.length && <div className="choice-chips">{lesson.steps[step].choices.map((choice) => <button aria-pressed={childChoice === choice} onClick={() => setChildChoice(choice)} key={choice}>{choice}</button>)}</div>}{lessonGuideAvailable && <button className="guide-toggle" aria-pressed={guideVisible} onClick={() => setGuideVisible((value) => !value)}>{guideVisible ? "점선 숨기기" : "점선 보여줘"}</button>}<div className="step-actions"><button disabled={Boolean(conflictDraft) || step === 0} onClick={() => changeLessonStep(-1)}>이전</button><button disabled={Boolean(conflictDraft)} onClick={() => { if (step === lesson.steps.length - 1) { setReflectionOpen(true); return; } changeLessonStep(1); }}>{step === lesson.steps.length - 1 ? "그림 다 그렸어요" : "다음"}</button></div><button className="text-button" onClick={() => setGuideVisible(false)}>그냥 그릴래</button></aside>}
-      <section className="canvas-zone"><div className="canvas-wrap"><canvas ref={guideRef} className={guideVisible && (aiGuide ? aiGuideShape !== "none" : lessonGuideAvailable) ? "guide-canvas" : "guide-canvas hidden"} aria-hidden="true" /><canvas ref={canvasRef} className="draw-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} aria-disabled={Boolean(conflictDraft)} aria-label="그림 그리는 도화지" /></div></section>
+      </aside> : lesson && <aside className="step-panel"><div className="reference-tile"><span>{lesson.emoji}</span><small>{lesson.topic} {lesson.mode === "observe" ? "관찰하기" : "그려 보기"}</small></div><p className="eyebrow">지금 할 일</p><h2>{lesson.steps[step].instruction}</h2>{lesson.steps[step].choices?.length && <div className="choice-chips">{lesson.steps[step].choices.map((choice) => <button aria-pressed={childChoice === choice} onClick={() => setChildChoice(choice)} key={choice}>{choice}</button>)}</div>}{guideControls()}<div className="step-actions"><button disabled={Boolean(conflictDraft) || step === 0} onClick={() => changeLessonStep(-1)}>이전</button><button disabled={Boolean(conflictDraft)} onClick={() => { if (step === lesson.steps.length - 1) { setReflectionOpen(true); return; } changeLessonStep(1); }}>{step === lesson.steps.length - 1 ? "그림 다 그렸어요" : "다음"}</button></div><button className="text-button" onClick={chooseIndependentDrawing}>그냥 그릴래</button></aside>}
+      <section className="canvas-zone"><div className="canvas-wrap">{guideNotice && <div className="guide-notice" role="status" aria-live="polite">{guidePhase === "demo" ? "✏️" : "🟢"} {guideNotice}</div>}<canvas ref={guideRef} className={guidePhase !== "independent" && lessonGuideAvailable ? "guide-canvas" : "guide-canvas hidden"} aria-hidden="true" /><canvas ref={canvasRef} className="draw-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} aria-disabled={Boolean(conflictDraft)} aria-label="그림 그리는 도화지" /></div></section>
       <aside className="tool-panel" aria-label="그리기 도구 모음"><div className="tool-group" role="group" aria-label="그리기 도구"><button type="button" aria-pressed={tool === "pen"} onClick={() => setTool("pen")}><span aria-hidden="true">✏️</span>연필</button><button type="button" aria-pressed={tool === "crayon"} onClick={() => setTool("crayon")}><span aria-hidden="true">🖍️</span>크레용</button><button type="button" aria-pressed={tool === "eraser"} onClick={() => setTool("eraser")}><span aria-hidden="true">▱</span>지우개</button></div><div className="width-row" role="group" aria-label="선 굵기">{([8, 16, 30] as const).map((value) => <button type="button" aria-label={`${value} 굵기`} aria-pressed={width === value} onClick={() => setWidth(value)} key={value}><i aria-hidden="true" style={{ width: Math.max(8, value * .72), height: Math.max(8, value * .72) }} /></button>)}</div><div className="palette" role="group" aria-label="색 고르기">{PALETTE.map((value) => <button type="button" aria-label={`${value} 색`} aria-pressed={color === value} onClick={() => { setColor(value); if (tool === "eraser") setTool("pen"); }} key={value} style={{ background: value }} />)}</div><div className="history-row" role="group" aria-label="그리기 기록"><button type="button" onClick={undo} disabled={Boolean(conflictDraft) || !documentState.ops.length}>↶ 되돌리기</button><button type="button" onClick={redoLast} disabled={Boolean(conflictDraft) || !redo.length}>↷ 다시하기</button></div></aside></div>
     {timelapseOpen && <TimelapsePlayer document={documentState} onClose={() => setTimelapseOpen(false)} />}
     {reflectionOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reflection-title"><section className="reflection-modal"><button className="modal-close" onClick={() => setReflectionOpen(false)} aria-label="닫기">×</button><span className="modal-emoji">🌟</span><h2 id="reflection-title">내 그림을 소개해 줘!</h2><label>가장 마음에 드는 곳은?<input maxLength={80} value={favoritePart} onChange={(event) => setFavoritePart(event.target.value)} placeholder="예: 무지개 꼬리" /></label><label>왜 마음에 들어?<textarea maxLength={180} value={favoriteReason} onChange={(event) => setFavoriteReason(event.target.value)} placeholder="내가 고른 색이 예뻐서" /></label><div className="modal-actions"><button className="button secondary" onClick={() => setReflectionOpen(false)}>조금 더 그릴래</button><button className="button primary" disabled={!favoritePart || !favoriteReason} onClick={complete}>작품 완성</button></div></section></div>}

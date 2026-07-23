@@ -33,7 +33,7 @@ test("mobile forms, actions and overlays honor iPhone zoom, touch and safe-area 
 
 test("mobile studio and teacher layouts finish in two rows without horizontal text overflow", async () => {
   const [css, studio, teacher] = await Promise.all([read("../app/globals.css"), read("../app/components/DrawingStudio.tsx"), read("../app/components/TeacherApp.tsx")]);
-  const finalMobile = css.slice(css.lastIndexOf("@media (max-width:720px)"), css.lastIndexOf("@media (max-width:460px)"));
+  const finalMobile = css.slice(css.lastIndexOf("@media (max-width:720px)"), css.lastIndexOf("@media (max-width:460px) and (orientation:portrait)"));
   assert.ok(css.lastIndexOf("grid-template-rows:calc(60px + env(safe-area-inset-top)) minmax(0,1fr)") > css.lastIndexOf("grid-template-rows:60px 1fr 92px"));
   assert.match(css, /\.canvas-message,\.save-conflict,\.teacher-viewing,\.voice-speaking \{[^}]*max-width:calc\(100vw - max\(12px,env\(safe-area-inset-left\)\) - max\(12px,env\(safe-area-inset-right\)\)\);[^}]*overflow-wrap:break-word;/);
   assert.match(css, /\.artwork-name b,\.artwork-name small \{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; \}/);
