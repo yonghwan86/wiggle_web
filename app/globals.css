@@ -68,8 +68,7 @@ legend small { color:var(--primary-dark); }
 .emoji-chip.selected,.picture-chip.selected { background:#dff7ff; border-color:var(--primary); transform:translateY(-2px); box-shadow:0 4px 0 var(--border); }
 .picture-chip { font-size:18px; font-weight:900; }
 .picture-chip:disabled { opacity:.48; cursor:not-allowed; }
-.legacy-password-toggle { display:flex; align-items:center; gap:9px; width:max-content; max-width:100%; margin:10px 0 13px; color:var(--secondary); font-size:13px; }
-.legacy-password-toggle input { width:22px; min-height:22px; margin:0; padding:0; }
+.legacy-password-action { min-height:44px; max-width:100%; white-space:normal; overflow-wrap:break-word; }
 .password-actions { display:flex; justify-content:flex-end; margin-top:10px; }
 .password-actions button:disabled { opacity:.45; cursor:not-allowed; }
 .password-preview { margin-top:12px; background:#fff9d7; padding:11px; border-radius:12px; text-align:center; font-size:22px; }
@@ -157,7 +156,7 @@ button { min-height:44px; touch-action:manipulation; }
 .width-row button,.history-row button,.student-tile>button,.family-link-ready button,.family-link-history button { min-height:44px; }
 .palette button { min-width:44px; min-height:44px; }
 .grimi-head>button { width:44px; height:44px; }
-.legacy-password-toggle,.family-consent-panel label:first-of-type { min-height:44px; }
+.legacy-password-action,.family-consent-panel label:first-of-type { min-height:44px; }
 .entry-top,.app-header,.teacher-header,.teacher-header>div,.room-heading,.student-identity,.student-identity div,.student-info,.student-info>div,.teacher-message p,.message-history span,.family-link-history span,.family-link-ready b,.family-link-ready span,.class-card,.activity-card>div,.lesson-card>div { min-width:0; }
 .student-info b,.student-info small,.room-heading b,.room-heading span,.teacher-header b,.teacher-message p,.message-history b,.message-history span,.family-link-history b,.family-link-history span,.class-card h2,.class-card p,.profile-button b,.profile-button small,.teacher-preview h2 { max-width:100%; }
 code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowrap; word-break:normal; overflow-wrap:normal; word-wrap:normal; }
