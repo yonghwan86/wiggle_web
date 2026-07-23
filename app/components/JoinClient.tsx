@@ -25,9 +25,10 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   const [selectedProfile, setSelectedProfile] = useState<DeviceProfile | null>(null);
   const [legacyPassword, setLegacyPassword] = useState(false);
   const [legacyOffer, setLegacyOffer] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState(false);
 
   useEffect(() => {
-    setPictures([]); setLegacyPassword(false); setLegacyOffer(false); setError("");
+    setPictures([]); setLegacyPassword(false); setLegacyOffer(false); setDuplicateWarning(false); setError("");
     const stored = deviceProfiles(); setProfiles(stored);
     if (!initialEntry && !recoveryToken && stored.length) setMode("profiles");
     if (activeProfile() && !initialEntry && !recoveryToken) setMode("profiles");
@@ -47,6 +48,7 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   function changePasswordLength(useLegacy: boolean) {
     setLegacyPassword(useLegacy);
     setLegacyOffer(false);
+    setDuplicateWarning(false);
     setPictures([]);
     setError("");
   }
@@ -55,6 +57,7 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
     setPictures([]);
     setLegacyPassword(false);
     setLegacyOffer(false);
+    setDuplicateWarning(false);
     setError("");
     setMode(nextMode);
   }
@@ -68,16 +71,20 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
     return <button type="button" className="text-button legacy-password-action" onClick={() => changePasswordLength(!legacyPassword)}>{legacyPassword ? "비밀번호 세 개로 돌아가기" : "비밀번호가 네 개였나요?"}</button>;
   }
 
-  async function submit() {
-    setError(""); setLegacyOffer(false); setBusy(true);
+  async function submit(allowDuplicate = false) {
+    setError(""); setLegacyOffer(false); setDuplicateWarning(false); setBusy(true);
     try {
       const action = mode === "unlock" ? "switchProfile" : mode === "recover" ? "recover" : "join";
       const payload = action === "switchProfile" ? { action, studentId: selectedProfile?.studentId, picturePassword: pictures } : action === "join"
-        ? { action, entry, nickname, animal, picturePassword: pictures }
+        ? { action, entry, nickname, animal, picturePassword: pictures, allowDuplicate }
         : recoveryToken ? { action, personalQrToken: recoveryToken } : { action, classCode: entry, nickname, animal, picturePassword: pictures };
       const response = await fetch("/api/student", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), cache: "no-store" });
       setLegacyOffer(shouldOfferLegacyPicturePassword({ status: response.status, mode, hasPersonalQrToken: Boolean(recoveryToken), legacyMode: legacyPassword, submittedLength: pictures.length }));
       const data = await readStudentEntryResponse(response);
+      if (response.status === 409 && data.code === "PROFILE_EXISTS" && action === "join") {
+        setDuplicateWarning(true);
+        return;
+      }
       if (!response.ok || !data.student || !data.deviceToken || !data.expiresAt) {
         throw new StudentEntryResponseError(data.error ?? "입장할 수 없어요.");
       }
@@ -93,7 +100,7 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   }
 
   if (mode === "unlock" && selectedProfile) {
-    return <main className="entry-shell"><div className="entry-top"><Logo /><span>공유 태블릿</span></div><section className="entry-card"><button className="small-button" onClick={() => resetPassword("profiles")}>← 학생 다시 고르기</button><div className="profile-unlock"><span>{selectedProfile.animal}</span><h1>{selectedProfile.nickname}</h1><p>{selectedProfile.classroomName}</p></div>{picturePasswordPicker()}{error && <p className="error-box" role="alert">{error}</p>}{legacyPasswordAction()}<button className="button primary full" disabled={busy || pictures.length !== targetLength} onClick={submit}>{busy ? "확인 중…" : "내 그림 열기"}</button></section></main>;
+    return <main className="entry-shell"><div className="entry-top"><Logo /><span>공유 태블릿</span></div><section className="entry-card"><button className="small-button" onClick={() => resetPassword("profiles")}>← 학생 다시 고르기</button><div className="profile-unlock"><span>{selectedProfile.animal}</span><h1>{selectedProfile.nickname}</h1><p>{selectedProfile.classroomName}</p></div>{picturePasswordPicker()}{error && <p className="error-box" role="alert">{error}</p>}{legacyPasswordAction()}<button className="button primary full" disabled={busy || pictures.length !== targetLength} onClick={() => void submit()}>{busy ? "확인 중…" : "내 그림 열기"}</button></section></main>;
   }
 
   if (mode === "done") {
@@ -101,6 +108,6 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   }
 
   return (
-    <main className="entry-shell"><div className="entry-top"><Logo /><a href="/teacher">교사 입장</a></div><section className="entry-card"><p className="eyebrow">{mode === "join" ? "수업에 들어가요" : "내 그림을 찾아요"}</p><h1>{mode === "join" ? "반가워, 꼬마 화가!" : "다시 만나서 반가워!"}</h1>{recoveryToken ? <p className="helper">개인 카드로 안전하게 찾는 중이에요.</p> : <><label>수업 코드<input inputMode="numeric" maxLength={12} value={entry} onChange={(event) => setEntry(event.target.value.replace(/\s/g, ""))} placeholder="예: 2841" /></label><label>그림 별명<input maxLength={16} value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder="예: 토끼 화가" /></label><fieldset><legend>내 동물</legend><div className="chip-row">{ANIMALS.map((value) => <button type="button" aria-pressed={animal === value} className={animal === value ? "emoji-chip selected" : "emoji-chip"} key={value} onClick={() => setAnimal(value)}>{value}</button>)}</div></fieldset>{picturePasswordPicker()}</>}{error && <p className="error-box" role="alert">{error}</p>}{legacyPasswordAction()}<button className="button primary full" disabled={busy || (!recoveryToken && (!entry || !nickname || pictures.length !== targetLength))} onClick={submit}>{busy ? "찾는 중…" : mode === "join" ? "수업 들어가기" : "내 그림 찾기"}</button>{!recoveryToken && <button className="text-button" onClick={() => resetPassword(mode === "join" ? "recover" : "join")}>{mode === "join" ? "전에 그리던 그림이 있어요" : "처음 왔어요"}</button>}</section></main>
+    <main className="entry-shell"><div className="entry-top"><Logo /><a href="/teacher">교사 입장</a></div><section className="entry-card"><p className="eyebrow">{mode === "join" ? "수업에 들어가요" : "내 그림을 찾아요"}</p><h1>{mode === "join" ? "반가워, 꼬마 화가!" : "다시 만나서 반가워!"}</h1>{mode === "join" && profiles.length > 0 && <button className="saved-profile-notice" type="button" onClick={() => resetPassword("profiles")}>이 기기에 저장된 내 프로필 고르기</button>}{recoveryToken ? <p className="helper">개인 카드로 안전하게 찾는 중이에요.</p> : <><label>수업 코드<input inputMode="numeric" maxLength={12} value={entry} onChange={(event) => { setEntry(event.target.value.replace(/\s/g, "")); setDuplicateWarning(false); }} placeholder="예: 2841" /></label><label>그림 별명<input maxLength={16} value={nickname} onChange={(event) => { setNickname(event.target.value); setDuplicateWarning(false); }} placeholder="예: 토끼 화가" /></label><fieldset><legend>내 동물</legend><div className="chip-row">{ANIMALS.map((value) => <button type="button" aria-pressed={animal === value} className={animal === value ? "emoji-chip selected" : "emoji-chip"} key={value} onClick={() => { setAnimal(value); setDuplicateWarning(false); }}>{value}</button>)}</div></fieldset>{picturePasswordPicker()}</>}{duplicateWarning && <div className="duplicate-profile-warning" role="alert"><b>전에 만든 프로필일 수 있어요</b><p>같은 별명과 동물이 이미 있어요. 내 그림을 찾거나, 정말 다른 학생일 때만 새로 만들어요.</p><div><button type="button" className="button secondary" onClick={() => resetPassword("recover")}>내 그림 찾기</button><button type="button" className="button ghost" onClick={() => void submit(true)}>다른 학생으로 새로 만들기</button></div></div>}{error && <p className="error-box" role="alert">{error}</p>}{legacyPasswordAction()}<button className="button primary full" disabled={busy || duplicateWarning || (!recoveryToken && (!entry || !nickname || pictures.length !== targetLength))} onClick={() => void submit()}>{busy ? "찾는 중…" : mode === "join" ? "수업 들어가기" : "내 그림 찾기"}</button>{!recoveryToken && <button className="text-button" onClick={() => resetPassword(mode === "join" ? "recover" : "join")}>{mode === "join" ? "전에 그리던 그림이 있어요" : "처음 왔어요"}</button>}</section></main>
   );
 }

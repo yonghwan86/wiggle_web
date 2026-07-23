@@ -45,8 +45,12 @@ export const studentProfiles = sqliteTable("student_profiles", {
   nickname: text("nickname").notNull(),
   animal: text("animal").notNull(),
   lastActivityAt: text("last_activity_at").notNull(),
+  archivedAt: text("archived_at"),
   createdAt: createdAt(),
-}, (table) => [index("students_classroom_idx").on(table.classroomId, table.lastActivityAt)]);
+}, (table) => [
+  index("students_classroom_idx").on(table.classroomId, table.lastActivityAt),
+  index("students_classroom_archived_idx").on(table.classroomId, table.archivedAt, table.nickname),
+]);
 
 export const recoveryCredentials = sqliteTable("recovery_credentials", {
   studentId: text("student_id").primaryKey().references(() => studentProfiles.id, { onDelete: "cascade" }),

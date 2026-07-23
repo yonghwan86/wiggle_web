@@ -79,7 +79,7 @@ test("a committed delete prevents stale teacher actions from changing class stat
   const DB = await miniflare.getD1Database("DB");
   await DB.exec(`
     CREATE TABLE classrooms (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, admission_open INTEGER NOT NULL DEFAULT 1, class_code TEXT NOT NULL, join_token TEXT NOT NULL, current_activity TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-    CREATE TABLE student_profiles (id TEXT PRIMARY KEY, classroom_id TEXT NOT NULL);
+    CREATE TABLE student_profiles (id TEXT PRIMARY KEY, classroom_id TEXT NOT NULL, archived_at TEXT);
     CREATE TABLE teacher_views (teacher_id TEXT NOT NULL, classroom_id TEXT NOT NULL, student_id TEXT NOT NULL, expires_at TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(teacher_id, student_id));
     CREATE TABLE recovery_credentials (student_id TEXT PRIMARY KEY, personal_qr_hash TEXT NOT NULL, reset_at TEXT);
     CREATE TABLE device_sessions (token_hash TEXT PRIMARY KEY, student_id TEXT NOT NULL, revoked_at TEXT);

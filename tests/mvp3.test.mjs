@@ -35,7 +35,7 @@ async function fixture() {
   const fixtureSql = `
     CREATE TABLE teachers (id TEXT PRIMARY KEY, email TEXT NOT NULL, display_name TEXT NOT NULL);
     CREATE TABLE classrooms (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, display_name TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
-    CREATE TABLE student_profiles (id TEXT PRIMARY KEY, classroom_id TEXT NOT NULL, nickname TEXT NOT NULL, animal TEXT NOT NULL);
+    CREATE TABLE student_profiles (id TEXT PRIMARY KEY, classroom_id TEXT NOT NULL, nickname TEXT NOT NULL, animal TEXT NOT NULL, archived_at TEXT);
     CREATE TABLE artworks (id TEXT PRIMARY KEY, student_id TEXT NOT NULL, classroom_id TEXT NOT NULL, status TEXT NOT NULL, final_image_key TEXT, ops_json TEXT NOT NULL, completed_at TEXT);
     CREATE TABLE reflections (artwork_id TEXT PRIMARY KEY, favorite_part TEXT NOT NULL, favorite_reason TEXT NOT NULL, spoken_description TEXT NOT NULL, story_text TEXT NOT NULL);
     CREATE TABLE coaching_events (id TEXT PRIMARY KEY, artwork_id TEXT NOT NULL, student_answer TEXT, created_at TEXT NOT NULL);

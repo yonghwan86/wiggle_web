@@ -31,7 +31,7 @@ export async function validateTeacherMessageTarget(DB: D1Database, input: {
   if (!classroom) return { ok: false, reason: "classroom_forbidden" };
   const studentId = input.studentId || null;
   if (studentId) {
-    const student = await DB.prepare(`SELECT id FROM student_profiles WHERE id = ? AND classroom_id = ?`).bind(studentId, input.classroomId).first();
+    const student = await DB.prepare(`SELECT id FROM student_profiles WHERE id = ? AND classroom_id = ? AND archived_at IS NULL`).bind(studentId, input.classroomId).first();
     if (!student) return { ok: false, reason: "student_forbidden" };
   }
   return { ok: true, target: { teacherId: input.teacherId, classroomId: input.classroomId, studentId, body, messageId: input.messageId ?? messageId() } };
@@ -44,7 +44,7 @@ export function prepareTeacherMessageInsert(DB: D1Database, target: TeacherMessa
   const statement = DB.prepare(`INSERT INTO teacher_messages(id, classroom_id, student_id, teacher_id, body)
     SELECT ?, ?, ?, ?, ?
     WHERE EXISTS (SELECT 1 FROM classrooms c WHERE c.id = ? AND c.teacher_id = ? AND c.active = 1)
-      AND (? IS NULL OR EXISTS (SELECT 1 FROM student_profiles s WHERE s.id = ? AND s.classroom_id = ?))
+      AND (? IS NULL OR EXISTS (SELECT 1 FROM student_profiles s WHERE s.id = ? AND s.classroom_id = ? AND s.archived_at IS NULL))
       ${draftClause}`);
   const values: unknown[] = [
     target.messageId, target.classroomId, target.studentId, target.teacherId, target.body,
@@ -58,7 +58,7 @@ export async function approveTeacherDraftMessage(DB: D1Database, input: { teache
   const draft = await DB.prepare(`SELECT d.id, d.student_id AS studentId, d.status, d.approved_message_id AS approvedMessageId
     FROM teacher_coaching_drafts d
     JOIN classrooms c ON c.id = d.classroom_id AND c.teacher_id = d.teacher_id AND c.active = 1
-    JOIN student_profiles s ON s.id = d.student_id AND s.classroom_id = d.classroom_id
+    JOIN student_profiles s ON s.id = d.student_id AND s.classroom_id = d.classroom_id AND s.archived_at IS NULL
     JOIN artworks a ON a.id = d.artwork_id AND a.student_id = d.student_id AND a.classroom_id = d.classroom_id
     WHERE d.id = ? AND d.teacher_id = ? AND d.classroom_id = ? AND c.teacher_id = ?`)
     .bind(input.draftId, input.teacherId, input.classroomId, input.teacherId)
@@ -73,7 +73,7 @@ export async function approveTeacherDraftMessage(DB: D1Database, input: { teache
         WHERE id = ? AND teacher_id = ? AND classroom_id = ? AND status = 'draft'
         AND EXISTS (SELECT 1 FROM classrooms c JOIN student_profiles s ON s.classroom_id = c.id JOIN artworks a ON a.classroom_id = c.id AND a.student_id = s.id
           WHERE c.id = teacher_coaching_drafts.classroom_id AND c.teacher_id = teacher_coaching_drafts.teacher_id AND c.active = 1
-            AND s.id = teacher_coaching_drafts.student_id AND a.id = teacher_coaching_drafts.artwork_id)`)
+            AND s.id = teacher_coaching_drafts.student_id AND s.archived_at IS NULL AND a.id = teacher_coaching_drafts.artwork_id)`)
         .bind(validated.target.body, validated.target.messageId, input.draftId, input.teacherId, input.classroomId),
       prepareTeacherMessageInsert(DB, validated.target, { draftId: input.draftId }),
     ]);

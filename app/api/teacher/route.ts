@@ -50,17 +50,18 @@ export async function GET(request: Request) {
   const classroomId = cleanText(url.searchParams.get("classroomId"), 40);
   const db = bindings().DB;
   if (!classroomId) {
-    const result = await db.prepare(`SELECT c.id, c.display_name AS displayName, c.class_code AS classCode, c.join_token AS joinToken, c.admission_open AS admissionOpen, c.current_activity AS currentActivity, c.updated_at AS updatedAt, COUNT(s.id) AS studentCount FROM classrooms c LEFT JOIN student_profiles s ON s.classroom_id = c.id WHERE c.teacher_id = ? AND c.active = 1 GROUP BY c.id ORDER BY c.created_at DESC`).bind(teacher.id).all<ClassroomRow>();
+    const result = await db.prepare(`SELECT c.id, c.display_name AS displayName, c.class_code AS classCode, c.join_token AS joinToken, c.admission_open AS admissionOpen, c.current_activity AS currentActivity, c.updated_at AS updatedAt, COUNT(s.id) AS studentCount FROM classrooms c LEFT JOIN student_profiles s ON s.classroom_id = c.id AND s.archived_at IS NULL WHERE c.teacher_id = ? AND c.active = 1 GROUP BY c.id ORDER BY c.created_at DESC`).bind(teacher.id).all<ClassroomRow>();
     return noStoreJson({ teacher, classrooms: result.results.map(presentClassroom) });
   }
 
   const classroom = await ownedClassroom(teacher.id, classroomId);
   if (!classroom) return jsonError("이 학급을 볼 권한이 없어요.", 403);
-  const students = await db.prepare(`SELECT s.id, s.nickname, s.animal, s.last_activity_at AS lastActivityAt, a.id AS artworkId, a.title AS artworkTitle, a.status, a.current_step AS currentStep, a.revision, a.thumbnail_key AS thumbnailKey, a.updated_at AS artworkUpdatedAt, (SELECT a3.id FROM artworks a3 WHERE a3.student_id = s.id AND a3.classroom_id = s.classroom_id AND a3.status = 'complete' AND a3.final_image_key IS NOT NULL ORDER BY a3.completed_at DESC, a3.id DESC LIMIT 1) AS completedArtworkId FROM student_profiles s LEFT JOIN artworks a ON a.id = (SELECT a2.id FROM artworks a2 WHERE a2.student_id = s.id ORDER BY a2.updated_at DESC LIMIT 1) WHERE s.classroom_id = ? ORDER BY s.nickname COLLATE NOCASE, s.id`).bind(classroomId).all<{ id: string; nickname: string; animal: string; lastActivityAt: string; artworkId: string | null; artworkTitle: string | null; status: string | null; currentStep: number | null; revision: number | null; thumbnailKey: string | null; artworkUpdatedAt: string | null; completedArtworkId: string | null }>();
+  const students = await db.prepare(`SELECT s.id, s.nickname, s.animal, s.last_activity_at AS lastActivityAt, a.id AS artworkId, a.title AS artworkTitle, a.status, a.current_step AS currentStep, a.revision, a.thumbnail_key AS thumbnailKey, a.updated_at AS artworkUpdatedAt, (SELECT a3.id FROM artworks a3 WHERE a3.student_id = s.id AND a3.classroom_id = s.classroom_id AND a3.status = 'complete' AND a3.final_image_key IS NOT NULL ORDER BY a3.completed_at DESC, a3.id DESC LIMIT 1) AS completedArtworkId FROM student_profiles s LEFT JOIN artworks a ON a.id = (SELECT a2.id FROM artworks a2 WHERE a2.student_id = s.id ORDER BY a2.updated_at DESC LIMIT 1) WHERE s.classroom_id = ? AND s.archived_at IS NULL ORDER BY s.nickname COLLATE NOCASE, s.id`).bind(classroomId).all<{ id: string; nickname: string; animal: string; lastActivityAt: string; artworkId: string | null; artworkTitle: string | null; status: string | null; currentStep: number | null; revision: number | null; thumbnailKey: string | null; artworkUpdatedAt: string | null; completedArtworkId: string | null }>();
   const hydrated = await Promise.all(students.results.map(async ({ thumbnailKey, ...student }: { id: string; nickname: string; animal: string; lastActivityAt: string; artworkId: string | null; artworkTitle: string | null; status: string | null; currentStep: number | null; revision: number | null; thumbnailKey: string | null; artworkUpdatedAt: string | null; completedArtworkId: string | null }) => ({ ...student, thumbnail: await toDataUrl(thumbnailKey) })));
+  const archivedStudents = await db.prepare(`SELECT s.id, s.nickname, s.animal, s.last_activity_at AS lastActivityAt, s.archived_at AS archivedAt, COUNT(a.id) AS artworkCount FROM student_profiles s LEFT JOIN artworks a ON a.student_id = s.id WHERE s.classroom_id = ? AND s.archived_at IS NOT NULL GROUP BY s.id ORDER BY s.archived_at DESC, s.nickname COLLATE NOCASE`).bind(classroomId).all<{ id: string; nickname: string; animal: string; lastActivityAt: string; archivedAt: string; artworkCount: number }>();
   const messages = await db.prepare(`SELECT m.id, m.student_id AS studentId, m.body, m.created_at AS createdAt, s.nickname, COUNT(r.student_id) AS seenCount FROM teacher_messages m LEFT JOIN student_profiles s ON s.id = m.student_id LEFT JOIN message_receipts r ON r.message_id = m.id WHERE m.classroom_id = ? GROUP BY m.id ORDER BY m.created_at DESC, m.id DESC LIMIT 30`).bind(classroomId).all();
   const familyLinks = await db.prepare(`SELECT l.id, l.student_id AS studentId, l.scope, l.expires_at AS expiresAt, l.revoked_at AS revokedAt, l.created_at AS createdAt, COUNT(f.artwork_id) AS artworkCount FROM family_share_links l JOIN student_profiles s ON s.id = l.student_id LEFT JOIN family_share_artworks f ON f.link_id = l.id WHERE l.teacher_id = ? AND s.classroom_id = ? GROUP BY l.id ORDER BY l.created_at DESC LIMIT 50`).bind(teacher.id, classroomId).all();
-  return noStoreJson({ teacher, classroom, students: hydrated, messages: messages.results, familyLinks: familyLinks.results });
+  return noStoreJson({ teacher, classroom, students: hydrated, archivedStudents: archivedStudents.results, messages: messages.results, familyLinks: familyLinks.results });
 }
 
 export async function POST(request: Request) {
@@ -109,6 +110,24 @@ export async function POST(request: Request) {
     ]);
     return noStoreJson({ deleted: Boolean(results[0]?.meta.changes), classroomId });
   }
+  if (action === "archiveStudent") {
+    const studentId = cleanText(payload.studentId, 40);
+    const activeOwnedStudent = `EXISTS (SELECT 1 FROM classrooms c WHERE c.id = student_profiles.classroom_id AND c.teacher_id = ? AND c.active = 1)`;
+    const results = await db.batch([
+      db.prepare(`UPDATE student_profiles SET archived_at = CURRENT_TIMESTAMP WHERE id = ? AND classroom_id = ? AND archived_at IS NULL AND ${activeOwnedStudent}`).bind(studentId, classroomId, teacher.id),
+      db.prepare(`UPDATE device_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE student_id = ? AND revoked_at IS NULL AND EXISTS (SELECT 1 FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id WHERE s.id = ? AND s.classroom_id = ? AND s.archived_at IS NOT NULL AND c.teacher_id = ? AND c.active = 1)`).bind(studentId, studentId, classroomId, teacher.id),
+      db.prepare(`UPDATE family_share_links SET revoked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE student_id = ? AND teacher_id = ? AND revoked_at IS NULL AND EXISTS (SELECT 1 FROM student_profiles s WHERE s.id = ? AND s.classroom_id = ? AND s.archived_at IS NOT NULL)`).bind(studentId, teacher.id, studentId, classroomId),
+      db.prepare(`DELETE FROM teacher_views WHERE student_id = ? AND classroom_id = ? AND teacher_id = ?`).bind(studentId, classroomId, teacher.id),
+    ]);
+    if (!results[0]?.meta.changes) return jsonError("삭제할 학생을 찾지 못했어요.", 404);
+    return noStoreJson({ archived: true, studentId });
+  }
+  if (action === "restoreStudent") {
+    const studentId = cleanText(payload.studentId, 40);
+    const restored = await db.prepare(`UPDATE student_profiles SET archived_at = NULL, last_activity_at = CURRENT_TIMESTAMP WHERE id = ? AND classroom_id = ? AND archived_at IS NOT NULL AND EXISTS (SELECT 1 FROM classrooms c WHERE c.id = student_profiles.classroom_id AND c.teacher_id = ? AND c.active = 1)`).bind(studentId, classroomId, teacher.id).run();
+    if (!restored.meta.changes) return jsonError("복원할 학생을 찾지 못했어요.", 404);
+    return noStoreJson({ restored: true, studentId });
+  }
   if (action === "createFamilyShare") {
     const studentId = cleanText(payload.studentId, 40);
     const artworkIds = Array.isArray(payload.artworkIds) ? payload.artworkIds.map((value) => cleanText(value, 80)).filter(Boolean) : [];
@@ -151,7 +170,7 @@ export async function POST(request: Request) {
   }
   if (action === "viewStudent") {
     const studentId = cleanText(payload.studentId, 40);
-    const student = await db.prepare(`SELECT id FROM student_profiles WHERE id = ? AND classroom_id = ?`).bind(studentId, classroomId).first();
+    const student = await db.prepare(`SELECT id FROM student_profiles WHERE id = ? AND classroom_id = ? AND archived_at IS NULL`).bind(studentId, classroomId).first();
     if (!student) return jsonError("이 학급 학생이 아니에요.", 403);
     const expiresAt = new Date(Date.now() + 20_000).toISOString();
     const viewed = await upsertTeacherView(db, { teacherId: teacher.id, classroomId, studentId, expiresAt });
@@ -160,7 +179,7 @@ export async function POST(request: Request) {
   }
   if (action === "resetStudentRecovery") {
     const studentId = cleanText(payload.studentId, 40);
-    const student = await db.prepare(`SELECT id FROM student_profiles WHERE id = ? AND classroom_id = ?`).bind(studentId, classroomId).first();
+    const student = await db.prepare(`SELECT id FROM student_profiles WHERE id = ? AND classroom_id = ? AND archived_at IS NULL`).bind(studentId, classroomId).first();
     if (!student) return jsonError("이 학급 학생이 아니에요.", 403);
     const personalQrToken = randomToken(28);
     const reset = await resetActiveStudentRecovery(db, { teacherId: teacher.id, classroomId, studentId, personalQrHash: await sha256(personalQrToken) });

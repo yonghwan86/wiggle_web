@@ -82,7 +82,7 @@ export async function studentFromRequest(request: Request) {
   const tokenHash = await sha256(token);
   const now = new Date().toISOString();
   const row = await bindings().DB.prepare(
-    `SELECT s.id, s.classroom_id AS classroomId, s.nickname, s.animal, c.display_name AS classroomName FROM device_sessions d JOIN student_profiles s ON s.id = d.student_id JOIN classrooms c ON c.id = s.classroom_id AND c.active = 1 WHERE d.token_hash = ? AND d.expires_at > ? AND d.revoked_at IS NULL`,
+    `SELECT s.id, s.classroom_id AS classroomId, s.nickname, s.animal, c.display_name AS classroomName FROM device_sessions d JOIN student_profiles s ON s.id = d.student_id AND s.archived_at IS NULL JOIN classrooms c ON c.id = s.classroom_id AND c.active = 1 WHERE d.token_hash = ? AND d.expires_at > ? AND d.revoked_at IS NULL`,
   ).bind(tokenHash, now).first<{ id: string; classroomId: string; nickname: string; animal: string; classroomName: string }>();
   if (row) {
     await bindings().DB.batch([

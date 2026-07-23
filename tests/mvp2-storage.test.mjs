@@ -14,7 +14,7 @@ async function fixture() {
   const DB = await mf.getD1Database("DB"); const ARTWORKS = await mf.getR2Bucket("ARTWORKS");
   await DB.exec(`
     CREATE TABLE classrooms (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
-    CREATE TABLE student_profiles (id TEXT PRIMARY KEY, classroom_id TEXT NOT NULL);
+    CREATE TABLE student_profiles (id TEXT PRIMARY KEY, classroom_id TEXT NOT NULL, archived_at TEXT);
     CREATE TABLE artworks (id TEXT PRIMARY KEY, student_id TEXT NOT NULL, classroom_id TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'drawing', version_count INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE artwork_versions (id TEXT PRIMARY KEY, artwork_id TEXT NOT NULL, sequence INTEGER NOT NULL, ops_json TEXT NOT NULL, image_key TEXT, reason TEXT NOT NULL, UNIQUE(artwork_id, sequence));
     CREATE TABLE coaching_events (id TEXT PRIMARY KEY, artwork_id TEXT NOT NULL, actor TEXT NOT NULL, question TEXT NOT NULL, student_answer TEXT, applied_hint TEXT, before_version_id TEXT, after_version_id TEXT);

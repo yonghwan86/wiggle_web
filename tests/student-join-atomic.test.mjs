@@ -67,11 +67,11 @@ test("join batches all three inserts while switch and recovery retain session is
   assert.match(join, /const \[pictureHash, personalQrHash, device\] = await Promise\.all/);
   assert.match(join, /const joinResults = await db\.batch\(\[[\s\S]*student_profiles[\s\S]*recovery_credentials[\s\S]*device_sessions[\s\S]*\]\)/);
   assert.match(join, /student_profiles[^`]*SELECT \?, \?, \?, \?, \? WHERE EXISTS \(SELECT 1 FROM classrooms WHERE id = \? AND active = 1 AND admission_open = 1\)/);
-  assert.match(join, /recovery_credentials[^`]*WHERE EXISTS \(SELECT 1 FROM student_profiles WHERE id = \? AND classroom_id = \?\)/);
-  assert.match(join, /device_sessions[^`]*WHERE EXISTS \(SELECT 1 FROM student_profiles WHERE id = \? AND classroom_id = \?\)/);
-  assert.match(join, /if \(!joinResults\[0\]\?\.meta\.changes\) return jsonError\("입장이 닫혔어요\. 선생님께 확인해 주세요\.", 403\)/);
+  assert.match(join, /recovery_credentials[^`]*WHERE EXISTS \(SELECT 1 FROM student_profiles WHERE id = \? AND classroom_id = \? AND archived_at IS NULL\)/);
+  assert.match(join, /device_sessions[^`]*WHERE EXISTS \(SELECT 1 FROM student_profiles WHERE id = \? AND classroom_id = \? AND archived_at IS NULL\)/);
+  assert.match(join, /if \(!joinResults\[0\]\?\.meta\.changes\)[\s\S]*return jsonError\("입장이 닫혔어요\. 선생님께 확인해 주세요\.", 403\)/);
   assert.doesNotMatch(join, /issueDeviceSession/);
-  assert.match(route, /INSERT INTO device_sessions[^`]*WHERE EXISTS \(SELECT 1 FROM student_profiles s JOIN classrooms c ON c\.id = s\.classroom_id WHERE s\.id = \? AND c\.active = 1\)/);
+  assert.match(route, /INSERT INTO device_sessions[^`]*WHERE EXISTS \(SELECT 1 FROM student_profiles s JOIN classrooms c ON c\.id = s\.classroom_id WHERE s\.id = \? AND s\.archived_at IS NULL AND c\.active = 1\)/);
   assert.match(route, /if \(!inserted\.meta\.changes\) return null/);
   assert.match(switchProfile, /const device = await issueDeviceSession\(candidate\.id\);[\s\S]*if \(!device\) return jsonError\("이 학급은 더 이상 이용할 수 없어요\. 선생님께 확인해 주세요\.", 403\)/);
   assert.match(recover, /const device = await issueDeviceSession\(student\.id\);[\s\S]*if \(!device\) return jsonError\("이 학급은 더 이상 이용할 수 없어요\. 선생님께 확인해 주세요\.", 403\)/);

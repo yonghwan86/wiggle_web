@@ -73,7 +73,7 @@ export async function createFamilyShare(DB: D1Database, input: {
   const artworkIds = [...new Set(input.artworkIds.map((value) => String(value).trim()).filter(Boolean))];
   if (!artworkIds.length || artworkIds.length > FAMILY_SHARE_MAX_ARTWORKS || artworkIds.length !== input.artworkIds.length) return { ok: false as const, reason: "invalid_scope" as const };
   const owner = await DB.prepare(`SELECT s.id FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id
-    WHERE s.id = ? AND s.classroom_id = ? AND c.teacher_id = ? AND c.active = 1`).bind(input.studentId, input.classroomId, input.teacherId).first();
+    WHERE s.id = ? AND s.classroom_id = ? AND s.archived_at IS NULL AND c.teacher_id = ? AND c.active = 1`).bind(input.studentId, input.classroomId, input.teacherId).first();
   if (!owner) return { ok: false as const, reason: "forbidden" as const };
   const placeholders = artworkIds.map(() => "?").join(",");
   const approved = await DB.prepare(`SELECT id FROM artworks WHERE student_id = ? AND classroom_id = ? AND status = 'complete' AND final_image_key IS NOT NULL AND id IN (${placeholders})`)
@@ -96,7 +96,7 @@ export async function createFamilyShare(DB: D1Database, input: {
         DB.prepare(`INSERT INTO family_share_links(id, teacher_id, student_id, scope, approval_kind, guardian_consent_at, consent_method, attested_by_teacher_id, report_start_at, report_end_at, expires_at)
           SELECT ?, ?, ?, ?, 'guardian', ?, ?, ?, ?, ?, ? WHERE EXISTS (
             SELECT 1 FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id
-            WHERE s.id = ? AND s.classroom_id = ? AND c.teacher_id = ? AND c.active = 1
+            WHERE s.id = ? AND s.classroom_id = ? AND s.archived_at IS NULL AND c.teacher_id = ? AND c.active = 1
           )`).bind(linkId, input.teacherId, input.studentId, scope, consentAt, consentMethod, input.teacherId, reportStartAt, reportEndAt, expiresAt, input.studentId, input.classroomId, input.teacherId),
         ...artworkIds.map((artworkId, position) => DB.prepare(`INSERT INTO family_share_artworks(link_id, artwork_id, position, approved_at)
           SELECT ?, a.id, ?, ? FROM artworks a JOIN family_share_links l ON l.id = ?
@@ -157,7 +157,7 @@ export async function exchangeFamilyInvite(DB: D1Database, inviteToken: string, 
 export async function revokeFamilyShare(DB: D1Database, input: { teacherId: string; classroomId: string; linkId: string }) {
   const result = await DB.prepare(`UPDATE family_share_links SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND teacher_id = ? AND student_id IN (
-      SELECT s.id FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id WHERE s.classroom_id = ? AND c.teacher_id = ? AND c.active = 1
+      SELECT s.id FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id WHERE s.classroom_id = ? AND s.archived_at IS NULL AND c.teacher_id = ? AND c.active = 1
     ) AND revoked_at IS NULL`).bind(input.linkId, input.teacherId, input.classroomId, input.teacherId).run();
   return Boolean(result.meta.changes);
 }
@@ -207,7 +207,7 @@ export async function resolveFamilySession(DB: D1Database, sessionToken: string,
   const link = await DB.prepare(`SELECT l.id AS linkId, l.student_id AS studentId, s.animal, l.scope,
       l.report_start_at AS reportStartAt, l.report_end_at AS reportEndAt, l.expires_at AS expiresAt,
       s.nickname, c.display_name AS classroomName, t.email AS teacherEmail
-    FROM family_share_links l JOIN student_profiles s ON s.id = l.student_id JOIN classrooms c ON c.id = s.classroom_id JOIN teachers t ON t.id = l.teacher_id
+    FROM family_share_links l JOIN student_profiles s ON s.id = l.student_id AND s.archived_at IS NULL JOIN classrooms c ON c.id = s.classroom_id JOIN teachers t ON t.id = l.teacher_id
     WHERE l.id = ? AND l.revoked_at IS NULL AND l.expires_at > ? AND l.approval_kind = 'guardian'
       AND l.guardian_consent_at IS NOT NULL AND l.guardian_consent_at <> ''
       AND l.consent_method IN ('paper', 'in_person', 'phone', 'school_portal') AND l.attested_by_teacher_id = l.teacher_id`)

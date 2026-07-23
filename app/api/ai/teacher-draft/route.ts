@@ -13,7 +13,7 @@ async function payloadOf(request: Request) {
 }
 
 async function ownedArtwork(teacherId: string, classroomId: string, studentId: string, artworkId: string) {
-  return bindings().DB.prepare(`SELECT a.id AS artworkId, s.id AS studentId, s.nickname, a.topic, a.intent, a.thumbnail_key AS thumbnailKey, a.final_image_key AS finalImageKey FROM artworks a JOIN student_profiles s ON s.id = a.student_id JOIN classrooms c ON c.id = a.classroom_id WHERE a.id = ? AND s.id = ? AND c.id = ? AND c.teacher_id = ?`).bind(artworkId, studentId, classroomId, teacherId).first<OwnedArtwork>();
+  return bindings().DB.prepare(`SELECT a.id AS artworkId, s.id AS studentId, s.nickname, a.topic, a.intent, a.thumbnail_key AS thumbnailKey, a.final_image_key AS finalImageKey FROM artworks a JOIN student_profiles s ON s.id = a.student_id AND s.archived_at IS NULL JOIN classrooms c ON c.id = a.classroom_id WHERE a.id = ? AND s.id = ? AND c.id = ? AND c.teacher_id = ? AND c.active = 1`).bind(artworkId, studentId, classroomId, teacherId).first<OwnedArtwork>();
 }
 
 function imageMime(bytes: Uint8Array): "image/png" | "image/jpeg" | null {

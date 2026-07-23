@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   if (!capability.enabled) return noStoreJson({ error: "음성 릴레이가 아직 연결되지 않았어요.", code: "VOICE_WHISPER_DISABLED", reason: capability.reason }, { status: 503 });
   const studentId = request.headers.get("x-wiggle-student")?.slice(0, 80) ?? "";
   const classroomId = request.headers.get("x-wiggle-classroom")?.slice(0, 80) ?? "";
-  const owned = await bindings().DB.prepare(`SELECT s.id FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id WHERE s.id = ? AND s.classroom_id = ? AND c.teacher_id = ? AND c.active = 1`).bind(studentId, classroomId, teacher.id).first();
+  const owned = await bindings().DB.prepare(`SELECT s.id FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id WHERE s.id = ? AND s.classroom_id = ? AND s.archived_at IS NULL AND c.teacher_id = ? AND c.active = 1`).bind(studentId, classroomId, teacher.id).first();
   if (!owned) return jsonError("이 학급 학생에게만 보낼 수 있어요.", 403);
   const declaredLength = Number(request.headers.get("content-length") ?? 0);
   if (declaredLength > WHISPER_MAX_BYTES) return jsonError("음성 조각이 너무 커요.", 413);

@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/contracts.test.mjs tests/security-regressions.test.mjs tests/offline-save-queue.test.mjs tests/legacy-migration.test.mjs tests/mvp2-ai.test.mjs tests/mvp2-storage.test.mjs tests/mvp3.test.mjs tests/picture-password.test.mjs tests/qr-entry.test.mjs tests/safari-entry.test.mjs tests/pbkdf2-runtime.test.mjs tests/student-join-atomic.test.mjs tests/mobile-css.test.mjs tests/curriculum.test.mjs tests/classroom-delete.test.mjs",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/contracts.test.mjs tests/security-regressions.test.mjs tests/offline-save-queue.test.mjs tests/legacy-migration.test.mjs tests/mvp2-ai.test.mjs tests/mvp2-storage.test.mjs tests/mvp3.test.mjs tests/picture-password.test.mjs tests/qr-entry.test.mjs tests/safari-entry.test.mjs tests/pbkdf2-runtime.test.mjs tests/student-join-atomic.test.mjs tests/mobile-css.test.mjs tests/curriculum.test.mjs tests/classroom-delete.test.mjs tests/student-profile-management.test.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
