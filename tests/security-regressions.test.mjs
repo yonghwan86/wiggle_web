@@ -20,7 +20,7 @@ test("shared tablet profiles never reactivate a stored raw token", async () => {
 
 test("save conflicts remain queued and require an explicit copy", async () => {
   const [session, studio] = await Promise.all([read("../lib/client-session.ts"), read("../app/components/DrawingStudio.tsx")]);
-  assert.match(session, /response\.status === 409/); assert.match(session, /conflict: true/); assert.match(session, /conflicts\.push/); assert.doesNotMatch(session, /retried\.expectedRevision|serverRevision;\s*response = await fetch/);
+  assert.match(session, /flushResponseDisposition\(response\.status\)/); assert.match(session, /disposition === "conflict"/); assert.match(session, /conflict: true/); assert.match(session, /conflicts\.push/); assert.doesNotMatch(session, /retried\.expectedRevision|serverRevision;\s*response = await fetch/);
   assert.match(studio, /새 사본으로 저장/); assert.match(studio, /saveAsCopy/); assert.doesNotMatch(studio, /revisionRef\.current = data\.serverRevision; return save/);
   assert.match(studio, /response\.status >= 400 && response\.status < 500/);
 });

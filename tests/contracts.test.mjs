@@ -21,10 +21,23 @@ test("enforces ownership, hashing, expiry, rate limits and idempotent revisions"
 });
 
 test("keeps canvas contracts and guide data separate", async () => {
-  const [model, studio, lessons, catalog] = await Promise.all([read("../lib/drawing-model.ts"), read("../app/components/DrawingStudio.tsx"), read("../lib/lesson-content.ts"), import("../lib/lesson-content.ts")]);
+  const [model, studio, lessons, css, catalog] = await Promise.all([read("../lib/drawing-model.ts"), read("../app/components/DrawingStudio.tsx"), read("../lib/lesson-content.ts"), read("../app/globals.css"), import("../lib/lesson-content.ts")]);
   assert.match(model, /DOCUMENT_SIZE = 1024/); assert.match(model, /schemaVersion/); assert.match(model, /rendererVersion/); assert.match(model, /clientOpId/); assert.match(model, /STICKER_ALLOWLIST/);
   assert.match(studio, />= 2\.5/); assert.match(studio, /guideRef/); assert.match(studio, /imageData\(canvasRef\.current, 256\)/); assert.match(studio, /imageData\(canvasRef\.current, 1024\)/);
+  assert.match(studio, /strokeStyle = "#087EA8"[\s\S]*globalAlpha = 0\.92[\s\S]*lineWidth = 9[\s\S]*setLineDash\(\[20, 14\]\)/);
+  assert.match(studio, /item\.step === lessonStep \+ 1/); assert.doesNotMatch(studio, /item\.step <= lessonStep \+ 1/);
+  assert.match(studio, /<canvas ref=\{guideRef\}[\s\S]*<canvas ref=\{canvasRef\}/);
+  assert.match(css, /\.draw-canvas \{ z-index:2; touch-action:none; \}\.guide-canvas \{ z-index:3; pointer-events:none; \}/);
   assert.ok(catalog.LESSONS.length >= 5); assert.ok(catalog.LESSONS.every((lesson) => lesson.steps.length >= 6 && lesson.steps.length <= 15));
+  for (const mode of ["practice", "guided", "observe"]) {
+    const modeLessons = catalog.LESSONS.filter((lesson) => lesson.mode === mode);
+    assert.equal(modeLessons.length, 10, mode);
+    assert.ok(modeLessons.every((lesson) => lesson.guide.some((mark) => mark.step === 1)), `${mode} first-step guides`);
+    assert.ok(modeLessons.every((lesson) => !lesson.guide.some((mark) => mark.step === lesson.steps.length)), `${mode} final free steps have no guide`);
+  }
+  assert.match(studio, /lessonGuideAvailable && <button className="guide-toggle"/);
+  assert.match(studio, /step === lesson\.steps\.length - 1\) \{ setReflectionOpen\(true\); return; \}/);
+  assert.match(studio, /step === lesson\.steps\.length - 1 \? "그림 다 그렸어요" : "다음"/);
   assert.ok(catalog.LESSONS.every((lesson) => lesson.steps.filter((step) => step.choices?.length >= 2).length >= 2)); assert.match(lessons, /내 마음대로/);
 });
 

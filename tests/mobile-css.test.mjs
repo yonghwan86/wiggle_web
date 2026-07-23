@@ -33,6 +33,7 @@ test("mobile forms, actions and overlays honor iPhone zoom, touch and safe-area 
 
 test("mobile studio and teacher layouts finish in two rows without horizontal text overflow", async () => {
   const [css, studio, teacher] = await Promise.all([read("../app/globals.css"), read("../app/components/DrawingStudio.tsx"), read("../app/components/TeacherApp.tsx")]);
+  const finalMobile = css.slice(css.lastIndexOf("@media (max-width:720px)"), css.lastIndexOf("@media (max-width:460px)"));
   assert.ok(css.lastIndexOf("grid-template-rows:calc(60px + env(safe-area-inset-top)) minmax(0,1fr)") > css.lastIndexOf("grid-template-rows:60px 1fr 92px"));
   assert.match(css, /\.canvas-message,\.save-conflict,\.teacher-viewing,\.voice-speaking \{[^}]*max-width:calc\(100vw - max\(12px,env\(safe-area-inset-left\)\) - max\(12px,env\(safe-area-inset-right\)\)\);[^}]*overflow-wrap:break-word;/);
   assert.match(css, /\.artwork-name b,\.artwork-name small \{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; \}/);
@@ -46,6 +47,21 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(css, /\.studio-header>\.grimi-button:before \{ content:"✨"; \}/);
   assert.match(css, /\.studio-header>\.button\.primary\.compact:before \{ content:"✓"; \}/);
   assert.match(css, /\.save-conflict \{ top:auto; bottom:calc\(72px \+ env\(safe-area-inset-bottom\)\); \}/);
+  assert.match(studio, /<span aria-hidden="true">✏️<\/span>연필/);
+  assert.doesNotMatch(studio, /✒️|>펜<|>펜<\/button>/);
+  assert.match(studio, /className="tool-group" role="group" aria-label="그리기 도구"[\s\S]*aria-pressed=\{tool === "pen"\}[\s\S]*aria-pressed=\{tool === "crayon"\}[\s\S]*aria-pressed=\{tool === "eraser"\}/);
+  assert.match(studio, /className="width-row" role="group" aria-label="선 굵기"/);
+  assert.match(studio, /className="palette" role="group" aria-label="색 고르기"/);
+  assert.match(studio, /className="history-row" role="group" aria-label="그리기 기록"[\s\S]*↶ 되돌리기[\s\S]*↷ 다시하기/);
+  assert.match(finalMobile, /\.tool-panel \{[^}]*display:grid;[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\);[^}]*overflow:hidden;/);
+  assert.match(finalMobile, /\.tool-panel \.tool-group \{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(finalMobile, /\.tool-panel \.width-row \{[^}]*grid-template-columns:repeat\(3,minmax\(44px,1fr\)\)/);
+  assert.match(finalMobile, /\.tool-panel \.palette \{[^}]*grid-template-columns:repeat\(6,minmax\(44px,1fr\)\)/);
+  assert.match(finalMobile, /\.tool-panel \.history-row \{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.doesNotMatch(finalMobile, /\.tool-panel \{[^}]*overflow-x:auto|\.tool-panel \{[^}]*display:flex/);
+  assert.match(finalMobile, /\.canvas-zone \{ container-type:size; \}/);
+  assert.match(finalMobile, /@supports \(width:1cqh\) \{ \.canvas-zone \.canvas-wrap \{ width:min\(100cqw,100cqh\); height:auto; max-width:100%; max-height:100%; \} \}/);
+  assert.match(finalMobile, /@supports not \(width:1cqh\) \{ \.canvas-zone \.canvas-wrap \{ width:auto; height:100%; max-width:100%; max-height:100%; \} \}/);
   assert.ok(css.lastIndexOf(".step-panel .choice-chips { display:flex") > css.lastIndexOf(".step-panel .choice-chips,.step-actions,.step-panel>.text-button { display:none"));
   assert.match(css, /\.step-panel \.choice-chips \{ display:flex; grid-column:1\/-1;[^}]*overflow-x:auto;/);
   assert.match(css, /\.step-panel \.choice-chips button \{[^}]*min-height:44px;/);
