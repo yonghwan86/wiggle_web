@@ -4,18 +4,19 @@ import { activityLabel, normalizeActivityKey } from "@/lib/lesson-content";
 
 type RecoveredStudent = { id: string; nickname: string; animal: string; classroomName: string; pictureHash: string; pictureSalt: string };
 
-async function prepareDeviceSession(db: D1Database, studentId: string) {
+async function prepareDeviceSession() {
   const token = randomToken(32); const now = new Date();
   const expiresAt = new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString();
   const tokenHash = await sha256(token);
-  const insert = db.prepare(`INSERT INTO device_sessions(token_hash, student_id, expires_at, last_used_at) VALUES (?, ?, ?, ?)`).bind(tokenHash, studentId, expiresAt, now.toISOString());
-  return { token, expiresAt, insert };
+  const lastUsedAt = now.toISOString();
+  return { token, expiresAt, tokenHash, lastUsedAt };
 }
 
 async function issueDeviceSession(studentId: string) {
   const db = bindings().DB;
-  const device = await prepareDeviceSession(db, studentId);
-  await device.insert.run();
+  const device = await prepareDeviceSession();
+  const inserted = await db.prepare(`INSERT INTO device_sessions(token_hash, student_id, expires_at, last_used_at) SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id WHERE s.id = ? AND c.active = 1)`).bind(device.tokenHash, studentId, device.expiresAt, device.lastUsedAt, studentId).run();
+  if (!inserted.meta.changes) return null;
   return { token: device.token, expiresAt: device.expiresAt };
 }
 
@@ -65,13 +66,14 @@ async function studentPost(request: Request) {
     const [pictureHash, personalQrHash, device] = await Promise.all([
       deriveSecret(picture, salt),
       sha256(personalQrToken),
-      prepareDeviceSession(db, studentId),
+      prepareDeviceSession(),
     ]);
-    await db.batch([
-      db.prepare(`INSERT INTO student_profiles(id, classroom_id, nickname, animal, last_activity_at) VALUES (?, ?, ?, ?, ?)`).bind(studentId, classroom.id, nickname, animal, now),
-      db.prepare(`INSERT INTO recovery_credentials(student_id, picture_hash, picture_salt, personal_qr_hash) VALUES (?, ?, ?, ?)`).bind(studentId, pictureHash, salt, personalQrHash),
-      device.insert,
+    const joinResults = await db.batch([
+      db.prepare(`INSERT INTO student_profiles(id, classroom_id, nickname, animal, last_activity_at) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM classrooms WHERE id = ? AND active = 1 AND admission_open = 1)`).bind(studentId, classroom.id, nickname, animal, now, classroom.id),
+      db.prepare(`INSERT INTO recovery_credentials(student_id, picture_hash, picture_salt, personal_qr_hash) SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM student_profiles WHERE id = ? AND classroom_id = ?)`).bind(studentId, pictureHash, salt, personalQrHash, studentId, classroom.id),
+      db.prepare(`INSERT INTO device_sessions(token_hash, student_id, expires_at, last_used_at) SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM student_profiles WHERE id = ? AND classroom_id = ?)`).bind(device.tokenHash, studentId, device.expiresAt, device.lastUsedAt, studentId, classroom.id),
     ]);
+    if (!joinResults[0]?.meta.changes) return jsonError("입장이 닫혔어요. 선생님께 확인해 주세요.", 403);
     return noStoreJson({ student: { id: studentId, nickname, animal, classroomName: classroom.displayName }, deviceToken: device.token, expiresAt: device.expiresAt, personalQrToken }, { status: 201 });
   }
 
@@ -83,6 +85,7 @@ async function studentPost(request: Request) {
     const valid = candidate ? await verifySecret(picture, candidate.pictureSalt, candidate.pictureHash) : Boolean(await deriveSecret(picture, "missing-profile-salt")) && false;
     if (!candidate || !valid) return jsonError("그림 비밀번호를 다시 확인해 주세요.", 401);
     const device = await issueDeviceSession(candidate.id);
+    if (!device) return jsonError("이 학급은 더 이상 이용할 수 없어요. 선생님께 확인해 주세요.", 403);
     return noStoreJson({ student: { id: candidate.id, nickname: candidate.nickname, animal: candidate.animal, classroomName: candidate.classroomName }, deviceToken: device.token, expiresAt: device.expiresAt });
   }
 
@@ -104,6 +107,7 @@ async function studentPost(request: Request) {
     }
     if (!student) return jsonError("복구할 학생을 찾지 못했어요.", 404);
     const device = await issueDeviceSession(student.id);
+    if (!device) return jsonError("이 학급은 더 이상 이용할 수 없어요. 선생님께 확인해 주세요.", 403);
     return noStoreJson({ student: { id: student.id, nickname: student.nickname, animal: student.animal, classroomName: student.classroomName }, deviceToken: device.token, expiresAt: device.expiresAt });
   }
   return jsonError("지원하지 않는 요청이에요.");

@@ -12,6 +12,18 @@ type FamilyLink = { id: string; studentId: string; scope: "artwork" | "bundle"; 
 type ClassroomData = { classroom: Classroom; students: Student[]; messages: Array<{ id: string; studentId: string | null; body: string; createdAt: string; nickname?: string; seenCount?: number }>; familyLinks: FamilyLink[]; teacher: { displayName: string; source?: "siwc" | "local" } };
 type TeacherPayload = Partial<ClassroomData> & { error?: string; localDemo?: boolean; teacher?: { displayName: string; source?: "siwc" | "local" }; classrooms?: Classroom[] };
 
+function ClassroomCard({ item, deleting, onDelete }: { item: Classroom; deleting: boolean; onDelete: (item: Classroom) => void }) {
+  return <article className="class-card">
+    <a className="class-card-link" href={`/teacher/class/${item.id}`} aria-label={`${item.displayName} 학급 자세히 보기`}>
+      <div className="class-card-top"><span>{item.admissionOpen ? "입장 열림" : "입장 닫힘"}</span><b>{item.studentCount}명</b></div>
+      <h2>{item.displayName}</h2><p>{item.currentActivity}</p>
+      <div className="class-code"><small>수업 코드</small><strong>{item.classCode}</strong></div>
+      <span className="class-card-detail">학급 자세히 보기 →</span>
+    </a>
+    <div className="class-card-actions"><button type="button" className="class-delete-button" aria-label={`${item.displayName} 학급 삭제`} disabled={deleting} onClick={() => onDelete(item)}>{deleting ? "삭제 처리 중…" : "학급 삭제"}</button></div>
+  </article>;
+}
+
 async function teacherPost<T = Record<string, unknown>>(payload: Record<string, unknown>): Promise<T> { const response = await fetch("/api/teacher", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), cache: "no-store" }); const data = await response.json() as T & { error?: string }; if (!response.ok) throw new Error(data.error ?? "요청을 처리하지 못했어요."); return data; }
 async function teacherAiPost<T = Record<string, unknown>>(payload: Record<string, unknown>): Promise<T> { const response = await fetch("/api/ai/teacher-draft", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), cache: "no-store" }); const data = await response.json() as T & { error?: string }; if (!response.ok) throw new Error(data.error ?? "AI 코칭 초안을 처리하지 못했어요."); return data; }
 
@@ -27,6 +39,7 @@ function TeacherActivitySelect({ value, onChange }: { value: string; onChange: (
 export function TeacherApp({ classroomId = "" }: { classroomId?: string }) {
   const [authorized, setAuthorized] = useState<boolean | null>(null); const [localDemo, setLocalDemo] = useState(false); const [teacher, setTeacher] = useState<{ displayName: string; source?: "siwc" | "local" } | null>(null); const [classrooms, setClassrooms] = useState<Classroom[]>([]); const [classroomData, setClassroomData] = useState<ClassroomData | null>(null); const [error, setError] = useState("");
   const [email, setEmail] = useState(""); const [pin, setPin] = useState(""); const [newClass, setNewClass] = useState(""); const [messageBody, setMessageBody] = useState(""); const [targetStudent, setTargetStudent] = useState(""); const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
+  const [deletingClassroom, setDeletingClassroom] = useState("");
   const [draftId, setDraftId] = useState(""); const [draftBody, setDraftBody] = useState(""); const [draftLoading, setDraftLoading] = useState(false); const [draftSent, setDraftSent] = useState(false);
   const [familyShareUrl, setFamilyShareUrl] = useState("");
   const [guardianConsentConfirmed, setGuardianConsentConfirmed] = useState(false);
@@ -74,6 +87,14 @@ export function TeacherApp({ classroomId = "" }: { classroomId?: string }) {
 
   async function login(event: FormEvent) { event.preventDefault(); setError(""); try { await teacherPost({ action: "login", email, pin }); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "로그인할 수 없어요."); } }
   async function createClass(event: FormEvent) { event.preventDefault(); try { const data = await teacherPost<{ classroom: Classroom }>({ action: "createClassroom", displayName: newClass }); setNewClass(""); location.href = `/teacher/class/${data.classroom.id}`; } catch (cause) { setError(cause instanceof Error ? cause.message : "학급을 만들 수 없어요."); } }
+  async function deleteClassroom(item: Classroom) {
+  const confirmed = confirm(`${item.displayName} 학급(학생 ${item.studentCount}명)을 삭제할까요?\n\n목록에서 삭제되고 학생 입장과 기존 로그인, 가족 공유가 즉시 종료됩니다. 내부 데이터는 복구를 위해 안전하게 보관됩니다.`);
+    if (!confirmed) return;
+    setDeletingClassroom(item.id); setError("");
+    try { await teacherPost({ action: "deleteClassroom", classroomId: item.id }); await load(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "학급을 삭제하지 못했어요."); }
+    finally { setDeletingClassroom(""); }
+  }
   async function classAction<T = Record<string, unknown>>(action: string, rest: Record<string, unknown> = {}) { if (!classroomData) return null; try { const result = await teacherPost<T>({ action, classroomId: classroomData.classroom.id, ...rest }); await load(); return result; } catch (cause) { setError(cause instanceof Error ? cause.message : "바꾸지 못했어요."); return null; } }
   async function sendMessage(event: FormEvent) { event.preventDefault(); if (!messageBody.trim()) return; await classAction("sendMessage", { body: messageBody, studentId: targetStudent || null }); setMessageBody(""); }
   async function requestTeacherDraft(student: Student) {
@@ -105,7 +126,7 @@ export function TeacherApp({ classroomId = "" }: { classroomId?: string }) {
 
   if (authorized === null) return <main className="teacher-shell"><div className="loading-card">수업실을 준비하는 중…</div></main>;
   if (!authorized) return <main className="teacher-login"><section className="login-brand"><Logo /><div><p className="eyebrow">아이의 다음 선을 함께 찾아요</p><h1>교사 수업 진행실</h1><p>순위 없이 학생의 진행과 작품 변화를 한눈에 확인하고, 짧은 도움말을 보낼 수 있어요.</p></div><ul><li>학생 실명 없이 익명 프로필</li><li>낮은 빈도의 안전한 썸네일</li><li>전체 또는 한 학생에게 메시지</li></ul></section>{localDemo ? <form className="login-card" onSubmit={login}><h2>로컬 개발 로그인</h2><p className="helper">localhost에서만 열립니다. 처음 입력한 이메일과 8자 이상 PIN으로 개발 계정을 만들어요.</p><label>이메일<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} /></label><label>접속 PIN<input type="password" minLength={8} autoComplete="current-password" value={pin} onChange={(event) => setPin(event.target.value)} /></label>{error && <p className="error-box">{error}</p>}<button className="button primary full" disabled={!email || pin.length < 8}>로컬 수업실 열기</button><a className="text-button" href="/">학생 화면으로 돌아가기</a></form> : <section className="login-card"><h2>로그인이 필요해요</h2><p>운영 교사 화면은 ChatGPT 인증으로만 열립니다.</p><a className="button primary full" href="/signin-with-chatgpt?return_to=%2Fteacher">ChatGPT로 로그인</a></section>}</main>;
-  if (!classroomId) return <main className="teacher-shell"><header className="teacher-header"><Logo /><div><span>교사</span><b>{teacher?.displayName}</b></div><button className="small-button" onClick={async () => { const data = await teacherPost<{ signOut?: boolean }>({ action: "logout" }); location.href = data.signOut ? "/signout-with-chatgpt?return_to=%2F" : "/teacher"; }}>로그아웃</button></header><section className="teacher-welcome"><div><p className="eyebrow">오늘의 수업</p><h1>아이들의 생각이<br />자라는 교실</h1></div><form className="create-class" onSubmit={createClass}><label>새 학급 만들기<input value={newClass} maxLength={30} onChange={(event) => setNewClass(event.target.value)} placeholder="예: 별빛 1반" /></label><button className="button primary" disabled={newClass.length < 2}>학급 만들기</button></form></section>{error && <p className="error-box">{error}</p>}<section><div className="section-title"><h2>내 학급</h2><span>{classrooms.length}개 학급</span></div><div className="class-grid">{classrooms.map((item) => <a className="class-card" href={`/teacher/class/${item.id}`} key={item.id}><div className="class-card-top"><span>{item.admissionOpen ? "입장 열림" : "입장 닫힘"}</span><b>{item.studentCount}명</b></div><h2>{item.displayName}</h2><p>{item.currentActivity}</p><div className="class-code"><small>수업 코드</small><strong>{item.classCode}</strong></div></a>)}</div></section></main>;
+  if (!classroomId) return <main className="teacher-shell"><header className="teacher-header"><Logo /><div><span>교사</span><b>{teacher?.displayName}</b></div><button className="small-button" onClick={async () => { const data = await teacherPost<{ signOut?: boolean }>({ action: "logout" }); location.href = data.signOut ? "/signout-with-chatgpt?return_to=%2F" : "/teacher"; }}>로그아웃</button></header><section className="teacher-welcome"><div><p className="eyebrow">오늘의 수업</p><h1>아이들의 생각이<br />자라는 교실</h1></div><form className="create-class" onSubmit={createClass}><label>새 학급 만들기<input value={newClass} maxLength={30} onChange={(event) => setNewClass(event.target.value)} placeholder="예: 별빛 1반" /></label><button className="button primary" disabled={newClass.length < 2}>학급 만들기</button></form></section>{error && <p className="error-box" role="alert">{error}</p>}<section><div className="section-title"><h2>내 학급</h2><span>{classrooms.length}개 학급</span></div><div className="class-grid">{classrooms.map((item) => <ClassroomCard item={item} deleting={deletingClassroom === item.id} onDelete={deleteClassroom} key={item.id} />)}</div></section></main>;
   if (!classroomData) return <main className="teacher-shell"><div className="loading-card">{error || "학급을 불러오는 중…"}</div></main>;
   const room = classroomData.classroom;
   return <main className="teacher-room"><header className="teacher-header"><Logo /><a className="small-button" href="/teacher">← 학급 목록</a><div className="room-heading"><b>{room.displayName}</b><span>{room.currentActivity}</span></div><button className="subscription-pill" disabled title="결제 제공자와 가격이 정해진 뒤 연결됩니다.">구독 연결 전</button><div className={room.admissionOpen ? "live-pill" : "closed-pill"}>{room.admissionOpen ? "● 입장 열림" : "입장 닫힘"}</div></header>

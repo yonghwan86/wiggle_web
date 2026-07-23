@@ -5,6 +5,7 @@ import { cleanText, id, isLocalDemoRequest, jsonError, noStoreJson, randomToken,
 import { prepareTeacherMessageInsert, validateTeacherMessageTarget } from "@/lib/teacher-messages";
 import { createFamilyShare, revokeFamilyShare } from "@/lib/family-sharing";
 import { activityLabel, DEFAULT_ACTIVITY_KEY, isActivityKey, normalizeActivityKey } from "@/lib/lesson-content";
+import { resetActiveStudentRecovery, rotateClassroomEntry, updateClassroomActivity, updateClassroomAdmission, upsertTeacherView } from "@/lib/teacher-classroom-mutations";
 
 type ClassroomRow = { id: string; displayName: string; classCode: string; joinToken: string; admissionOpen: number; currentActivity: string; studentCount: number; updatedAt: string };
 
@@ -99,6 +100,15 @@ export async function POST(request: Request) {
   const classroomId = cleanText(payload.classroomId, 40);
   const classroom = await ownedClassroom(teacher.id, classroomId);
   if (!classroom) return jsonError("이 학급을 바꿀 권한이 없어요.", 403);
+  if (action === "deleteClassroom") {
+    const results = await db.batch([
+      db.prepare(`UPDATE classrooms SET active = 0, admission_open = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND teacher_id = ? AND active = 1`).bind(classroomId, teacher.id),
+      db.prepare(`UPDATE device_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE revoked_at IS NULL AND student_id IN (SELECT id FROM student_profiles WHERE classroom_id = ?)`).bind(classroomId),
+      db.prepare(`UPDATE family_share_links SET revoked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE revoked_at IS NULL AND teacher_id = ? AND student_id IN (SELECT id FROM student_profiles WHERE classroom_id = ?)`).bind(teacher.id, classroomId),
+      db.prepare(`DELETE FROM teacher_views WHERE classroom_id = ?`).bind(classroomId),
+    ]);
+    return noStoreJson({ deleted: Boolean(results[0]?.meta.changes), classroomId });
+  }
   if (action === "createFamilyShare") {
     const studentId = cleanText(payload.studentId, 40);
     const artworkIds = Array.isArray(payload.artworkIds) ? payload.artworkIds.map((value) => cleanText(value, 80)).filter(Boolean) : [];
@@ -121,19 +131,22 @@ export async function POST(request: Request) {
     return noStoreJson({ messageId: validated.target.messageId }, { status: 201 });
   }
   if (action === "toggleAdmission") {
-    await db.prepare(`UPDATE classrooms SET admission_open = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND teacher_id = ?`).bind(payload.open ? 1 : 0, classroomId, teacher.id).run();
+    const updated = await updateClassroomAdmission(db, { teacherId: teacher.id, classroomId, open: Boolean(payload.open) });
+    if (!updated) return jsonError("활성 학급을 다시 확인해 주세요.", 403);
     return noStoreJson({ open: Boolean(payload.open) });
   }
   if (action === "rotateCode") {
     const classCode = await uniqueClassCode();
     const joinToken = randomToken(18);
-    await db.prepare(`UPDATE classrooms SET class_code = ?, join_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND teacher_id = ?`).bind(classCode, joinToken, classroomId, teacher.id).run();
+    const updated = await rotateClassroomEntry(db, { teacherId: teacher.id, classroomId, classCode, joinToken });
+    if (!updated) return jsonError("활성 학급을 다시 확인해 주세요.", 403);
     return noStoreJson({ classCode, joinToken });
   }
   if (action === "setActivity") {
     const activity = cleanText(payload.activity, 50);
     if (!isActivityKey(activity)) return jsonError("목록에 있는 활동을 골라 주세요.");
-    await db.prepare(`UPDATE classrooms SET current_activity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND teacher_id = ?`).bind(activity, classroomId, teacher.id).run();
+    const updated = await updateClassroomActivity(db, { teacherId: teacher.id, classroomId, activity });
+    if (!updated) return jsonError("활성 학급을 다시 확인해 주세요.", 403);
     return noStoreJson({ activity });
   }
   if (action === "viewStudent") {
@@ -141,7 +154,8 @@ export async function POST(request: Request) {
     const student = await db.prepare(`SELECT id FROM student_profiles WHERE id = ? AND classroom_id = ?`).bind(studentId, classroomId).first();
     if (!student) return jsonError("이 학급 학생이 아니에요.", 403);
     const expiresAt = new Date(Date.now() + 20_000).toISOString();
-    await db.prepare(`INSERT INTO teacher_views(teacher_id, classroom_id, student_id, expires_at, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(teacher_id, student_id) DO UPDATE SET classroom_id = excluded.classroom_id, expires_at = excluded.expires_at, updated_at = CURRENT_TIMESTAMP`).bind(teacher.id, classroomId, studentId, expiresAt).run();
+    const viewed = await upsertTeacherView(db, { teacherId: teacher.id, classroomId, studentId, expiresAt });
+    if (!viewed) return jsonError("활성 학급의 학생을 다시 확인해 주세요.", 403);
     return noStoreJson({ viewing: true, expiresAt });
   }
   if (action === "resetStudentRecovery") {
@@ -149,10 +163,8 @@ export async function POST(request: Request) {
     const student = await db.prepare(`SELECT id FROM student_profiles WHERE id = ? AND classroom_id = ?`).bind(studentId, classroomId).first();
     if (!student) return jsonError("이 학급 학생이 아니에요.", 403);
     const personalQrToken = randomToken(28);
-    await db.batch([
-      db.prepare(`UPDATE recovery_credentials SET personal_qr_hash = ?, reset_at = CURRENT_TIMESTAMP WHERE student_id = ?`).bind(await sha256(personalQrToken), studentId),
-      db.prepare(`UPDATE device_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE student_id = ? AND revoked_at IS NULL`).bind(studentId),
-    ]);
+    const reset = await resetActiveStudentRecovery(db, { teacherId: teacher.id, classroomId, studentId, personalQrHash: await sha256(personalQrToken) });
+    if (!reset) return jsonError("활성 학급의 학생을 다시 확인해 주세요.", 403);
     return noStoreJson({ personalQrToken });
   }
   return jsonError("지원하지 않는 요청이에요.");

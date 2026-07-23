@@ -157,7 +157,7 @@ export async function exchangeFamilyInvite(DB: D1Database, inviteToken: string, 
 export async function revokeFamilyShare(DB: D1Database, input: { teacherId: string; classroomId: string; linkId: string }) {
   const result = await DB.prepare(`UPDATE family_share_links SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND teacher_id = ? AND student_id IN (
-      SELECT s.id FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id WHERE s.classroom_id = ? AND c.teacher_id = ?
+      SELECT s.id FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id WHERE s.classroom_id = ? AND c.teacher_id = ? AND c.active = 1
     ) AND revoked_at IS NULL`).bind(input.linkId, input.teacherId, input.classroomId, input.teacherId).run();
   return Boolean(result.meta.changes);
 }

@@ -65,8 +65,8 @@ test("lesson slug and observe mode persist through schema, runtime upgrades and 
 });
 
 test("student and teacher surfaces expose four unlocked stages and round-trip grouped activities", async () => {
-  const [home, picker, observe, teacher, teacherRoute, studentRoute] = await Promise.all([
-    read("../app/components/StudentHome.tsx"), read("../app/components/LessonPicker.tsx"), read("../app/student/observe/page.tsx"), read("../app/components/TeacherApp.tsx"), read("../app/api/teacher/route.ts"), read("../app/api/student/route.ts"),
+  const [home, picker, observe, teacher, teacherRoute, teacherMutations, studentRoute] = await Promise.all([
+    read("../app/components/StudentHome.tsx"), read("../app/components/LessonPicker.tsx"), read("../app/student/observe/page.tsx"), read("../app/components/TeacherApp.tsx"), read("../app/api/teacher/route.ts"), read("../lib/teacher-classroom-mutations.ts"), read("../app/api/student/route.ts"),
   ]);
   assert.match(home, /CURRICULUM_STAGES\.map/);
   assert.match(home, /잠금 없음/);
@@ -82,7 +82,7 @@ test("student and teacher surfaces expose four unlocked stages and round-trip gr
   assert.match(teacherRoute, /isActivityKey\(activity\)/);
   assert.match(teacherRoute, /DEFAULT_ACTIVITY_KEY/);
   assert.match(teacherRoute, /currentActivityKey/);
-  assert.match(teacherRoute, /UPDATE classrooms SET current_activity = \?/);
+  assert.match(teacherMutations, /UPDATE classrooms SET current_activity = \?/);
   assert.match(studentRoute, /SELECT current_activity AS currentActivity FROM classrooms WHERE id = \?/);
   assert.match(studentRoute, /normalizeActivityKey\(classroom\?\.currentActivity\)/);
   assert.match(studentRoute, /currentActivityLabel: activityLabel\(currentActivityKey\)/);
