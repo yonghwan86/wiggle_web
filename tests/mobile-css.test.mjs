@@ -47,7 +47,7 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(css, /\.studio-header>\.grimi-button:before \{ content:"✨"; \}/);
   assert.match(css, /\.studio-header>\.button\.primary\.compact:before \{ content:"✓"; \}/);
   assert.match(css, /\.save-conflict \{ top:auto; bottom:calc\(72px \+ env\(safe-area-inset-bottom\)\); \}/);
-  assert.match(studio, /<span aria-hidden="true">✏️<\/span>연필/);
+  assert.match(studio, /<span className="tool-icon" aria-hidden="true">✏️<\/span>연필/);
   assert.doesNotMatch(studio, /✒️|>펜<|>펜<\/button>/);
   assert.match(studio, /className="tool-group" role="group" aria-label="그리기 도구"[\s\S]*aria-pressed=\{tool === "pen"\}[\s\S]*aria-pressed=\{tool === "crayon"\}[\s\S]*aria-pressed=\{tool === "eraser"\}/);
   assert.match(studio, /className="width-row" role="group" aria-label="선 굵기"/);

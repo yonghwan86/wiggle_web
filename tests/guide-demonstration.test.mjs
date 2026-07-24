@@ -39,7 +39,7 @@ test("guide controls and notices remain touch friendly on mobile", () => {
   assert.match(css, /@media \(max-width:720px\)[\s\S]*\.guide-actions \{[^}]*grid-template-columns:1fr 1fr/);
   assert.match(css, /\.guide-actions button \{[^}]*min-height:44px/);
   assert.match(css, /@media \(max-width:460px\) and \(orientation:portrait\)[\s\S]*min-height:min\(calc\(100vw - 16px\),320px\)/);
-  assert.match(css, /@media \(max-width:900px\) and \(max-height:500px\) and \(orientation:landscape\)[\s\S]*grid-template-columns:180px minmax\(0,1fr\) 108px/);
+  assert.match(css, /@media \(max-width:900px\) and \(max-height:500px\) and \(orientation:landscape\)[\s\S]*grid-template-columns:180px minmax\(0,1fr\) 200px/);
   assert.ok(css.indexOf("@media (max-width:900px) and (max-height:500px) and (orientation:landscape)") > css.indexOf(".tool-panel { padding-right:max(7px,env(safe-area-inset-right))"), "landscape rules must win the mobile cascade");
   assert.match(css, /\.step-panel \{ display:block; order:initial; grid-column:1;/);
   assert.match(css, /\.grimi-panel \{ order:initial; grid-column:1;/);

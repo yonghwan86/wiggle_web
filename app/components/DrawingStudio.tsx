@@ -12,7 +12,22 @@ import { TimelapsePlayer } from "./TimelapsePlayer";
 import { VoiceWhisperStatus } from "./VoiceWhisper";
 
 const PALETTE = ["#1B3A57", "#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#8D6E63", "#F06292", "#4DD0E1", "#FFCC80", "#FFFFFF"];
+const COLOR_NAMES: Record<(typeof PALETTE)[number], string> = {
+  "#1B3A57": "남색",
+  "#E53935": "빨간색",
+  "#FB8C00": "주황색",
+  "#FDD835": "노란색",
+  "#43A047": "초록색",
+  "#1E88E5": "파란색",
+  "#8E24AA": "보라색",
+  "#8D6E63": "갈색",
+  "#F06292": "분홍색",
+  "#4DD0E1": "하늘색",
+  "#FFCC80": "살구색",
+  "#FFFFFF": "흰색",
+};
 type Tool = "pen" | "crayon" | "eraser";
+type StrokeWidth = 8 | 16 | 30;
 type GuidePhase = "independent" | "demo" | "practice";
 type TracePoint = { x: number; y: number };
 type GuideTrace = TracePoint[];
@@ -28,6 +43,20 @@ function renderDocument(canvas: HTMLCanvasElement, document: DrawDocument, size 
   const context = canvas.getContext("2d"); if (!context) return;
   resetDrawingCanvas(context, size);
   for (const op of document.ops) renderDrawOperation(context, op, size);
+}
+
+function renderLiveStroke(canvas: HTMLCanvasElement, tool: Tool, color: string, width: StrokeWidth, points: Array<{ x: number; y: number; pressure: number }>) {
+  const context = canvas.getContext("2d"); if (!context || !points.length) return;
+  renderDrawOperation(context, {
+    opId: "preview_op",
+    clientOpId: "preview_client",
+    type: "stroke",
+    at: "2000-01-01T00:00:00.000Z",
+    tool,
+    color: tool === "eraser" ? undefined : color,
+    width,
+    points,
+  }, canvas.width);
 }
 
 function sampleLine(points: Array<[number, number]>) {
@@ -159,7 +188,7 @@ export function DrawingStudio() {
   const requestedLesson = useMemo(() => lessonBySlug(search.get("lesson") ?? ""), [search]);
   const [artwork, setArtwork] = useState<ArtworkPayload | null>(null); const [documentState, setDocumentState] = useState<DrawDocument>(emptyDocument());
   const lesson = useMemo(() => params.id === "new" ? requestedLesson : lessonBySlug(artwork?.lessonSlug), [artwork?.lessonSlug, params.id, requestedLesson]);
-  const [tool, setTool] = useState<Tool>("pen"); const [color, setColor] = useState(PALETTE[0]); const [width, setWidth] = useState<8 | 16 | 30>(16);
+  const [tool, setTool] = useState<Tool>("pen"); const [color, setColor] = useState(PALETTE[0]); const [width, setWidth] = useState<StrokeWidth>(16);
   const [redo, setRedo] = useState<DrawOp[]>([]); const [guidePhase, setGuidePhase] = useState<GuidePhase>("independent"); const [guideDemoRun, setGuideDemoRun] = useState(0); const [guidePracticeTried, setGuidePracticeTried] = useState(false); const [saveState, setSaveState] = useState("불러오는 중"); const [editVersion, setEditVersion] = useState(0);
   const [reflectionOpen, setReflectionOpen] = useState(false); const [favoritePart, setFavoritePart] = useState(""); const [favoriteReason, setFavoriteReason] = useState(""); const [message, setMessage] = useState("");
   const [teacherViewing, setTeacherViewing] = useState(false); const [conflictRevision, setConflictRevision] = useState<number | null>(null); const [conflictDraft, setConflictDraft] = useState<QueuedArtworkDraft | null>(null);
@@ -365,12 +394,27 @@ export function DrawingStudio() {
   }, [artworkId, flushCurrentArtwork]);
 
   function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) { const rect = event.currentTarget.getBoundingClientRect(); return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)), pressure: event.pressure || 0.5 }; }
+  function chooseTool(nextTool: Tool) {
+    setTool(nextTool);
+    setWidth(nextTool === "eraser" ? 30 : 16);
+  }
   function pointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (conflictDraftRef.current) { setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return; }
     if (guidePhase === "demo") stopGuideDemoForPractice();
-    event.currentTarget.setPointerCapture(event.pointerId); activePoints.current.set(event.pointerId, [canvasPoint(event)]);
+    event.preventDefault();
+    const first = canvasPoint(event);
+    event.currentTarget.setPointerCapture(event.pointerId); activePoints.current.set(event.pointerId, [first]);
+    renderLiveStroke(event.currentTarget, tool, color, width, [first]);
   }
-  function pointerMove(event: ReactPointerEvent<HTMLCanvasElement>) { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; const points = activePoints.current.get(event.pointerId); if (!points) return; const next = canvasPoint(event); const last = points.at(-1); if (!last || Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= 2.5) points.push(next); }
+  function pointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    const points = activePoints.current.get(event.pointerId); if (!points) return;
+    const next = canvasPoint(event); const last = points.at(-1);
+    if (last && Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= 2.5) {
+      event.preventDefault(); points.push(next);
+      renderLiveStroke(event.currentTarget, tool, color, width, [last, next]);
+    }
+  }
   function pointerUp(event: ReactPointerEvent<HTMLCanvasElement>) {
     const points = activePoints.current.get(event.pointerId);
     if (conflictDraftRef.current) {
@@ -378,7 +422,7 @@ export function DrawingStudio() {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return;
     }
-    if (!points?.length) return; const operationId = crypto.randomUUID().replaceAll("-", "");
+    if (!points?.length) return; event.preventDefault(); const operationId = crypto.randomUUID().replaceAll("-", "");
     const op: DrawOp = { opId: `op_${operationId}`, clientOpId: `client_${operationId}`, type: "stroke", at: new Date().toISOString(), tool, color: tool === "eraser" ? undefined : color, width, points };
     activePoints.current.delete(event.pointerId); setDocumentState((current) => ({ ...current, ops: [...current.ops, op] })); setRedo([]); setEditVersion((value) => value + 1);
     if ((guidePhase === "practice" || guidePhase === "demo") && lessonGuideAvailable && tool !== "eraser") setGuidePracticeTried(true);
@@ -510,7 +554,7 @@ export function DrawingStudio() {
     {teacherViewing && <div className="teacher-viewing" role="status">선생님이 지금 내 그림을 보고 있어요.</div>}
     <VoiceWhisperStatus />
     {message && <div className="canvas-message"><b>선생님</b> {message}</div>}
-    <div className="studio-body">{grimiOpen ? <aside className="grimi-panel" aria-live="polite"><div className="grimi-head"><div><span>✨</span><b>그리미</b></div><button onClick={dismissGrimi} aria-label="그리미 닫기">×</button></div>
+    <div className={`studio-body ${grimiOpen || lesson ? "" : "without-step-panel"}`}>{grimiOpen ? <aside className="grimi-panel" aria-live="polite"><div className="grimi-head"><div><span>✨</span><b>그리미</b></div><button onClick={dismissGrimi} aria-label="그리미 닫기">×</button></div>
         {grimiLoading && <div className="grimi-thinking"><span>●</span><span>●</span><span>●</span><p>그림을 보고 있어요…</p></div>}
         {grimiError && <p className="error-box">{grimiError}</p>}
         {coaching && !grimiLoading && <div className="grimi-coaching"><p className="eyebrow">그리미가 궁금해요</p><h2>{coaching.question}</h2><div className="grimi-chips">{coaching.choices.map((choice) => <button aria-pressed={answer === choice.answer} onClick={() => { setAnswer(choice.answer); setAnswerLabel(choice.label); setAnswerSaved(false); }} key={choice.label}><span>{choice.emoji}</span>{choice.label}</button>)}</div><label className="direct-answer">직접 말하기<input maxLength={80} value={answerLabel ? "" : answer} onChange={(event) => { setAnswer(event.target.value); setAnswerLabel(""); setAnswerSaved(false); }} placeholder="내 생각을 짧게 적어도 돼요" /></label>{answer && <div className="next-action"><small>이제 그려 볼 일</small><b>{coaching.nextAction}</b><button className="button primary full" disabled={grimiLoading || answerSaved} onClick={recordCoachingAnswer}>{answerSaved ? "과정에 남겼어요" : "그린 뒤 ‘했어요’"}</button></div>}</div>}
@@ -518,8 +562,8 @@ export function DrawingStudio() {
         {!aiGuide && !grimiLoading && <div className="guide-request"><label>그리고 싶은 게 있어?<input maxLength={60} value={guideTopic} onChange={(event) => setGuideTopic(event.target.value)} placeholder="예: 우주 자전거" /></label><button className="button secondary full" disabled={guideTopic.trim().length < 2} onClick={requestAiGuide}>단계 가이드 만들기</button></div>}
         <button className="text-button free-exit" onClick={dismissGrimi}>그냥 내 마음대로 그릴래</button>
       </aside> : lesson && <aside className="step-panel"><div className="reference-tile"><span>{lesson.emoji}</span><small>{lesson.topic} {lesson.mode === "observe" ? "관찰하기" : "그려 보기"}</small></div><p className="eyebrow">지금 할 일</p><h2>{lesson.steps[step].instruction}</h2>{lesson.steps[step].choices?.length && <div className="choice-chips">{lesson.steps[step].choices.map((choice) => <button aria-pressed={childChoice === choice} onClick={() => setChildChoice(choice)} key={choice}>{choice}</button>)}</div>}{guideControls()}<div className="step-actions"><button disabled={Boolean(conflictDraft) || step === 0} onClick={() => changeLessonStep(-1)}>이전</button><button disabled={Boolean(conflictDraft)} onClick={() => { if (step === lesson.steps.length - 1) { setReflectionOpen(true); return; } changeLessonStep(1); }}>{step === lesson.steps.length - 1 ? "그림 다 그렸어요" : "다음"}</button></div><button className="text-button" onClick={chooseIndependentDrawing}>그냥 그릴래</button></aside>}
-      <section className="canvas-zone"><div className="canvas-wrap">{guideNotice && <div className="guide-notice" role="status" aria-live="polite">{guidePhase === "demo" ? "✏️" : "🟢"} {guideNotice}</div>}<canvas ref={guideRef} className={guidePhase !== "independent" && lessonGuideAvailable ? "guide-canvas" : "guide-canvas hidden"} aria-hidden="true" /><canvas ref={canvasRef} className="draw-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} aria-disabled={Boolean(conflictDraft)} aria-label="그림 그리는 도화지" /></div></section>
-      <aside className="tool-panel" aria-label="그리기 도구 모음"><div className="tool-group" role="group" aria-label="그리기 도구"><button type="button" aria-pressed={tool === "pen"} onClick={() => setTool("pen")}><span aria-hidden="true">✏️</span>연필</button><button type="button" aria-pressed={tool === "crayon"} onClick={() => setTool("crayon")}><span aria-hidden="true">🖍️</span>크레용</button><button type="button" aria-pressed={tool === "eraser"} onClick={() => setTool("eraser")}><span aria-hidden="true">▱</span>지우개</button></div><div className="width-row" role="group" aria-label="선 굵기">{([8, 16, 30] as const).map((value) => <button type="button" aria-label={`${value} 굵기`} aria-pressed={width === value} onClick={() => setWidth(value)} key={value}><i aria-hidden="true" style={{ width: Math.max(8, value * .72), height: Math.max(8, value * .72) }} /></button>)}</div><div className="palette" role="group" aria-label="색 고르기">{PALETTE.map((value) => <button type="button" aria-label={`${value} 색`} aria-pressed={color === value} onClick={() => { setColor(value); if (tool === "eraser") setTool("pen"); }} key={value} style={{ background: value }} />)}</div><div className="history-row" role="group" aria-label="그리기 기록"><button type="button" onClick={undo} disabled={Boolean(conflictDraft) || !documentState.ops.length}>↶ 되돌리기</button><button type="button" onClick={redoLast} disabled={Boolean(conflictDraft) || !redo.length}>↷ 다시하기</button></div></aside></div>
+      <section className="canvas-zone"><div className="canvas-wrap">{guideNotice && <div className="guide-notice" role="status" aria-live="polite">{guidePhase === "demo" ? "✏️" : "🟢"} {guideNotice}</div>}{!lesson && !aiGuide && !documentState.ops.length && <div className="canvas-start-hint" role="status">✏️ 연필로 하얀 종이에 그어 봐!</div>}<canvas ref={guideRef} className={guidePhase !== "independent" && lessonGuideAvailable ? "guide-canvas" : "guide-canvas hidden"} aria-hidden="true" /><canvas ref={canvasRef} className="draw-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} aria-disabled={Boolean(conflictDraft)} aria-label="그림 그리는 도화지" /></div></section>
+      <aside className="tool-panel" aria-label="그리기 도구 모음"><p className="tool-section-label tools-label">무엇으로 그릴까?</p><div className="tool-group" role="group" aria-label="그리기 도구"><button type="button" aria-pressed={tool === "pen"} onClick={() => chooseTool("pen")}><span className="tool-icon" aria-hidden="true">✏️</span>연필</button><button type="button" aria-pressed={tool === "crayon"} onClick={() => chooseTool("crayon")}><span className="tool-icon" aria-hidden="true">🖍️</span>크레용</button><button type="button" aria-pressed={tool === "eraser"} onClick={() => chooseTool("eraser")}><span className="tool-icon eraser-icon" aria-hidden="true"><i /><i /></span>지우개</button></div><p className="tool-section-label width-label">얼마나 굵게?</p><div className="width-row" role="group" aria-label="선 굵기">{([8, 16, 30] as const).map((value) => { const label = value === 8 ? "얇게" : value === 16 ? "보통" : "굵게"; return <button type="button" aria-label={label} aria-pressed={width === value} onClick={() => setWidth(value)} key={value}><i aria-hidden="true" style={{ width: Math.max(8, value * .72), height: Math.max(8, value * .72) }} /><small>{label}</small></button>; })}</div><p className="tool-section-label color-label">무슨 색?</p><div className="palette" role="group" aria-label="색 고르기">{PALETTE.map((value) => <button type="button" aria-label={COLOR_NAMES[value]} title={COLOR_NAMES[value]} aria-pressed={color === value} onClick={() => { setColor(value); if (tool === "eraser") chooseTool("pen"); }} key={value} style={{ background: value }} />)}</div><div className="history-row" role="group" aria-label="그리기 기록"><button type="button" onClick={undo} disabled={Boolean(conflictDraft) || !documentState.ops.length}>↶ 되돌리기</button><button type="button" onClick={redoLast} disabled={Boolean(conflictDraft) || !redo.length}>↷ 다시하기</button></div></aside></div>
     {timelapseOpen && <TimelapsePlayer document={documentState} onClose={() => setTimelapseOpen(false)} />}
     {reflectionOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reflection-title"><section className="reflection-modal"><button className="modal-close" onClick={() => setReflectionOpen(false)} aria-label="닫기">×</button><span className="modal-emoji">🌟</span><h2 id="reflection-title">내 그림을 소개해 줘!</h2><label>가장 마음에 드는 곳은?<input maxLength={80} value={favoritePart} onChange={(event) => setFavoritePart(event.target.value)} placeholder="예: 무지개 꼬리" /></label><label>왜 마음에 들어?<textarea maxLength={180} value={favoriteReason} onChange={(event) => setFavoriteReason(event.target.value)} placeholder="내가 고른 색이 예뻐서" /></label><div className="modal-actions"><button className="button secondary" onClick={() => setReflectionOpen(false)}>조금 더 그릴래</button><button className="button primary" disabled={!favoritePart || !favoriteReason} onClick={complete}>작품 완성</button></div></section></div>}
   </main>;
