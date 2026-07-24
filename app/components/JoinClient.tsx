@@ -6,9 +6,27 @@ import { LEGACY_PICTURE_PASSWORD_LENGTH, NEW_PICTURE_PASSWORD_LENGTH, shouldOffe
 import { readStudentEntryResponse, StudentEntryResponseError } from "@/lib/student-entry-client";
 import { Logo } from "./Logo";
 import { QrCode } from "./QrCode";
+import { SpeakButton } from "./SpeakButton";
 
 const ANIMALS = ["🐰", "🐻", "🦊", "🐯", "🐼", "🐶"];
-const PICTURES = ["⭐", "🍎", "🚲", "🌈", "⚽", "🌙", "꽃", "집"];
+const PICTURES = [
+  { value: "⭐", picture: "⭐", name: "별" },
+  { value: "🍎", picture: "🍎", name: "사과" },
+  { value: "🚲", picture: "🚲", name: "자전거" },
+  { value: "🌈", picture: "🌈", name: "무지개" },
+  { value: "⚽", picture: "⚽", name: "축구공" },
+  { value: "🌙", picture: "🌙", name: "달" },
+  { value: "꽃", picture: "🌸", name: "꽃" },
+  { value: "집", picture: "🏠", name: "집" },
+] as const;
+const NICKNAME_IDEAS: Record<string, string[]> = {
+  "🐰": ["토끼 화가", "깡총 별"],
+  "🐻": ["곰돌 화가", "꿀별"],
+  "🦊": ["여우별", "주황 화가"],
+  "🐯": ["씩씩 호랑이", "줄무늬 별"],
+  "🐼": ["판다 화가", "대나무 별"],
+  "🐶": ["멍멍 화가", "꼬리별"],
+};
 
 type Mode = "profiles" | "unlock" | "join" | "recover" | "done";
 
@@ -45,6 +63,16 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
     setPictures((current) => current.slice(0, -1));
   }
 
+  function pictureFor(value: string) {
+    return PICTURES.find((item) => item.value === value)?.picture ?? value;
+  }
+
+  function suggestNickname() {
+    const ideas = NICKNAME_IDEAS[animal] ?? ["꼬마 화가"];
+    setNickname(ideas[Math.floor(Math.random() * ideas.length)]);
+    setDuplicateWarning(false);
+  }
+
   function changePasswordLength(useLegacy: boolean) {
     setLegacyPassword(useLegacy);
     setLegacyOffer(false);
@@ -63,7 +91,8 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   }
 
   function picturePasswordPicker() {
-    return <fieldset><legend>그림 비밀번호 <small>{pictures.length}/{targetLength}</small></legend><p className="helper">같은 그림을 여러 번 골라도 돼요. 순서대로 {targetLength === 3 ? "세 개" : "네 개"}를 골라요.</p><div className="chip-row picture-row" role="group" aria-label={`그림 비밀번호 고르기. 현재 ${pictures.length}/${targetLength}개를 골랐어요. 같은 그림을 여러 번 고를 수 있어요.`}>{PICTURES.map((value) => <button type="button" className="picture-chip" disabled={pictures.length >= targetLength} aria-label={`${value} 그림 추가. 현재 ${pictures.length}/${targetLength}개 선택. 같은 그림도 다시 고를 수 있어요.`} key={value} onClick={() => appendPicture(value)}>{value}</button>)}</div><div className="password-actions"><button type="button" className="small-button" disabled={!pictures.length} aria-label={`마지막 그림 한 칸 지우기. 현재 ${pictures.length}개 선택.`} onClick={removeLastPicture}>한 칸 지우기</button></div>{pictures.length > 0 && <div className="password-preview" aria-live="polite" aria-label={`고른 그림 ${pictures.length}개: ${pictures.join(", ")}`}>{pictures.join(" → ")}</div>}</fieldset>;
+    const instruction = `그림 비밀번호를 만들어요. 같은 그림을 여러 번 골라도 돼요. 순서대로 ${targetLength === 3 ? "세 개" : "네 개"}를 골라요.`;
+    return <fieldset className="picture-password-picker"><legend>그림 비밀번호 <small>{pictures.length}/{targetLength}</small></legend><div className="picture-password-help"><p className="helper">같은 그림도 괜찮아요. 순서대로 {targetLength === 3 ? "3개" : "4개"} 골라요.</p><SpeakButton text={instruction} compact /></div><div className="password-slots" aria-hidden="true">{Array.from({ length: targetLength }, (_, index) => <span className={pictures[index] ? "filled" : ""} key={index}>{pictures[index] ? pictureFor(pictures[index]) : "?"}</span>)}</div><div className="chip-row picture-row" role="group" aria-label={`그림 비밀번호 고르기. 현재 ${pictures.length}/${targetLength}개를 골랐어요. 같은 그림을 여러 번 고를 수 있어요.`}>{PICTURES.map((item) => <button type="button" className="picture-chip" disabled={pictures.length >= targetLength} aria-label={`${item.name} 그림 추가. 현재 ${pictures.length}/${targetLength}개 선택. 같은 그림도 다시 고를 수 있어요.`} key={item.value} onClick={() => appendPicture(item.value)}>{item.picture}</button>)}</div><div className="password-actions"><button type="button" className="small-button" disabled={!pictures.length} aria-label={`마지막 그림 한 칸 지우기. 현재 ${pictures.length}개 선택.`} onClick={removeLastPicture}>↩️ 한 칸 지우기</button></div>{pictures.length > 0 && <div className="password-preview" aria-live="polite" aria-label={`고른 그림 ${pictures.length}개: ${pictures.map(pictureFor).join(", ")}`}>{pictures.map(pictureFor).join(" → ")}</div>}</fieldset>;
   }
 
   function legacyPasswordAction() {
@@ -96,11 +125,11 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   }
 
   if (mode === "profiles") {
-    return <main className="entry-shell"><div className="entry-top"><Logo /><span>공유 태블릿</span></div><section className="entry-card wide"><p className="eyebrow">오늘 누가 그릴 거야?</p><h1>내 프로필을 골라요</h1><div className="profile-grid">{profiles.map((profile) => <button className="profile-button" key={profile.studentId} onClick={() => { setSelectedProfile(profile); resetPassword("unlock"); }}><span>{profile.animal}</span><b>{profile.nickname}</b><small>{profile.classroomName}</small></button>)}<button className="profile-button add" onClick={() => resetPassword("join")}><span>＋</span><b>처음 왔어요</b></button></div><button className="text-button" onClick={() => resetPassword("recover")}>다른 기기에서 하던 그림 찾기</button></section></main>;
+    return <main className="entry-shell"><div className="entry-top"><Logo /><span>공유 태블릿</span></div><section className="entry-card wide"><div className="entry-title-row"><div><p className="eyebrow">오늘 누가 그릴 거야?</p><h1>내 동물을 눌러요</h1></div><SpeakButton text="내 동물을 찾아서 눌러요. 처음 왔다면 더하기를 눌러요." /></div><div className="profile-grid">{profiles.map((profile) => <button className="profile-button" key={profile.studentId} onClick={() => { setSelectedProfile(profile); resetPassword("unlock"); }}><span>{profile.animal}</span><b>{profile.nickname}</b><small>{profile.classroomName}</small></button>)}<button className="profile-button add" onClick={() => resetPassword("join")}><span>＋</span><b>처음 왔어요</b></button></div><button className="text-button" onClick={() => resetPassword("recover")}>🔎 다른 기기에서 하던 그림 찾기</button></section></main>;
   }
 
   if (mode === "unlock" && selectedProfile) {
-    return <main className="entry-shell"><div className="entry-top"><Logo /><span>공유 태블릿</span></div><section className="entry-card"><button className="small-button" onClick={() => resetPassword("profiles")}>← 학생 다시 고르기</button><div className="profile-unlock"><span>{selectedProfile.animal}</span><h1>{selectedProfile.nickname}</h1><p>{selectedProfile.classroomName}</p></div>{picturePasswordPicker()}{error && <p className="error-box" role="alert">{error}</p>}{legacyPasswordAction()}<button className="button primary full" disabled={busy || pictures.length !== targetLength} onClick={() => void submit()}>{busy ? "확인 중…" : "내 그림 열기"}</button></section></main>;
+    return <main className="entry-shell"><div className="entry-top"><Logo /><span>공유 태블릿</span></div><section className="entry-card"><button className="small-button" onClick={() => resetPassword("profiles")}>← 학생 다시 고르기</button><div className="profile-unlock"><span>{selectedProfile.animal}</span><h1>{selectedProfile.nickname}</h1><p>{selectedProfile.classroomName}</p></div>{picturePasswordPicker()}{error && <p className="error-box" role="alert">{error}</p>}{legacyPasswordAction()}<button className="button primary full child-primary-action" disabled={busy || pictures.length !== targetLength} onClick={() => void submit()}><span aria-hidden="true">▶️</span>{busy ? "확인 중…" : "내 그림 열기"}</button></section></main>;
   }
 
   if (mode === "done") {
@@ -108,6 +137,6 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   }
 
   return (
-    <main className="entry-shell"><div className="entry-top"><Logo /><a href="/teacher">교사 입장</a></div><section className="entry-card"><p className="eyebrow">{mode === "join" ? "수업에 들어가요" : "내 그림을 찾아요"}</p><h1>{mode === "join" ? "반가워, 꼬마 화가!" : "다시 만나서 반가워!"}</h1>{mode === "join" && profiles.length > 0 && <button className="saved-profile-notice" type="button" onClick={() => resetPassword("profiles")}>이 기기에 저장된 내 프로필 고르기</button>}{recoveryToken ? <p className="helper">개인 카드로 안전하게 찾는 중이에요.</p> : <><label>수업 코드<input inputMode="numeric" maxLength={12} value={entry} onChange={(event) => { setEntry(event.target.value.replace(/\s/g, "")); setDuplicateWarning(false); }} placeholder="예: 2841" /></label><label>그림 별명<input maxLength={16} value={nickname} onChange={(event) => { setNickname(event.target.value); setDuplicateWarning(false); }} placeholder="예: 토끼 화가" /></label><fieldset><legend>내 동물</legend><div className="chip-row">{ANIMALS.map((value) => <button type="button" aria-pressed={animal === value} className={animal === value ? "emoji-chip selected" : "emoji-chip"} key={value} onClick={() => { setAnimal(value); setDuplicateWarning(false); }}>{value}</button>)}</div></fieldset>{picturePasswordPicker()}</>}{duplicateWarning && <div className="duplicate-profile-warning" role="alert"><b>전에 만든 프로필일 수 있어요</b><p>같은 별명과 동물이 이미 있어요. 내 그림을 찾거나, 정말 다른 학생일 때만 새로 만들어요.</p><div><button type="button" className="button secondary" onClick={() => resetPassword("recover")}>내 그림 찾기</button><button type="button" className="button ghost" onClick={() => void submit(true)}>다른 학생으로 새로 만들기</button></div></div>}{error && <p className="error-box" role="alert">{error}</p>}{legacyPasswordAction()}<button className="button primary full" disabled={busy || duplicateWarning || (!recoveryToken && (!entry || !nickname || pictures.length !== targetLength))} onClick={() => void submit()}>{busy ? "찾는 중…" : mode === "join" ? "수업 들어가기" : "내 그림 찾기"}</button>{!recoveryToken && <button className="text-button" onClick={() => resetPassword(mode === "join" ? "recover" : "join")}>{mode === "join" ? "전에 그리던 그림이 있어요" : "처음 왔어요"}</button>}</section></main>
+    <main className="entry-shell"><div className="entry-top"><Logo /><a href="/teacher">교사 입장</a></div><section className="entry-card"><div className="entry-title-row"><div><p className="eyebrow">{mode === "join" ? "수업에 들어가요" : "내 그림을 찾아요"}</p><h1>{mode === "join" ? "반가워, 꼬마 화가!" : "다시 만나서 반가워!"}</h1></div><SpeakButton text={mode === "join" ? "선생님과 함께 수업 코드, 동물, 그림 비밀번호를 골라요." : "내 수업 코드, 동물, 그림 비밀번호를 골라서 그림을 찾아요."} /></div>{mode === "join" && profiles.length > 0 && <button className="saved-profile-notice" type="button" onClick={() => resetPassword("profiles")}>🐾 이 기기에 저장된 내 동물 고르기</button>}{recoveryToken ? <p className="helper">개인 카드로 안전하게 찾는 중이에요.</p> : <><label><span>1️⃣ 수업 코드</span><input inputMode="numeric" maxLength={12} value={entry} onChange={(event) => { setEntry(event.target.value.replace(/\s/g, "")); setDuplicateWarning(false); }} placeholder="예: 2841" /></label><label><span>2️⃣ 그림 별명</span><div className="nickname-row"><input maxLength={16} value={nickname} onChange={(event) => { setNickname(event.target.value); setDuplicateWarning(false); }} placeholder="예: 토끼 화가" /><button type="button" onClick={suggestNickname}>🎲 별명 골라줘</button></div></label><fieldset><legend>3️⃣ 내 동물</legend><div className="chip-row">{ANIMALS.map((value) => <button type="button" aria-pressed={animal === value} className={animal === value ? "emoji-chip selected" : "emoji-chip"} key={value} onClick={() => { setAnimal(value); setDuplicateWarning(false); }}>{value}</button>)}</div></fieldset>{picturePasswordPicker()}</>}{duplicateWarning && <div className="duplicate-profile-warning" role="alert"><b>전에 만든 프로필일 수 있어요</b><p>같은 별명과 동물이 이미 있어요. 내 그림을 찾거나, 정말 다른 학생일 때만 새로 만들어요.</p><div><button type="button" className="button secondary" onClick={() => resetPassword("recover")}>🔎 내 그림 찾기</button><button type="button" className="button ghost" onClick={() => void submit(true)}>➕ 다른 학생으로 새로 만들기</button></div></div>}{error && <p className="error-box" role="alert">{error}</p>}{legacyPasswordAction()}<button className="button primary full child-primary-action" disabled={busy || duplicateWarning || (!recoveryToken && (!entry || !nickname || pictures.length !== targetLength))} onClick={() => void submit()}><span aria-hidden="true">▶️</span>{busy ? "찾는 중…" : mode === "join" ? "수업 들어가기" : "내 그림 찾기"}</button>{!recoveryToken && <button className="text-button" onClick={() => resetPassword(mode === "join" ? "recover" : "join")}>{mode === "join" ? "🔎 전에 그리던 그림이 있어요" : "➕ 처음 왔어요"}</button>}</section></main>
   );
 }
