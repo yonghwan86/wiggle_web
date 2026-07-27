@@ -435,6 +435,7 @@ Claude Code는 루트 [`CLAUDE.md`](./CLAUDE.md)를 먼저 읽고, 상세 상태
 - [Flutter 참고 자료 이식 감사](./docs/flutter-adoption-audit.md)
 - [저학년 UX·시장 점검](./docs/ux-market-audit-2026-07.md)
 - [Claude 개발 인수인계](./docs/claude-handoff-2026-07-27.md)
+- [Claude → Codex 자동 검증·배포 파이프라인](./docs/agent-pipeline.md)
 - [브랜드 자산 manifest](./public/brand/asset-manifest.json)
 
 ## 🧩 Flutter 프로젝트와의 관계

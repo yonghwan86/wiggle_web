@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "db:local:init": "node scripts/init-local-db.mjs"
+    "db:local:init": "node scripts/init-local-db.mjs",
+    "pipeline:ready": "node scripts/mark-codex-ready.mjs"
   },
   "dependencies": {
     "@types/qrcode": "^1.5.5",

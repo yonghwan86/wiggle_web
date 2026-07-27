@@ -38,8 +38,26 @@ git diff --check
 6. 소스 문자열이나 CSS 정규식 검사만으로 UX 통과를 주장하지 않는다. computed size, 잘림, 스크롤, 초점, 연속 탭, 오류 복구를 실제 동작으로 검증한다.
 7. 작업 결과에는 변경 파일, 재현한 문제, 실행한 검증, 남은 위험을 사실대로 기록한다.
 8. Claude는 Sites 운영 배포를 실행하지 않는다. 커밋까지 준비한 뒤 Codex가 독립 검증하고 Sites 버전 저장·배포를 담당한다.
+9. Claude는 Codex를 직접 실행하거나 GitHub `main`에 push하지 않는다. 자동화가 처리할 표준 완료 신호만 남긴다.
+
+## Codex 자동 인계
+
+개발과 검증을 모두 마친 뒤 다음 순서로 완료 신호를 만든다.
+
+1. `docs/agent-handoff/TEMPLATE.md`를 기준으로 `docs/agent-handoff/latest.md`를 작성한다.
+2. 코드, 테스트, 문서와 `latest.md`를 먼저 커밋한다.
+3. 작업 트리가 깨끗한 상태에서 다음 명령을 실행한다.
+
+```powershell
+npm.cmd run pipeline:ready -- --task "작업 이름" --summary "완료 내용 한 문장"
+git add docs/agent-handoff/latest.json
+git commit -m "chore: mark ready for Codex verification"
+```
+
+4. 마지막 marker 커밋 뒤에는 merge, push, Codex 실행, Sites 배포를 하지 않고 종료한다.
+
+`ready_for_codex` marker는 완료 보고일 뿐 품질 승인이나 배포 승인이 아니다. Codex 자동화가 독립 검증에서 `GO`를 판정해야만 배포된다. 자세한 흐름은 [docs/agent-pipeline.md](docs/agent-pipeline.md)를 따른다.
 
 ## 현재 최우선 목표
 
 현재 공개 버전은 기능적으로 동작하지만 비문해 저학년 독립 사용성 검증에서 `NO-GO`다. 새 기능보다 상세 인수인계 문서의 P1/P2 결함을 먼저 수정한다.
-
