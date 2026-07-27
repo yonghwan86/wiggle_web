@@ -2,7 +2,7 @@
 
 설치 없이 교실에서 기초 도형, 보고 그리기, 자유 창작과 소감을 연결하는 독립 웹앱이다. 기존 `wiggle_draw` Flutter 저장소는 읽기 전용 제품 참고 자료이며 이 저장소와 빌드·배포·Git 이력을 공유하지 않는다.
 
-## MVP 1
+## 현재 구현
 
 - 교사 데모 로그인, 학급 생성, 수업 코드와 실제 QR, 입장 열기·닫기와 코드 회전
 - 익명 학생 ID, 별명·동물, 해시된 그림 비밀번호와 개인 QR 복구
@@ -12,6 +12,9 @@
 - R2 256 썸네일과 1024 최종 이미지
 - 기초 연습, 고정 6~10단계 따라그리기, 별도 점선 가이드, 자유 창작
 - 교사 진행·썸네일 모니터, 전체·개별 텍스트 메시지, 학생 소감과 성장 기록
+- 서버 전용 이미지 기반 AI 코칭과 6~15단계 자유 창작 가이드
+- 질문 전후 버전과 구조화된 코칭 사건
+- 가족 제한 공유, 음성 귓속말·구독용 기능 플래그와 데이터 기반
 
 ## 로컬 실행
 
@@ -41,5 +44,6 @@ npm.cmd test
 - [보안·데이터 모델](docs/security-data-model.md)
 - [Flutter 참고 자료 이식 감사](docs/flutter-adoption-audit.md)
 - [브랜드 자산 manifest](public/brand/asset-manifest.json)
+- [Claude 개발 인수인계](docs/claude-handoff-2026-07-27.md)
 
-`.openai/hosting.json`의 논리 바인딩은 D1 `DB`, R2 `ARTWORKS`다. AI는 MVP 1에서 호출하지 않으며, 향후 서버 전용 coaching service가 `CoachingEvent`를 기록하도록 확장한다.
+`.openai/hosting.json`의 논리 바인딩은 D1 `DB`, R2 `ARTWORKS`다. AI 호출은 서버 전용이며 `OPENAI_API_KEY`를 브라우저에 노출하지 않는다. 음성 귓속말과 구독은 기본적으로 꺼진 기능 플래그 뒤에 있다.
