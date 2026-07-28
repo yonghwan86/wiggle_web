@@ -124,15 +124,25 @@
 
 브라우저 검증도 강화했다. 기존에는 코칭 화면을 DOM으로 주입해 레이아웃만 봤는데, CDP `Fetch` 도메인으로 `/api/ai/coaching`만 스텁해 **실제 React 상태**로 코칭·접기 흐름을 검증하도록 바꿨다. 이 검증이 가로 모드에서 접은 시트가 도화지를 44px만 남기는 문제를 잡아냈다.
 
+### 2차 감사에서 나온 후속 지적 3건
+
+수정본을 다시 감사에 넣었더니 내 수정 자체에서 3건이 더 나왔다. 전부 고쳤다.
+
+| # | 파일 | 지적 | 처리 |
+|---|---|---|---|
+| 11 | `DrawingStudio.tsx` | 편집 세대를 직렬 큐에서 `performSave`가 **실제 시작될 때** 캡처해, 대기 중 생긴 새 편집의 세대를 잡고 그 편집까지 저장된 것으로 오인 | 세대를 `save()` 호출 시점에 캡처해 인자로 전달. 세대가 어긋나면 `unsavedRef`도, "저장됨" 표시도 바꾸지 않는다 |
+| 12 | `DrawingStudio.tsx` | 남은 예산이 op 최소 크기보다 작아도 `canvasFull`이 false여서, 입력은 허용되고 커밋은 거부돼 **문서에 없는 선이 화면·썸네일에만** 남음 | `documentTooLarge`가 한 획 여유까지 요구하도록 하고, `pointerUp`이 `commitStroke` 실패를 받아 문서 상태로 다시 렌더링 후 안내 |
+| 13 | `lib/speech.ts` | 새 버튼이 소유권을 가져간 뒤에도 이전 speaker의 `stop()`과 두 타이머가 소유권 확인 없이 `env.cancel()`을 호출해 **남의 발화를 끊음** | `yieldControl()`로 소유자일 때만 취소하고, 소유권을 잃은 발화는 실패가 아니라 정상 중단으로 정리. 두 경쟁 상황 회귀 테스트 추가 |
+
 ## 실행한 검증
 
 ```text
 npm.cmd run typecheck: 통과
 npm.cmd run lint: 통과
-npm.cmd test: 115/115 통과 (신규 19건 포함)
+npm.cmd test: 121/121 통과 (신규 25건 포함)
 npm.cmd run check:browser: 3뷰포트 전 항목 통과 (코칭·접기 실상태 포함)
 git diff --check: 통과
-codex exec 감사: 1차 FAIL 10건 → 전부 수정 후 재감사
+codex exec 감사: 1차 FAIL 10건 → 수정 → 2차 FAIL 3건 → 수정 → 3차 진행
 ```
 
 ## 실제 브라우저 검증

@@ -70,6 +70,14 @@ export function createSpeechSpeaker(env: SpeechEnvironment, onStatus: (status: S
     if (!disposed) onStatus(status);
   }
 
+  // 다른 버튼이 이미 엔진을 가져갔다면 취소하면 안 된다. 그 취소는 남의 발화를 끊는다.
+  // 소유권을 잃은 발화는 실패가 아니라 정상 중단으로 정리한다.
+  function yieldControl(token: symbol, ownedStatus: SpeechStatus) {
+    const owned = box.token === token;
+    finish(token, owned ? ownedStatus : "idle");
+    if (owned) env.cancel();
+  }
+
   return {
     speak(text: string) {
       if (disposed) return;
@@ -89,7 +97,7 @@ export function createSpeechSpeaker(env: SpeechEnvironment, onStatus: (status: S
       utterance.onstart = () => {
         if (activeToken !== token) return;
         started = true;
-        armTimer(speechDurationCapMs(text), () => { finish(token, "idle"); env.cancel(); });
+        armTimer(speechDurationCapMs(text), () => yieldControl(token, "idle"));
       };
       utterance.onend = () => finish(token, "idle");
       // 다른 발화가 소유권을 가져가며 취소한 경우(interrupted/canceled)는 실패가 아니다.
@@ -97,16 +105,14 @@ export function createSpeechSpeaker(env: SpeechEnvironment, onStatus: (status: S
       onStatus("speaking");
       armTimer(SPEECH_START_TIMEOUT_MS, () => {
         if (activeToken !== token || started) return;
-        finish(token, "failed");
-        env.cancel();
+        yieldControl(token, "failed");
       });
       env.speak(utterance);
     },
     stop() {
       const token = activeToken;
       if (!token) return;
-      finish(token, "idle");
-      env.cancel();
+      yieldControl(token, "idle");
     },
     dispose() {
       const token = activeToken;

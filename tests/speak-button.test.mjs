@@ -126,6 +126,37 @@ test("buttons holding separate wrappers of one engine still share speech ownersh
   assert.equal(second.last(), "idle");
 });
 
+test("a superseded button's stop never cancels the speech that replaced it", () => {
+  const fake = fakeEnvironment();
+  const first = trackedSpeaker(fake, separateWrapper(fake));
+  const second = trackedSpeaker(fake, separateWrapper(fake));
+  first.speaker.speak("첫 버튼");
+  fake.startCurrent();
+  second.speaker.speak("둘째 버튼");
+  fake.startCurrent();
+  // 취소 이벤트가 아직 도착하기 전에 이전 버튼이 뒤늦게 멈춰도 새 발화를 끊으면 안 된다.
+  first.speaker.stop();
+  assert.equal(fake.speakingNow()?.text, "둘째 버튼");
+  assert.equal(second.last(), "speaking");
+  assert.equal(first.last(), "idle");
+});
+
+test("a superseded button's start timeout never cancels the speech that replaced it", () => {
+  const fake = fakeEnvironment();
+  const first = trackedSpeaker(fake, separateWrapper(fake));
+  const second = trackedSpeaker(fake, separateWrapper(fake));
+  first.speaker.speak("시작하지 못한 첫 버튼");
+  const longText = "둘째 버튼이 읽는 아주 길고 긴 안내 문장이에요";
+  assert.ok(speechDurationCapMs(longText) > SPEECH_START_TIMEOUT_MS + 1);
+  second.speaker.speak(longText);
+  fake.startCurrent();
+  // 첫 버튼의 시작 감시 타이머가 뒤늦게 터져도 남의 발화를 취소하면 안 된다.
+  fake.advance(SPEECH_START_TIMEOUT_MS + 1);
+  assert.equal(fake.speakingNow()?.text, longText);
+  assert.equal(second.last(), "speaking");
+  assert.notEqual(first.last(), "failed");
+});
+
 test("an idle button unmounting never cancels a speaking button that wraps the same engine", () => {
   const fake = fakeEnvironment();
   const speaking = trackedSpeaker(fake, separateWrapper(fake));

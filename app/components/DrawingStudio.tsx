@@ -210,7 +210,9 @@ const AUTOSAVE_DEBOUNCE_MS = 1500;
 const AUTOSAVE_MAX_WAIT_MS = 6000;
 
 function documentTooLarge(document: DrawDocument) {
-  return document.ops.length >= OPS_WARN_THRESHOLD || estimateDocumentBytes(document) >= DOCUMENT_BYTES_WARN;
+  // 한 획도 더 담을 수 없으면 이미 가득 찬 것이다. 여유를 남기지 않으면 pointerDown이
+  // 입력을 허용해 놓고 커밋이 거부돼, 문서에 없는 선이 화면과 썸네일에만 남는다.
+  return document.ops.length >= OPS_WARN_THRESHOLD || estimateDocumentBytes(document) + estimateStrokeBytes(8) >= DOCUMENT_BYTES_WARN;
 }
 
 function mutationId() { return `mutation_${crypto.randomUUID().replaceAll("-", "")}`; }
@@ -341,7 +343,9 @@ export function DrawingStudio() {
   }, [currentGuideTraces, guideDemoRun, guidePhase, markCurrentGuideSeen]);
   useEffect(() => { const poll = async () => { try { const response = await studentFetch("/api/student"); const data = await response.json() as { messages?: Array<{ body: string }>; teacherViewing?: boolean }; setMessage(data.messages?.at(-1)?.body ?? ""); setTeacherViewing(Boolean(data.teacherViewing)); } catch {} }; void poll(); const timer = window.setInterval(poll, 5000); return () => clearInterval(timer); }, []);
 
-  const performSave = useCallback(async (nextDocument: DrawDocument, options?: SaveOptions) => {
+  // savingEdit은 save() 호출 시점에 캡처해 넘긴다. 직렬 큐에서 실제 실행될 때 읽으면
+  // 대기 중에 생긴 새 편집의 세대를 잡아, 그 편집까지 저장된 것으로 오인한다.
+  const performSave = useCallback(async (nextDocument: DrawDocument, savingEdit: number, options?: SaveOptions) => {
     if (!artwork || !canvasRef.current) return false; const profile = activeProfile(); if (!profile) return false;
     const preserveDraft = async (queued: Parameters<typeof queueSave>[0], message: string) => {
       const restored = queuedArtworkDraft(queued);
@@ -364,9 +368,6 @@ export function DrawingStudio() {
       return false;
     }
     const requestId = mutationId(); const url = `/api/artworks/${artwork.id}`; const createdAt = new Date().toISOString();
-    // 이 저장이 담아 가는 편집 세대. 저장이 오가는 동안 아이가 더 그리면 세대가 올라가고,
-    // 늦게 끝난 저장이 "저장됨"으로 덮어써 새 선을 미저장 목록에서 지워 버리는 일을 막는다.
-    const savingEdit = editSeqRef.current;
     const body = JSON.stringify({ requestId, expectedRevision: revisionRef.current, document: nextDocument, currentStep: options?.currentStep ?? artwork.currentStep, thumbnailDataUrl: imageData(canvasRef.current, 256), complete: options?.complete ?? false, finalDataUrl: options?.complete ? imageData(canvasRef.current, 1024) : undefined, reflection: options?.reflection });
     setSaveState(navigator.onLine ? "저장 중…" : "기기에 보관 중");
     try {
@@ -386,8 +387,11 @@ export function DrawingStudio() {
       // 서버가 이미 반영했으므로 revision부터 확정한다. IndexedDB 정리는 부가 작업이라
       // 실패해도 커밋된 저장을 실패로 되돌리거나 낡은 revision을 남기면 안 된다.
       revisionRef.current = data.revision ?? revisionRef.current;
-      if (editSeqRef.current === savingEdit) unsavedRef.current = false;
-      setSaveState(options?.complete ? "완성했어요" : "저장됨");
+      // 이 저장이 담아 간 편집 세대가 그대로일 때만 "저장됨"이라고 말한다. 그 사이 더 그렸다면
+      // 미저장 표시를 유지해야 이탈 시 기기 보관이 그 선을 지켜 준다.
+      const stillCurrent = editSeqRef.current === savingEdit;
+      if (stillCurrent) unsavedRef.current = false;
+      if (stillCurrent || options?.complete) setSaveState(options?.complete ? "완성했어요" : "저장됨");
       try { await clearQueuedArtworkSaves(profile.studentId, url, "pending", { createdAt, requestId }, saveBranchId); }
       catch { /* 큐 정리는 다음 flush에서 다시 시도한다 */ }
       return true;
@@ -398,7 +402,10 @@ export function DrawingStudio() {
       return false;
     }
   }, [artwork, saveBranchId]);
-  const save = useCallback((nextDocument: DrawDocument, options?: SaveOptions) => runSerial(() => performSave(nextDocument, options)), [performSave, runSerial]);
+  const save = useCallback((nextDocument: DrawDocument, options?: SaveOptions) => {
+    const savingEdit = editSeqRef.current;
+    return runSerial(() => performSave(nextDocument, savingEdit, options));
+  }, [performSave, runSerial]);
 
   useEffect(() => {
     if (!initialized.current || !artwork || editVersion === 0 || conflictDraft || completingRef.current) { pendingSinceRef.current = 0; return; }
@@ -541,15 +548,18 @@ export function DrawingStudio() {
   function pointerUp(event: ReactPointerEvent<HTMLCanvasElement>) {
     const points = activePoints.current.get(event.pointerId);
     if (conflictDraftRef.current) {
-      activePoints.current.delete(event.pointerId);
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       // 미리보기로 그려 둔 픽셀을 지우지 않으면 문서에 없는 선이 썸네일에 섞인다.
-      renderDocument(event.currentTarget, documentStateRef.current);
+      endStroke(event);
       setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return;
     }
     if (!points?.length) return; event.preventDefault();
     activePoints.current.delete(event.pointerId);
-    commitStroke(points);
+    // 한도에 막혀 커밋되지 않으면 미리보기 픽셀을 문서 상태로 되돌린다.
+    if (!commitStroke(points)) {
+      endStroke(event);
+      setSaveState("종이가 가득 찼어요. ‘다 그렸어요’를 눌러 완성해요");
+      return;
+    }
     if ((guidePhase === "practice" || guidePhase === "demo") && lessonGuideAvailable && tool !== "eraser") setGuidePracticeTried(true);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
