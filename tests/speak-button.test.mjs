@@ -19,7 +19,9 @@ function fakeEnvironment() {
   const utterances = [];
   let current = null;
   const pendingEvents = [];
+  const engine = { name: "fake-speech-engine" };
   const env = {
+    engine,
     createUtterance: (text) => {
       const utterance = { text, lang: "", rate: 0, pitch: 0, voice: null, onstart: null, onend: null, onerror: null };
       utterances.push(utterance);
@@ -37,6 +39,7 @@ function fakeEnvironment() {
   };
   return {
     env,
+    engine,
     utterances,
     speakingNow: () => current,
     flushEvents: () => { while (pendingEvents.length) pendingEvents.shift()(); },
@@ -52,10 +55,16 @@ function fakeEnvironment() {
   };
 }
 
-function trackedSpeaker(fake) {
+function trackedSpeaker(fake, env = fake.env) {
   const states = [];
-  const speaker = createSpeechSpeaker(fake.env, (state) => states.push(state));
+  const speaker = createSpeechSpeaker(env, (state) => states.push(state));
   return { speaker, states, last: () => states.at(-1) ?? "idle" };
+}
+
+// 실제 SpeakButton은 각자 browserSpeechEnvironment()를 호출한다. 같은 엔진을 감싼
+// 별개의 환경 객체를 만들어, 소유권이 환경 객체가 아니라 엔진 단위인지 확인한다.
+function separateWrapper(fake) {
+  return { engine: fake.engine, ...fake.env };
 }
 
 test("a completed utterance returns the button to idle", () => {
@@ -99,6 +108,34 @@ test("starting another button stops the first one as idle, not failed", () => {
   assert.equal(first.last(), "idle");
   assert.equal(second.last(), "speaking");
   assert.equal(fake.speakingNow()?.text, "둘째 버튼");
+});
+
+test("buttons holding separate wrappers of one engine still share speech ownership", () => {
+  const fake = fakeEnvironment();
+  // 소유권이 엔진이 아니라 래퍼 객체 단위면 첫 버튼이 idle이 아니라 failed(⚠️)로 남는다.
+  const first = trackedSpeaker(fake, separateWrapper(fake));
+  const second = trackedSpeaker(fake, separateWrapper(fake));
+  first.speaker.speak("첫 버튼");
+  fake.startCurrent();
+  second.speaker.speak("둘째 버튼");
+  fake.flushEvents();
+  assert.equal(first.last(), "idle", "다른 버튼이 가져간 발화는 실패가 아니라 정상 중단이다");
+  assert.equal(second.last(), "speaking");
+  fake.startCurrent();
+  fake.endCurrent();
+  assert.equal(second.last(), "idle");
+});
+
+test("an idle button unmounting never cancels a speaking button that wraps the same engine", () => {
+  const fake = fakeEnvironment();
+  const speaking = trackedSpeaker(fake, separateWrapper(fake));
+  const idle = trackedSpeaker(fake, separateWrapper(fake));
+  speaking.speaker.speak("계속 읽는 중");
+  fake.startCurrent();
+  idle.speaker.dispose();
+  fake.flushEvents();
+  assert.equal(fake.speakingNow()?.text, "계속 읽는 중");
+  assert.equal(speaking.last(), "speaking");
 });
 
 test("unmounting an idle button never cancels another button's speech", () => {

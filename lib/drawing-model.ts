@@ -13,6 +13,22 @@ export function roundUnit(value: number) {
   return Number(value.toFixed(POINT_PRECISION));
 }
 
+// 직렬화 크기의 보수적 상한. 스트로크마다 문서 전체를 JSON.stringify 하면
+// 큰 작품에서 손을 뗄 때마다 1MB를 문자열로 만든다. 실제보다 크게 잡아
+// 서버 한도에 닿기 전에 멈추도록 한다.
+const OP_OVERHEAD_BYTES = 220;
+const POINT_BYTES = 42;
+
+export function estimateDocumentBytes(document: DrawDocument) {
+  let points = 0;
+  for (const op of document.ops) points += op.points?.length ?? 0;
+  return 64 + document.ops.length * OP_OVERHEAD_BYTES + points * POINT_BYTES;
+}
+
+export function estimateStrokeBytes(pointCount: number) {
+  return OP_OVERHEAD_BYTES + pointCount * POINT_BYTES;
+}
+
 type Point = { x: number; y: number; pressure?: number };
 
 export type DrawOp = {
@@ -39,6 +55,13 @@ function finiteUnit(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
+// points:[null] 같은 입력에서 point.x를 바로 읽으면 TypeError가 나 검증이 거부 대신 500이 된다.
+function invalidPoint(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return true;
+  const point = value as { x?: unknown; y?: unknown; pressure?: unknown };
+  return !finiteUnit(point.x) || !finiteUnit(point.y) || (point.pressure !== undefined && !finiteUnit(point.pressure));
+}
+
 export function validateDrawDocument(value: unknown): DrawDocument | null {
   if (!value || typeof value !== "object") return null;
   const doc = value as Partial<DrawDocument>;
@@ -53,15 +76,15 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
     if (op.type === "stroke") {
       if (!op.tool || !["pen", "crayon", "eraser"].includes(op.tool) || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length < 1 || op.points.length > MAX_STROKE_POINTS) return null;
       if (op.tool !== "eraser" && !/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "")) return null;
-      if (op.points.some((point) => !finiteUnit(point.x) || !finiteUnit(point.y) || (point.pressure !== undefined && !finiteUnit(point.pressure)))) return null;
+      if (op.points.some(invalidPoint)) return null;
     }
     if (op.type === "fill") {
-      if (!/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "") || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some((point) => !finiteUnit(point.x) || !finiteUnit(point.y))) return null;
+      if (!/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "") || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint)) return null;
     }
     if (op.type === "shape") {
-      if (!op.shape || !["circle", "triangle", "rectangle", "line"].includes(op.shape) || !/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "") || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length !== 2 || op.points.some((point) => !finiteUnit(point.x) || !finiteUnit(point.y))) return null;
+      if (!op.shape || !["circle", "triangle", "rectangle", "line"].includes(op.shape) || !/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "") || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length !== 2 || op.points.some(invalidPoint)) return null;
     }
-    if (op.type === "sticker" && (!STICKER_ALLOWLIST.includes(op.sticker as (typeof STICKER_ALLOWLIST)[number]) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some((point) => !finiteUnit(point.x) || !finiteUnit(point.y)))) return null;
+    if (op.type === "sticker" && (!STICKER_ALLOWLIST.includes(op.sticker as (typeof STICKER_ALLOWLIST)[number]) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint))) return null;
   }
   return value as DrawDocument;
 }

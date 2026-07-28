@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isChildSafeCoachingText } from "../lib/openai-coaching.ts";
+import { isChildSafeCoachingText, validateStudentCoaching, validateTeacherDraft } from "../lib/openai-coaching.ts";
 
 const praise = [
+  "정말 잘하고 있어!",
+  "그림을 참 잘하는 아이구나.",
+  "잘하셨어요",
+  "정말 잘한다",
+  "너 그림 잘해",
   "우와, 정말 멋있다! 여기는 뭐야?",
   "그림이 멋있어요",
   "와, 이쁘다!",
@@ -41,4 +46,36 @@ test("praise split by spaces or punctuation is still rejected", () => {
 
 test("ordinary questions and drawing instructions stay allowed", () => {
   for (const text of allowed) assert.equal(isChildSafeCoachingText(text), true, `막히면 안 되는 문장: ${text}`);
+});
+
+// 필터 단위 검사만으로는 부족하다. 아이와 교사에게 실제로 나가는 최종 관문에서 막히는지 본다.
+const studentPayload = (overrides = {}) => ({
+  question: "여기 동그란 건 무엇이니?",
+  next_action: "동그라미 옆에 선을 하나 더 그어 보자.",
+  growth_event: "새 대상을 고르려고 했어요.",
+  uncertain: false,
+  observed_elements: ["동그라미"],
+  choices: [
+    { emoji: "🐶", label: "강아지", answer: "강아지를 그렸어요" },
+    { emoji: "🌳", label: "나무", answer: "나무를 그렸어요" },
+  ],
+  ...overrides,
+});
+
+test("praise reaches neither the child coaching payload nor the teacher draft", () => {
+  assert.ok(validateStudentCoaching(studentPayload()), "정상 페이로드는 통과해야 한다");
+  assert.equal(validateStudentCoaching(studentPayload({ question: "정말 잘하고 있어! 이건 뭐야?" })), null);
+  assert.equal(validateStudentCoaching(studentPayload({ growth_event: "그림을 참 잘하는 아이예요." })), null);
+  assert.equal(validateStudentCoaching(studentPayload({ next_action: "잘했어요, 선을 하나 더 그어 보자." })), null);
+  assert.equal(validateStudentCoaching(studentPayload({
+    choices: [
+      { emoji: "🐶", label: "강아지", answer: "정말 멋있게 그렸어요" },
+      { emoji: "🌳", label: "나무", answer: "나무를 그렸어요" },
+    ],
+  })), null);
+
+  const draft = { body: "다음에는 배경을 하나 더 그려볼까?", observation: "선을 이어 그렸어요.", next_action: "지붕 위에 선을 하나 그려 보게 해 주세요." };
+  assert.ok(validateTeacherDraft(draft), "정상 초안은 통과해야 한다");
+  assert.equal(validateTeacherDraft({ ...draft, body: "그림을 참 잘하는 아이구나." }), null);
+  assert.equal(validateTeacherDraft({ ...draft, observation: "정말 잘하고 있어요." }), null);
 });

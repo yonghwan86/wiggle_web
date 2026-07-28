@@ -78,7 +78,7 @@ const instructionsByKind = {
 };
 
 const forbiddenMeaningPatterns = [
-  /(?:멋진|멋지|멋져|멋있|훌륭|예쁜|예쁘|이쁜|이쁘|아름답|근사|굉장|대단|완벽|최고|짱|칭찬|잘\s*(?:했|하네|하는구나|그렸|그린|그리고\s*있)|좋은\s*그림|창의력)/iu,
+  /(?:멋진|멋지|멋져|멋있|훌륭|예쁜|예쁘|이쁜|이쁘|아름답|근사|굉장|대단|완벽|최고|짱|칭찬|잘\s*(?:하|했|해|한|그렸|그린|그리고\s*있)|좋은\s*그림|창의력)/iu,
   /(?:천재|영재|재능|소질|재주|그림\s*실력)/iu,
   /(?:\d{1,3}\s*점|점수|등수|순위|평가|채점|합격|불합격)/iu,
   /(?:틀렸|틀린|오답|정답|실패|못했|못\s*그렸)/iu,
@@ -122,7 +122,7 @@ export function isChildSafeCoachingText(value: string) {
   if (forbiddenMeaningPatterns.some((pattern) => pattern.test(normalized))) return false;
   const policyCompact = compactCoachingPolicyText(normalized);
   // 한국어 칭찬어는 띄어쓰기·문장부호로 쪼개도 통과하지 못하도록 압축형에서도 막는다.
-  const forbiddenCompactTerms = ["prais", "compliment", "evaluat", "score", "rank", "talent", "gifted", "genius", "correct", "멋있", "멋지", "멋진", "이쁘", "예쁘", "잘그린", "잘그렸", "칭찬"];
+  const forbiddenCompactTerms = ["prais", "compliment", "evaluat", "score", "rank", "talent", "gifted", "genius", "correct", "멋있", "멋지", "멋진", "이쁘", "예쁘", "잘그린", "잘그렸", "잘하", "잘한", "잘해", "잘했", "칭찬"];
   if (forbiddenCompactTerms.some((term) => policyCompact.includes(term))) return false;
   const editActions = ["fix", "repair", "correct", "modify", "replace", "erase", "redraw"];
   const drawingObjects = ["original", "line", "drawing", "picture", "sketch", "원본", "선", "그림"];

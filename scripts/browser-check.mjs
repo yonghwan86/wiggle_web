@@ -39,7 +39,7 @@ async function waitForDevtools(port) {
 }
 
 class Cdp {
-  constructor(socket) { this.socket = socket; this.nextId = 1; this.pending = new Map(); this.sessions = new Map();
+  constructor(socket) { this.socket = socket; this.nextId = 1; this.pending = new Map(); this.sessions = new Map(); this.handlers = new Map();
     socket.addEventListener("message", (event) => {
       const message = JSON.parse(event.data);
       if (message.id && this.pending.has(message.id)) {
@@ -47,8 +47,10 @@ class Cdp {
         if (message.error) reject(new Error(JSON.stringify(message.error))); else done(message.result);
       }
       if (message.method === "Target.attachedToTarget") this.sessions.set(message.params.targetInfo.targetId, message.params.sessionId);
+      if (message.method && this.handlers.has(message.method)) this.handlers.get(message.method)(message.params, message.sessionId);
     });
   }
+  on(method, handler) { this.handlers.set(method, handler); }
   send(method, params = {}, sessionId) {
     const id = this.nextId++;
     return new Promise((done, reject) => {
@@ -93,6 +95,40 @@ const MEASURE_HELPERS = `
   };
   'ready'
 `;
+
+// 로컬에는 OpenAI 키가 없다. 코칭 응답만 네트워크 단계에서 채워 넣어, 컴포넌트가
+// 실제 React 상태로 코칭 화면을 그리게 한다(DOM 주입으로는 접기 같은 상태 로직을 못 본다).
+const STUB_COACHING = {
+  eventId: "coaching_browsercheck",
+  coaching: {
+    question: "여기 동그란 건 무엇이니? 이름을 알려 줄래?",
+    choices: [
+      { emoji: "🐶", label: "강아지", answer: "강아지를 그렸어요" },
+      { emoji: "🚀", label: "우주선", answer: "우주선을 그렸어요" },
+      { emoji: "🌳", label: "나무", answer: "나무를 그렸어요" },
+      { emoji: "🏠", label: "집", answer: "집을 그렸어요" },
+    ],
+    nextAction: "동그라미 옆에 선을 하나 더 그어 보자.",
+    observedElements: ["동그라미"],
+    uncertain: false,
+    growthEvent: "새 대상을 고르려고 했어요.",
+  },
+};
+
+async function stubCoaching(cdp, session) {
+  cdp.on("Fetch.requestPaused", async (params, eventSession) => {
+    const target = eventSession ?? session;
+    try {
+      if (params.request.url.includes("/api/ai/coaching")) {
+        const body = Buffer.from(JSON.stringify(STUB_COACHING)).toString("base64");
+        await cdp.send("Fetch.fulfillRequest", { requestId: params.requestId, responseCode: 200, responseHeaders: [{ name: "content-type", value: "application/json" }], body }, target);
+        return;
+      }
+      await cdp.send("Fetch.continueRequest", { requestId: params.requestId }, target);
+    } catch { /* 이미 처리된 요청은 무시 */ }
+  });
+  await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*/api/ai/coaching*", requestStage: "Request" }] }, session);
+}
 
 async function withViewport(cdp, session, viewport, run) {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: viewport.width, height: viewport.height, deviceScaleFactor: 2, mobile: true }, session);
@@ -290,6 +326,7 @@ async function main() {
 
         // 5) 그리기 화면과 그리미 패널
         await installSession(cdp, session, seeded);
+        await stubCoaching(cdp, session);
         await navigate(cdp, session, `${BASE}/student/draw/${seeded.artworkId}`);
         await evaluate(cdp, session, MEASURE_HELPERS);
         const studio = await evaluate(cdp, session, `(async () => {
@@ -371,15 +408,17 @@ async function main() {
           check(grimi.exitReachable?.onScreen, `${viewport.name} 그냥 그릴래 탈출 경로가 화면 안에 있음`, grimi.exitReachable);
         }
 
-        // 5-b) 코칭 응답이 실제로 있을 때: 질문·선택지·다음 행동·확인 버튼이 모두 닿는가
+        // 5-b) 실제 코칭 응답 상태에서: 질문·선택지·다음 행동·확인 버튼이 모두 닿는가
         const coaching = await evaluate(cdp, session, `(async () => {
           const wait = (ms) => new Promise((done) => setTimeout(done, ms));
           const panel = document.querySelector('.grimi-panel');
-          const scroll = panel?.querySelector('.grimi-scroll');
-          if (!panel || !scroll) return { error: 'no-panel' };
-          // 서버 AI 키 유무와 무관하게 레이아웃을 재현하려고 실제 코칭 마크업을 주입한다.
-          scroll.innerHTML = \`<div class="grimi-coaching"><p class="eyebrow">그리미가 궁금해요</p><div class="spoken-prompt"><h2>여기 동그란 건 무엇이니? 이름을 알려 줄래?</h2><button class="speak-button compact"><span>🔊</span></button></div><div class="grimi-chips"><button><span>🐶</span>강아지</button><button><span>🚀</span>우주선</button><button><span>🌳</span>나무</button><button><span>🏠</span>집</button></div><label class="direct-answer">직접 말하기<input /></label><div class="next-action"><small>이제 그려 볼 일</small><div class="spoken-prompt"><b>동그라미 옆에 선을 하나 더 그어 보자.</b><button class="speak-button compact"><span>🔊</span></button></div><button class="button primary full child-primary-action"><span>✅</span>그린 뒤 ‘했어요’</button></div></div><div class="guide-request"><label>그리고 싶은 게 있어?<div class="quick-topic-row"><button><span>🚀</span>우주</button><button><span>🐶</span>강아지</button></div><input /></label><button class="button secondary full child-primary-action"><span>🪄</span>단계 가이드 만들기</button></div>\`;
-          await wait(250);
+          if (!panel) return { error: 'no-panel' };
+          for (let attempt = 0; attempt < 60 && !panel.querySelector('.grimi-coaching'); attempt += 1) await wait(200);
+          const scroll = panel.querySelector('.grimi-scroll');
+          if (!panel.querySelector('.grimi-coaching') || !scroll) return { error: 'no-coaching', html: panel.innerText.slice(0, 120) };
+          // 아이가 선택지를 골라야 다음 행동과 확인 버튼이 나타난다.
+          panel.querySelector('.grimi-chips button')?.click();
+          await wait(300);
           const question = panel.querySelector('.grimi-coaching h2');
           const chips = [...panel.querySelectorAll('.grimi-chips button')];
           const confirm = panel.querySelector('.next-action .child-primary-action');
@@ -403,6 +442,44 @@ async function main() {
           check(coaching.afterScroll.confirm?.hitsSelf, `${viewport.name} 한 번 스크롤로 확인 버튼에 닿음`, coaching.afterScroll.confirm);
           check(coaching.afterScroll.close?.hitsSelf && coaching.afterScroll.exit?.hitsSelf, `${viewport.name} 스크롤 뒤에도 닫기·탈출이 그대로 보임`, coaching.afterScroll);
           check(coaching.nestedScrollers.length === 0, `${viewport.name} 시트 안에 숨은 중첩 스크롤이 없음`, coaching.nestedScrollers);
+        }
+
+        // 5-c) 코칭을 유지한 채 그림을 그릴 수 있는가 (그리미가 "선을 하나 더 그어 보자"고 한 뒤)
+        const collapse = await evaluate(cdp, session, `(async () => {
+          const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+          const collapseButton = document.querySelector('.grimi-collapse');
+          if (!collapseButton) return { error: 'no-collapse-button' };
+          collapseButton.click();
+          await wait(350);
+          const panel = document.querySelector('.grimi-panel');
+          const peek = document.querySelector('.grimi-peek');
+          const canvas = document.querySelector('.draw-canvas');
+          if (!panel || !canvas) return { error: 'no-panel-or-canvas' };
+          const canvasBox = window.__wiggle.box(canvas);
+          const panelBox = window.__wiggle.box(panel);
+          // 도화지 안에서 시트에 가리지 않은 지점이 실제로 그릴 수 있어야 한다.
+          const probeY = Math.round(Math.min(canvasBox.bottom, panelBox.top) - 12);
+          const probeX = Math.round(canvasBox.left + canvasBox.w / 2);
+          const hit = window.__wiggle.topElementAt(probeX, probeY);
+          const confirm = peek?.querySelector('.child-primary-action');
+          const reExpand = document.querySelector('.grimi-collapse');
+          return {
+            peekShown: Boolean(peek),
+            nextActionShown: Boolean(peek?.querySelector('b')?.textContent?.trim()),
+            confirmReachable: confirm ? window.__wiggle.reachable(confirm) : null,
+            drawableHeight: Math.round(Math.min(canvasBox.bottom, panelBox.top) - canvasBox.top),
+            probeHitsCanvas: Boolean(hit && String(hit.cls).includes('draw-canvas')),
+            reExpandReachable: reExpand ? window.__wiggle.reachable(reExpand) : null,
+            panelTop: panelBox.top, viewportHeight: innerHeight,
+          };
+        })()`);
+        check(!collapse.error, `${viewport.name} 그리미 접기 재현`, collapse.error);
+        if (!collapse.error) {
+          check(collapse.peekShown && collapse.nextActionShown, `${viewport.name} 접어도 다음 행동이 계속 보임`, collapse);
+          check(collapse.confirmReachable?.hitsSelf, `${viewport.name} 접은 상태에서 '그렸어요'를 누를 수 있음`, collapse.confirmReachable);
+          check(collapse.drawableHeight >= 140, `${viewport.name} 접으면 그릴 수 있는 도화지가 남음`, { drawableHeight: collapse.drawableHeight });
+          check(collapse.probeHitsCanvas, `${viewport.name} 접은 상태에서 도화지에 실제로 그릴 수 있음`, collapse);
+          check(collapse.reExpandReachable?.hitsSelf, `${viewport.name} 그리미를 다시 펼칠 수 있음`, collapse.reExpandReachable);
         }
 
         // 6) 소감 모달 초점 이동과 Escape 닫기

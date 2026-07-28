@@ -172,7 +172,11 @@ legend small { color:var(--primary-dark); }
 .grimi-button { color:#563c00; background:var(--yellow); border-color:#e4bc34; box-shadow:0 4px 0 #d2a918; }
 .grimi-panel { background:#fffdf1; border-right:1px solid #eadb9b; padding:16px; overflow:auto; z-index:3; }
 .grimi-scroll { display:contents; }
-.grimi-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:15px; }.grimi-head>div { display:flex; gap:8px; align-items:center; font-size:18px; }.grimi-head>button { border:0; background:#f5edcf; width:34px; height:34px; border-radius:50%; font-size:21px; }
+.grimi-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:15px; }
+.grimi-collapse { min-height:44px; margin-left:auto; padding:8px 12px; border:2px solid #e1c14d; border-radius:13px; background:#fff7c8; color:#654d00; font-size:13px; font-weight:900; white-space:nowrap; cursor:pointer; }
+.grimi-peek { display:grid; gap:8px; padding:13px; margin-bottom:10px; border-radius:14px; background:#e9f9ff; }
+.grimi-peek small { color:var(--primary-dark); font-weight:900; }
+.grimi-peek b { line-height:1.45; }.grimi-head>div { display:flex; gap:8px; align-items:center; font-size:18px; }.grimi-head>button { border:0; background:#f5edcf; width:34px; height:34px; border-radius:50%; font-size:21px; }
 .grimi-thinking { min-height:130px; display:flex; flex-wrap:wrap; align-content:center; justify-content:center; gap:6px; color:#b18c14; }.grimi-thinking span { animation:grimi-pulse 1s infinite alternate; }.grimi-thinking span:nth-child(2) { animation-delay:.2s; }.grimi-thinking span:nth-child(3) { animation-delay:.4s; }.grimi-thinking p { width:100%; text-align:center; color:var(--secondary); font-weight:800; }
 @keyframes grimi-pulse { to { transform:translateY(-5px); opacity:.35; } }
 .grimi-coaching h2,.ai-guide h2 { font-size:19px; line-height:1.45; margin:6px 0 15px; }.grimi-chips { display:flex; flex-wrap:wrap; gap:7px; }.grimi-chips button { border:2px solid #f0d869; background:#fff; min-height:44px; border-radius:13px; padding:8px 10px; font-weight:900; }.grimi-chips button[aria-pressed=true] { background:#fff1a9; border-color:#d7aa00; }.grimi-chips span { margin-right:5px; }
@@ -382,6 +386,9 @@ code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowr
   .studio-body>.grimi-panel .step-actions button { min-height:52px; }
   .studio-body>.grimi-panel .free-exit { flex:0 0 auto; padding:12px 8px; }
   .studio-body>.grimi-panel .guide-request { margin-top:12px; }
+  /* 접으면 시트는 다음 행동 한 줄로 줄고, 도화지가 그만큼 위로 비켜서 아이가 바로 그린다. */
+  .studio-body>.grimi-panel.collapsed { max-height:none; }
+  .studio-body.grimi-collapsed>.canvas-zone { padding-bottom:calc(186px + env(safe-area-inset-bottom)); }
   /* 시트가 흐름에서 빠지므로 남은 캔버스·도구가 화면을 모두 쓰게 한다. */
   .studio-body.grimi-open { display:flex; flex-direction:column; }
   .studio-body.grimi-open>.canvas-zone { order:2; flex:1; min-height:0; grid-column:auto; }
@@ -391,6 +398,13 @@ code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowr
   .studio-body.grimi-open { flex-direction:row; align-items:stretch; }
   .studio-body.grimi-open>.canvas-zone { order:1; }
   .studio-body.grimi-open>.tool-panel { order:2; flex:0 0 200px; }
+  /* 화면이 390px밖에 안 되므로 접은 시트는 한 줄로 눕힌다. 세로용 높이를 그대로 쓰면
+     도화지가 44px만 남아 아이가 그릴 수 없다. */
+  .studio-body.grimi-collapsed>.canvas-zone { padding-bottom:calc(126px + env(safe-area-inset-bottom)); }
+  .studio-body>.grimi-panel.collapsed>.grimi-head { margin-bottom:4px; padding:4px; }
+  .studio-body>.grimi-panel.collapsed .grimi-peek { grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; padding:9px 12px; margin-bottom:6px; }
+  .studio-body>.grimi-panel.collapsed .grimi-peek>small { display:none; }
+  .studio-body>.grimi-panel.collapsed .grimi-peek>.button { width:auto; min-width:150px; }
 }
 @media (max-width:460px) {
   .entry-card { padding:22px 18px; border-radius:22px; }

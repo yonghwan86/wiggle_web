@@ -11,6 +11,10 @@ export type SpeechUtteranceLike = {
 };
 
 export type SpeechEnvironment = {
+  // 같은 발화 엔진을 감싼 환경 객체가 여럿이어도 소유권은 하나여야 한다.
+  // 환경 객체 자체를 키로 쓰면 버튼마다 다른 소유자가 되어, 다른 버튼의 cancel이
+  // 정상 중단이 아니라 실패로 보인다.
+  engine?: object;
   createUtterance(text: string): SpeechUtteranceLike;
   speak(utterance: SpeechUtteranceLike): void;
   cancel(): void;
@@ -31,14 +35,15 @@ export function speechDurationCapMs(text: string) {
   return Math.min(20_000, Math.max(2_500, text.length * 180));
 }
 
-// 환경(실 브라우저에서는 speechSynthesis 싱글턴)마다 지금 말하고 있는 utterance 토큰 하나.
+// 발화 엔진마다 지금 말하고 있는 utterance 토큰 하나.
 // 발화별 콜백은 이 토큰과 자기 speaker의 activeToken을 함께 검사해서,
 // 취소된 이전 발화의 onend/onerror가 새 발화의 타이머·UI 상태를 건드리지 못하게 한다.
-const globalOwners = new WeakMap<SpeechEnvironment, { token: symbol | null }>();
+const globalOwners = new WeakMap<object, { token: symbol | null }>();
 
 function ownerBox(env: SpeechEnvironment) {
-  let box = globalOwners.get(env);
-  if (!box) { box = { token: null }; globalOwners.set(env, box); }
+  const key = env.engine ?? env;
+  let box = globalOwners.get(key);
+  if (!box) { box = { token: null }; globalOwners.set(key, box); }
   return box;
 }
 
@@ -116,9 +121,13 @@ export function createSpeechSpeaker(env: SpeechEnvironment, onStatus: (status: S
   };
 }
 
+let browserEnvironment: SpeechEnvironment | null = null;
+
 export function browserSpeechEnvironment(): SpeechEnvironment | null {
   if (typeof window === "undefined" || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) return null;
-  return {
+  if (browserEnvironment) return browserEnvironment;
+  browserEnvironment = {
+    engine: window.speechSynthesis,
     createUtterance: (text) => new SpeechSynthesisUtterance(text) as unknown as SpeechUtteranceLike,
     speak: (utterance) => window.speechSynthesis.speak(utterance as SpeechSynthesisUtterance),
     cancel: () => window.speechSynthesis.cancel(),
@@ -126,4 +135,5 @@ export function browserSpeechEnvironment(): SpeechEnvironment | null {
     setTimeout: (handler, ms) => window.setTimeout(handler, ms),
     clearTimeout: (id) => window.clearTimeout(id),
   };
+  return browserEnvironment;
 }
