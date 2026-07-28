@@ -140,10 +140,11 @@ async function studentPost(request: Request) {
       await clearRateLimit(targetKey(recoverTarget));
     }
     if (!student) return jsonError("복구할 학생을 찾지 못했어요.", 404);
+    // 성공한 QR 복구도 카운터를 비운다(정상 QR을 15분에 8번 쓰면 막히지 않게).
+    // 세션 발급보다 먼저 해야, 이 삭제가 실패해도 클라이언트가 받지 못한 세션이 남지 않는다.
+    if (qrTarget) await clearRateLimit(targetKey(qrTarget));
     const device = await issueDeviceSession(student.id);
     if (!device) return jsonError("이 학급은 더 이상 이용할 수 없어요. 선생님께 확인해 주세요.", 403);
-    // 성공한 QR 복구도 카운터를 비운다. 그러지 않으면 정상 QR을 15분에 8번 쓴 뒤 막힌다.
-    if (qrTarget) await clearRateLimit(targetKey(qrTarget));
     return noStoreJson({ student: { id: student.id, nickname: student.nickname, animal: student.animal, classroomName: student.classroomName }, deviceToken: device.token, expiresAt: device.expiresAt });
   }
   return jsonError("지원하지 않는 요청이에요.");

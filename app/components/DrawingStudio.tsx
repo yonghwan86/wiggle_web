@@ -617,11 +617,19 @@ export function DrawingStudio() {
     const createdData = await created.json() as { error?: string; artwork?: { id: string } }; if (!created.ok || !createdData.artwork) { setSaveState(createdData.error ?? "사본을 만들지 못했어요"); return; }
     const response = await studentFetch(`/api/artworks/${createdData.artwork.id}`, { method: "PUT", body: JSON.stringify({ requestId: copyRequestId, expectedRevision: 0, document: draft.document, currentStep: draft.currentStep, thumbnailDataUrl: imageData(canvasRef.current, 256), complete: draft.complete, finalDataUrl: draft.finalDataUrl, reflection: draft.reflection }) });
     if (!response.ok) { const data = await response.json() as { error?: string }; setSaveState(data.error ?? "사본을 저장하지 못했어요"); return; }
-    // 서버에 사본이 남은 시점부터는 성공이다. 큐 삭제 실패로 "사본을 만들지 못했어요"를 띄우면
-    // 이미 만들어진 사본과 화면 상태가 어긋나고, 다시 눌러 사본이 하나 더 생긴다.
-    conflictDraftRef.current = null; setConflictDraft(null); setConflictRevision(null);
-    try { await deleteQueuedArtworkSave(profile.studentId, draft.save.url, draft.save.requestId); }
-    catch { /* 남은 큐 항목은 다음 flush에서 정리된다 */ }
+    // 충돌 상태는 화면을 떠날 때까지 유지한다. 여기서 먼저 풀면 이동이 끝나기 전에
+    // 도화지가 다시 편집 가능해지고, 그 자동 저장이 복구된 충돌 문서를 원본 작품에
+    // 현재 revision으로 써 넣어 충돌을 일으킨 서버 쪽 그림을 덮어쓴다.
+    let removed = false;
+    for (let attempt = 0; attempt < 3 && !removed; attempt += 1) {
+      try { await deleteQueuedArtworkSave(profile.studentId, draft.save.url, draft.save.requestId); removed = true; }
+      catch { removed = false; }
+    }
+    if (!removed) {
+      // flushSaves는 충돌 항목을 건너뛰므로 남겨 두면 다음에도 같은 초안이 되살아난다.
+      setSaveState("사본은 저장했어요. 정리가 끝나지 않았으니 한 번 더 눌러 주세요");
+      return;
+    }
     location.replace(draft.complete ? "/student/archive" : `/student/draw/${createdData.artwork.id}`);
   }
 

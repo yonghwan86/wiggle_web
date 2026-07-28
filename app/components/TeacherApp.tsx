@@ -142,13 +142,19 @@ export function TeacherApp({ classroomId = "" }: { classroomId?: string }) {
     if (reissuingRef.current) return;
     if (!confirm(`${student.nickname}의 기존 기기 세션을 끊고 복구 카드를 새로 만들까요?`)) return;
     reissuingRef.current = student.id; setReissuing(student.id);
+    // 서버는 POST 시점에 이전 토큰과 세션을 폐기한다. 화면의 옛 주소를 먼저 지워야
+    // 이미 무효가 된 주소를 교사가 다시 복사하지 않는다.
+    setRecoveryUrl(null); setError("");
     try {
-      const result = await classAction<{ personalQrToken: string }>("resetStudentRecovery", { studentId: student.id });
-      if (!result) return;
+      if (!classroomData) return;
+      // classAction은 학급 재조회까지 끝나야 반환한다. 새 주소는 POST 응답 즉시 보여 준다.
+      const result = await teacherPost<{ personalQrToken: string }>({ action: "resetStudentRecovery", classroomId: classroomData.classroom.id, studentId: student.id });
       const url = `${location.origin}/join/recover?token=${result.personalQrToken}`;
       setRecoveryUrl({ nickname: `${student.animal} ${student.nickname}`, url });
       try { await navigator.clipboard?.writeText(url); } catch { /* 화면에 표시한 주소가 원본이고 복사는 편의 기능이다 */ }
-    } finally { reissuingRef.current = ""; setReissuing(""); }
+      void load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "복구 카드를 다시 만들지 못했어요."); }
+    finally { reissuingRef.current = ""; setReissuing(""); }
   }
 
   function openPreview(student: Student) {

@@ -78,18 +78,26 @@ export function VoiceWhisperStatus() {
   const [pending, setPending] = useState<{ url: string } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const cancelledRef = useRef(false);
+  // 수신 잠금은 재생이 끝나야 풀린다. 자동재생이 막힌 뒤 아이가 눌러 들은 경우에도
+  // 같은 자리에서 풀어야 다음 귓속말을 계속 받는다.
+  const busyRef = useRef(false);
 
   const play = useCallback(async (url: string) => {
     const audio = audioRef.current ?? new Audio();
     audioRef.current = audio;
     audio.src = url;
-    const done = () => { if (cancelledRef.current) return; setSpeaking(false); setPending(null); URL.revokeObjectURL(url); };
+    const done = () => {
+      busyRef.current = false;
+      if (cancelledRef.current) return;
+      setSpeaking(false); setPending(null); URL.revokeObjectURL(url);
+    };
     audio.onended = done; audio.onerror = done;
     try {
       await audio.play();
       if (!cancelledRef.current) { setSpeaking(true); setPending(null); }
       return true;
     } catch {
+      // 아직 못 들은 귓속말이 남았으므로 잠금은 유지한다. 재생이 끝날 때 done()이 푼다.
       if (!cancelledRef.current) { setSpeaking(false); setPending({ url }); }
       return false;
     }
@@ -97,34 +105,31 @@ export function VoiceWhisperStatus() {
 
   useEffect(() => {
     cancelledRef.current = false;
-    let timer: number | undefined; let busy = false; let heldUrl = "";
+    let timer: number | undefined; let heldUrl = "";
+    busyRef.current = false;
     studentFetch("/api/voice?role=student").then(async (response) => {
       const value = await response.json() as { enabled?: boolean }; if (!value.enabled || cancelledRef.current) return; setEnabled(true);
       const receive = async () => {
         // 재생 중이거나 아직 못 들은 귓속말이 남아 있으면 다음 것을 받지 않는다.
-        if (busy || cancelledRef.current) return;
-        busy = true;
+        if (busyRef.current || cancelledRef.current) return;
+        busyRef.current = true;
         try {
           const audioResponse = await studentFetch("/api/voice?role=student&receive=1");
-          if (audioResponse.status !== 200 || cancelledRef.current) { busy = false; return; }
+          if (audioResponse.status !== 200 || cancelledRef.current) { busyRef.current = false; return; }
           const blob = await audioResponse.blob();
-          if (cancelledRef.current) { busy = false; return; }
+          if (cancelledRef.current) { busyRef.current = false; return; }
           heldUrl = URL.createObjectURL(blob);
-          const played = await play(heldUrl);
-          // 재생에 성공하면 끝날 때까지, 실패하면 아이가 누를 때까지 다음 수신을 멈춘다.
-          if (!played) return;
-          const audio = audioRef.current;
-          if (audio) audio.addEventListener("ended", () => { busy = false; }, { once: true });
-          else busy = false;
-        } catch { busy = false; }
+          // 잠금은 play()의 재생 종료 처리에서 푼다(자동 재생·수동 재시도 모두 같은 자리).
+          await play(heldUrl);
+        } catch { busyRef.current = false; }
       };
       void receive(); timer = window.setInterval(() => void receive(), 1500);
     }).catch(() => {});
     return () => {
-      cancelledRef.current = true;
+      cancelledRef.current = true; busyRef.current = false;
       if (timer) clearInterval(timer);
       const audio = audioRef.current;
-      if (audio) { audio.pause(); audio.src = ""; }
+      if (audio) { audio.onended = null; audio.onerror = null; audio.pause(); audio.src = ""; }
       if (heldUrl) URL.revokeObjectURL(heldUrl);
     };
   }, [play]);
