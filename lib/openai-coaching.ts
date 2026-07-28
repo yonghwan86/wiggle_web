@@ -79,10 +79,6 @@ const instructionsByKind = {
 
 const forbiddenMeaningPatterns = [
   /(?:멋진|멋지|멋져|멋있|훌륭|예쁜|예쁘|이쁜|이쁘|아름답|근사|굉장|대단|완벽|최고|짱|칭찬|잘\s*(?:하|했|해|한|그렸|그린|그리고\s*있|표현|색칠|꾸며|꾸미|꾸몄|만들|완성)|좋은\s*그림|창의력)/iu,
-  // 작품을 대상으로 한 "좋아/좋네/좋다"는 평가다. 대화를 잇는 "좋아, 이제…"와 구분해
-  // 그림·색·작품을 가리킬 때만 막는다. 목적격 조사(을/를)와 "좋아하-"는 선호를 묻는
-  // 정상 질문("어떤 색을 좋아하니?")이므로 제외한다.
-  /(?:그림|작품|색깔|색칠|색)\s*(?:이|은|도|까지)?\s*(?:정말|진짜|참|너무|아주|매우)?\s*좋(?:아(?!하)|네|다|은|군|구나)/iu,
   /(?:천재|영재|재능|소질|재주|그림\s*실력)/iu,
   /(?:\d{1,3}\s*점|점수|등수|순위|평가|채점|합격|불합격)/iu,
   /(?:틀렸|틀린|오답|정답|실패|못했|못\s*그렸)/iu,
@@ -106,14 +102,19 @@ const drawingActionPattern = /(그려|더해|추가|넣어|이어|색칠|선|모
 const APPROVAL_ENDING = String.raw`좋아(?!하니|하는|하던|하면|하고|하지|하게|해서)`;
 const WORK_NOUN = String.raw`(?:그림|작품|색깔|색칠)`;
 const EMPHASIS = String.raw`(?:정말|진짜|참|너무|아주|매우)?\s*`;
+// 소유자를 열거하면 이름과 일반 명사("아이의 그림", "민수의 작품")가 계속 빠진다.
+// 앞이 한글이면 지시어가 아니라 앞말의 조사다("학생이 색칠을"의 '이').
+const OWNER = String.raw`(?:[가-힣]{1,10}의|(?<![가-힣])(?:네|니|너|너의|당신의|이|그|저))`;
+const EVALUATOR = String.raw`(?:나는|내가|저는|제가|선생님[은이]|우리\s*선생님[은이]?)`;
 const workApprovalPatterns = [
-  // ① 아이 작품을 가리키는 지시어가 붙은 승인: "네 그림을 좋아해", "이 작품을 좋아했어요"
-  //    앞이 한글이면 지시어가 아니라 앞말의 조사다("학생이 색칠을" 의 '이').
-  new RegExp(String.raw`(?<![가-힣])(?:네|니|너|너의|당신의|이|그|저)\s*${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
-  // ② 평가자가 자기를 주어로 밝힌 승인: "나는 그림을 좋아해", "선생님은 네 작품을 좋아합니다"
-  new RegExp(String.raw`(?:나는|내가|저는|제가|선생님[은이]|우리\s*선생님[은이]?)\s*(?:네|니|너|너의|당신의|이|그|저)?\s*${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
-  // ③ 주어를 생략한 채 문장을 여는 승인: "그림을 좋아해.", "작품을 정말 좋아합니다."
-  //    제3자를 주어로 둔 관찰("아이가 그림을 좋아해요")은 문장 앞이 아니므로 걸리지 않는다.
+  // ① 작품 자체를 좋다고 평하는 말: "그림이 참 좋네", "네 그림이 정말 좋아"
+  new RegExp(String.raw`(?:그림|작품|색깔|색칠|색)\s*(?:이|은|도|까지)?\s*${EMPHASIS}좋(?:아(?!하)|네|다|은|군|구나)`, "iu"),
+  // ② 소유자가 붙은 작품 승인: "네 그림을 좋아해", "아이의 그림을 좋아해요"
+  new RegExp(String.raw`${OWNER}\s*${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
+  // ③ 평가자가 자기를 주어로 밝힌 승인: "나는 그림을 좋아해", "선생님은 민수의 작품을 좋아합니다"
+  new RegExp(String.raw`${EVALUATOR}\s*(?:${OWNER}\s*)?${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
+  // ④ 주어를 생략한 채 절을 여는 승인: "그림을 좋아해.", "작품을 정말 좋아합니다."
+  //    제3자를 주어로 둔 관찰("아이가 그림을 좋아해요")은 절 앞이 아니므로 걸리지 않는다.
   new RegExp(String.raw`^${EMPHASIS}${WORK_NOUN}\s*(?:을|를)\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
 ];
 
@@ -144,12 +145,14 @@ export function isChildSafeCoachingText(value: string) {
   // 표시용 낱말을 본문에 끼워 넣지 않는다. 그런 표시는 모델이 그대로 써서
   // 검사를 비켜 가는 통로가 되고("… 좋아해 물음표"), 본문 치환은 그 사이의
   // 금지어까지 지운다. 전각 물음표는 NFKC가 반각으로 만든다.
+  // 문장이 아니라 절 단위로 본다. 문장 끝이 물음표여도 앞 절은 승인일 수 있다
+  // ("네 그림을 좋아해, 무엇을 더 그리고 싶어?").
   const nfkc = value.normalize("NFKC");
-  const declarativeSentences = nfkc.split(/(?<=[.!?])\s*/u)
-    .filter((sentence) => !/\?\s*$/u.test(sentence))
+  const declarativeClauses = nfkc.split(/(?<=[.!?])\s*|,\s*/u)
+    .filter((clause) => clause && !/\?\s*$/u.test(clause))
     .map(normalizeCoachingPolicyText)
     .filter(Boolean);
-  if (workApprovalPatterns.some((pattern) => declarativeSentences.some((sentence) => pattern.test(sentence)))) return false;
+  if (workApprovalPatterns.some((pattern) => declarativeClauses.some((clause) => pattern.test(clause)))) return false;
   const normalized = normalizeCoachingPolicyText(nfkc);
   if (/[\p{Script_Extensions=Greek}\p{Script_Extensions=Cyrillic}]/u.test(normalized)) return false;
   if (forbiddenMeaningPatterns.some((pattern) => pattern.test(normalized))) return false;
