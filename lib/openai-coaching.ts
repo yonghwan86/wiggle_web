@@ -110,7 +110,11 @@ const EMPHASIS = String.raw`(?:정말|진짜|참|너무|아주|매우)?\s*`;
 // 관형절은 "X가 <말> 그림" 형태다. 주어와 중간말 사이 공백을 요구하지 않으면
 // "아이가 그림을"의 조사 '가'가 중간말로 잡혀 제3자 관찰까지 막힌다.
 const OWNER = String.raw`(?:[가-힣]{1,10}의|[가-힣]{1,10}[가이]\s+[가-힣]{1,8}\s+(?=그림|작품)|그린|(?<![가-힣])(?:네|니|너|너의|당신의|이|그|저))`;
-const EVALUATOR = String.raw`(?:나는|내가|저는|제가|선생님[은이]|우리\s*선생님[은이]?)`;
+// 평가자는 열린 어휘가 아니라 이 제품이 아는 화자 집합이다 — 아이에게 말하는 주체.
+// 조사·존칭·축약형이 붙어도 같은 화자다("난", "선생님께서는", "그리미는").
+// "저"는 1인칭이자 지시어라 맨몸으로 두면 "저 색깔을 좋아해서 골랐어?"까지 막는다.
+// 조사가 붙어 1인칭이 분명할 때만 평가자로 본다.
+const EVALUATOR = String.raw`(?:(?:우리\s*선생님|선생님|그리미|위글|wiggle|ai|나|난|내|제)(?:가|는|은|도|께서는|께서도|께서)?|저[는도])(?=\s)`;
 const workApprovalPatterns = [
   // ① 작품 자체를 좋다고 평하는 말: "그림이 참 좋네", "네 그림 색이 좋다"
   //    맨몸의 "색"은 아이의 색 선호("빨간색이 좋아요")라서 작품 문맥이 있을 때만 본다.
@@ -135,9 +139,13 @@ function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-// emoji 자리에 글자를 넣어 label과 이어 붙이는 우회를 막는다. 그림 기호만 허용한다.
+// emoji 자리에 글자를 넣어 label과 이어 붙이는 우회를 막는다. 다만 국기(🇰🇷)와
+// 키캡(1️⃣)도 정상 이모지이므로, 문자 종류를 금지하는 대신 이모지 구성요소를
+// 모두 걷어낸 뒤 남는 것이 없어야 한다는 방식으로 판별한다.
+const EMOJI_PARTS = /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}‍️︎⃣]|[0-9#*](?=️?⃣)/gu;
 function isEmojiToken(value: string) {
-  return /\p{Extended_Pictographic}/u.test(value) && !/[\p{Script=Hangul}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}a-zA-Z0-9]/u.test(value);
+  if (!/\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/u.test(value)) return false;
+  return value.replace(EMOJI_PARTS, "").trim() === "";
 }
 
 function shortText(value: unknown, max: number) {
@@ -157,6 +165,15 @@ export function compactCoachingPolicyText(value: string) {
     .replace(/[\s\p{P}\p{S}_]+/gu, "");
 }
 
+// 아이의 선호를 묻는 질문만 승인 검사에서 면제한다. 물음표로 끝난다는 것만으로는
+// 부족하다 — "그림이 참 좋네?"는 형태만 의문이고 내용은 평가다.
+const INTERROGATIVE_WORD = /(?:어떤|어느|무슨|무엇|뭐|뭘|누구|누가|어디|언제|왜|얼마나|몇)/u;
+const ADDRESSED_PREFERENCE = /좋아(?:하니|하냐|하나요|하세요|해|해요|했어|했어요|할래|할까)?\s*\?\s*$/u;
+function isPreferenceQuestion(clause: string) {
+  if (!/\?\s*$/u.test(clause)) return false;
+  return INTERROGATIVE_WORD.test(clause) || ADDRESSED_PREFERENCE.test(clause);
+}
+
 export function isChildSafeCoachingText(value: string) {
   // "좋아해?"는 아이에게 되묻는 질문이고 "좋아해."는 승인이다. 정규화가 문장부호를
   // 지우면 둘이 같아지므로, 지우기 전에 문장을 갈라 의문문을 따로 세어 둔다.
@@ -166,12 +183,13 @@ export function isChildSafeCoachingText(value: string) {
   // 문장이 아니라 절 단위로 본다. 문장 끝이 물음표여도 앞 절은 승인일 수 있다
   // ("네 그림을 좋아해, 무엇을 더 그리고 싶어?").
   const nfkc = value.normalize("NFKC");
-  // 절 경계는 마침표류만이 아니다. 세미콜론·콜론·줄바꿈으로 가른 승인이
+  // 절 경계는 마침표류만이 아니다. 세미콜론·콜론·줄바꿈·대시로 가른 승인이
   // 뒤 절의 물음표 때문에 통째로 면제되면 안 된다.
-  const clauses = nfkc.split(/(?<=[.!?])\s*|[,;:、·]\s*|\r?\n\s*/u).filter(Boolean);
-  const normalizedClauses = clauses.map((clause) => ({ text: normalizeCoachingPolicyText(clause), question: /\?\s*$/u.test(clause) })).filter((clause) => clause.text);
-  // 선호를 묻는 질문("어떤 색이 좋아?")은 통과시키되, 질문에 감싼 평가자의 승인은 계속 막는다.
-  const declarativeClauses = normalizedClauses.filter((clause) => !clause.question).map((clause) => clause.text);
+  const clauses = nfkc.split(/(?<=[.!?])\s*|[,;:、·/|]\s*|\s*[—–-]{1,2}\s+|\r?\n\s*/u).filter(Boolean);
+  const normalizedClauses = clauses.map((clause) => ({ text: normalizeCoachingPolicyText(clause), exempt: isPreferenceQuestion(clause) })).filter((clause) => clause.text);
+  // 선호를 묻는 질문("어떤 색이 좋아?")만 통과시킨다. 물음표만 보고 면제하면
+  // "그림이 참 좋네?" 같은 반어형 칭찬이 그대로 빠져나간다.
+  const declarativeClauses = normalizedClauses.filter((clause) => !clause.exempt).map((clause) => clause.text);
   if (workApprovalPatterns.some((pattern) => declarativeClauses.some((clause) => pattern.test(clause)))) return false;
   if (normalizedClauses.some((clause) => evaluatorApprovalPattern.test(clause.text))) return false;
   const normalized = normalizeCoachingPolicyText(nfkc);

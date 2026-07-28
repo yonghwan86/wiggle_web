@@ -41,6 +41,14 @@ const praise = [
   "네 그림을 좋아해; 무엇을 더 그리고 싶어?",
   "네 그림을 좋아해: 무엇을 더 그릴까?",
   "네 그림을 좋아해\n무엇을 더 그리고 싶어?",
+  "네 그림을 좋아해 — 무엇을 더 그리고 싶어?",
+  // 형태만 의문이고 내용은 평가인 문장.
+  "그림이 참 좋네?",
+  // 평가자는 열거가 아니라 이 제품이 아는 화자 집합이다.
+  "그리미는 네 그림을 좋아해.",
+  "선생님도 네 그림을 좋아해.",
+  "선생님께서는 네 그림을 좋아해.",
+  "난 네 그림을 좋아해.",
   // 소유자를 열거하면 이름과 일반 명사가 빠진다.
   "아이의 그림을 좋아해요.",
   "나는 아이의 그림을 좋아해요.",
@@ -188,6 +196,16 @@ test("praise reaches neither the child coaching payload nor the teacher draft", 
   assert.equal(validateStudentCoaching(studentPayload({
     choices: [{ emoji: "멋", label: "있다", answer: "강아지를 그렸어요" }, { emoji: "🌳", label: "나무", answer: "나무를 그렸어요" }],
   })), null);
+  // 국기·키캡도 정상 이모지다. 문자 종류를 금지하면 유효한 응답이 502가 된다.
+  for (const emoji of ["🇰🇷", "1️⃣", "👩‍🎨", "🎨"]) {
+    assert.ok(validateStudentCoaching(studentPayload({
+      choices: [{ emoji, label: "하나", answer: "하나를 그렸어요" }, { emoji: "🌳", label: "나무", answer: "나무를 그렸어요" }],
+    })), `유효한 이모지가 막히면 502가 난다: ${emoji}`);
+  }
+  for (const text of ["그리미는 네 그림을 좋아해.", "선생님도 네 그림을 좋아해.", "난 네 그림을 좋아해.", "그림이 참 좋네?"]) {
+    assert.equal(validateStudentCoaching(studentPayload({ growth_event: text })), null, `학생 코칭으로 새면 안 됨: ${text}`);
+    assert.equal(validateTeacherDraft({ body: "다음에는 배경을 더 그려볼까?", observation: text, next_action: "선을 하나 더 그려 보게 해 주세요." }), null, `교사 초안으로 새면 안 됨: ${text}`);
+  }
   // 아이가 고른 색 선호는 choice answer로 자주 온다.
   assert.ok(validateStudentCoaching(studentPayload({
     choices: [{ emoji: "🔴", label: "빨강", answer: "빨간색이 좋아요" }, { emoji: "🔵", label: "파랑", answer: "파란색이 좋아요" }],
