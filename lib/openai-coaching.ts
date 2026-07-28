@@ -83,12 +83,6 @@ const forbiddenMeaningPatterns = [
   // 그림·색·작품을 가리킬 때만 막는다. 목적격 조사(을/를)와 "좋아하-"는 선호를 묻는
   // 정상 질문("어떤 색을 좋아하니?")이므로 제외한다.
   /(?:그림|작품|색깔|색칠|색)\s*(?:이|은|도|까지)?\s*(?:정말|진짜|참|너무|아주|매우)?\s*좋(?:아(?!하)|네|다|은|군|구나)/iu,
-  // "좋아하-"는 대개 선호를 묻는 정상 질문("어떤 색을 좋아하니?")이지만,
-  // 아이 작품을 가리키는 지시어가 앞에 붙고 단정형으로 끝나면 승인 표현이다("네 그림을 좋아해").
-  // 단정형을 열거하면 시제·회상형(좋아했어/좋아할 거야/좋아하네)이 계속 빠지므로,
-  // 관형·연결형만 허용하고 나머지는 모두 막는다. 지시어는 있어도 없어도 되며
-  // ("그림을 좋아해."도 승인이다), 의문형은 전처리가 남긴 물음표 표시로 가려낸다.
-  /(?:네|니|너|너의|당신의|이|그|저)?\s*(?:그림|작품|색깔|색칠)\s*(?:을|를|이|은|도)?\s*(?:정말|진짜|참|너무|아주|매우)?\s*좋아(?!하니|하는|하던|하면|하고|하지|하게|해서)(?![가-힣]{0,4}\s*물음표)/iu,
   /(?:천재|영재|재능|소질|재주|그림\s*실력)/iu,
   /(?:\d{1,3}\s*점|점수|등수|순위|평가|채점|합격|불합격)/iu,
   /(?:틀렸|틀린|오답|정답|실패|못했|못\s*그렸)/iu,
@@ -104,6 +98,24 @@ const forbiddenMeaningPatterns = [
   /(?:\b(?:complete|finish|draw)\b.{0,24}(?:해\s*줄게|해줄게|대신)|(?:해\s*줄게|해줄게|대신).{0,24}\b(?:complete|finish|draw)\b)/iu,
 ];
 const drawingActionPattern = /(그려|더해|추가|넣어|이어|색칠|선|모양|놓아|붙여|표시해|찍어|꾸며|만들어)/;
+
+// "좋아하-"는 대개 선호를 묻거나 서술하는 정상 표현("어떤 색을 좋아하니?",
+// "아이가 그림을 좋아해요")이라 문장 전체를 뭉뚱그려 막으면 정상 응답이 502가 된다.
+// 승인으로 보는 경우만 좁혀서 적는다. 어미는 단정형을 열거하지 않고 관형·연결형만
+// 허용해, 새 시제("좋아했어", "좋아할 거야")가 나와도 기본값이 차단이 되게 한다.
+const APPROVAL_ENDING = String.raw`좋아(?!하니|하는|하던|하면|하고|하지|하게|해서)`;
+const WORK_NOUN = String.raw`(?:그림|작품|색깔|색칠)`;
+const EMPHASIS = String.raw`(?:정말|진짜|참|너무|아주|매우)?\s*`;
+const workApprovalPatterns = [
+  // ① 아이 작품을 가리키는 지시어가 붙은 승인: "네 그림을 좋아해", "이 작품을 좋아했어요"
+  //    앞이 한글이면 지시어가 아니라 앞말의 조사다("학생이 색칠을" 의 '이').
+  new RegExp(String.raw`(?<![가-힣])(?:네|니|너|너의|당신의|이|그|저)\s*${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
+  // ② 평가자가 자기를 주어로 밝힌 승인: "나는 그림을 좋아해", "선생님은 네 작품을 좋아합니다"
+  new RegExp(String.raw`(?:나는|내가|저는|제가|선생님[은이]|우리\s*선생님[은이]?)\s*(?:네|니|너|너의|당신의|이|그|저)?\s*${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
+  // ③ 주어를 생략한 채 문장을 여는 승인: "그림을 좋아해.", "작품을 정말 좋아합니다."
+  //    제3자를 주어로 둔 관찰("아이가 그림을 좋아해요")은 문장 앞이 아니므로 걸리지 않는다.
+  new RegExp(String.raw`^${EMPHASIS}${WORK_NOUN}\s*(?:을|를)\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
+];
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -128,11 +140,17 @@ export function compactCoachingPolicyText(value: string) {
 
 export function isChildSafeCoachingText(value: string) {
   // "좋아해?"는 아이에게 되묻는 질문이고 "좋아해."는 승인이다. 정규화가 문장부호를
-  // 지우면 둘이 같아지므로, 지우기 전에 물음표를 낱말로 남겨 구분을 보존한다.
-  // 원문을 지우지 않는 것이 핵심이다. 어미 구간을 통째로 치환하면 그 안에 낀
-  // 금지어("좋아칭찬?")까지 검사 전에 사라진다. 전각 물음표는 NFKC가 반각으로 만든다.
-  const questionAware = value.normalize("NFKC").replace(/\?/gu, " 물음표 ");
-  const normalized = normalizeCoachingPolicyText(questionAware);
+  // 지우면 둘이 같아지므로, 지우기 전에 문장을 갈라 의문문을 따로 세어 둔다.
+  // 표시용 낱말을 본문에 끼워 넣지 않는다. 그런 표시는 모델이 그대로 써서
+  // 검사를 비켜 가는 통로가 되고("… 좋아해 물음표"), 본문 치환은 그 사이의
+  // 금지어까지 지운다. 전각 물음표는 NFKC가 반각으로 만든다.
+  const nfkc = value.normalize("NFKC");
+  const declarativeSentences = nfkc.split(/(?<=[.!?])\s*/u)
+    .filter((sentence) => !/\?\s*$/u.test(sentence))
+    .map(normalizeCoachingPolicyText)
+    .filter(Boolean);
+  if (workApprovalPatterns.some((pattern) => declarativeSentences.some((sentence) => pattern.test(sentence)))) return false;
+  const normalized = normalizeCoachingPolicyText(nfkc);
   if (/[\p{Script_Extensions=Greek}\p{Script_Extensions=Cyrillic}]/u.test(normalized)) return false;
   if (forbiddenMeaningPatterns.some((pattern) => pattern.test(normalized))) return false;
   const policyCompact = compactCoachingPolicyText(normalized);
