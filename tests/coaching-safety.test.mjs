@@ -13,6 +13,11 @@ const praise = [
   "이 그림을 정말 좋아해요",
   "나는 너 그림을 좋아해.",
   "그 작품을 좋아합니다",
+  // 단정형을 열거하면 시제·회상형이 계속 빠진다. 허용 어미만 두고 나머지를 막아야 한다.
+  "나는 네 그림을 좋아했어",
+  "네 그림을 좋아했다",
+  "네 그림을 좋아할 거야",
+  "네 그림을 좋아하네",
   "색을 정말 잘 표현했네!",
   "네 그림이 정말 좋아!",
   "그림이 참 좋네",
@@ -54,6 +59,10 @@ const allowed = [
   "저 색깔을 좋아해서 골랐어?",
   "너 그림을 좋아하니?",
   "네 그림을 좋아해?",
+  // 존댓말과 전각 물음표도 의문형이다. 활용형을 하나씩 적으면 이런 것이 빠진다.
+  "네 그림을 좋아해요?",
+  "네 그림을 좋아해？",
+  "네가 좋아하는 색이 뭐야?",
   "좋아, 이제 다음 선을 그어 보자.",
   "무슨 색을 더 칠하고 싶어?",
   "이 자리에 무엇을 만들까?",
@@ -101,4 +110,32 @@ test("praise reaches neither the child coaching payload nor the teacher draft", 
   assert.ok(validateTeacherDraft(draft), "정상 초안은 통과해야 한다");
   assert.equal(validateTeacherDraft({ ...draft, body: "그림을 참 잘하는 아이구나." }), null);
   assert.equal(validateTeacherDraft({ ...draft, observation: "정말 잘하고 있어요." }), null);
+});
+
+// 필터 단위만 고정하면 최종 관문이 뚫린 것을 놓친다. 시제·존댓말·전각 부호까지
+// 두 validator에서 직접 확인한다.
+test("tense and politeness variants are judged the same way at both final validators", () => {
+  const approvals = [
+    "나는 네 그림을 좋아했어.",
+    "선생님은 네 작품을 좋아했어요.",
+    "네 그림을 좋아했다",
+    "네 그림을 좋아할 거야",
+    "네 그림을 좋아하네",
+  ];
+  for (const text of approvals) {
+    assert.equal(validateStudentCoaching(studentPayload({ growth_event: text })), null, `학생 코칭으로 새면 안 됨: ${text}`);
+    assert.equal(validateTeacherDraft({ body: text, observation: "선을 이어 그렸어요.", next_action: "선을 하나 더 그려 보게 해 주세요." }), null, `교사 초안으로 새면 안 됨: ${text}`);
+  }
+
+  const questions = [
+    "네 그림을 좋아해요?",
+    "네 그림을 좋아했어?",
+    "네 그림을 좋아했어요?",
+    "네 그림을 좋아해？",
+    "이 색깔을 좋아하니?",
+  ];
+  for (const text of questions) {
+    assert.ok(validateStudentCoaching(studentPayload({ growth_event: text })), `막히면 502가 난다(학생 코칭): ${text}`);
+    assert.ok(validateTeacherDraft({ body: "다음에는 배경을 더 그려볼까?", observation: text, next_action: "선을 하나 더 그려 보게 해 주세요." }), `막히면 502가 난다(교사 초안): ${text}`);
+  }
 });

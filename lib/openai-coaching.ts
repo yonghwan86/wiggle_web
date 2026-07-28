@@ -85,8 +85,9 @@ const forbiddenMeaningPatterns = [
   /(?:그림|작품|색깔|색칠|색)\s*(?:이|은|도|까지)?\s*(?:정말|진짜|참|너무|아주|매우)?\s*좋(?:아(?!하)|네|다|은|군|구나)/iu,
   // "좋아하-"는 대개 선호를 묻는 정상 질문("어떤 색을 좋아하니?")이지만,
   // 아이 작품을 가리키는 지시어가 앞에 붙고 단정형으로 끝나면 승인 표현이다("네 그림을 좋아해").
-  // 의문·관형·연결형(좋아하니/좋아하는/좋아해서)은 정상 문장이므로 어미로 갈라낸다.
-  /(?:네|니|너|너의|당신의|이|그|저)\s*(?:그림|작품|색깔|색칠)\s*(?:을|를|이|은|도)?\s*(?:정말|진짜|참|너무|아주|매우)?\s*좋아(?:(?=$|[^가-힣])|해(?!서)|한다|합니다)/iu,
+  // 단정형을 열거하면 시제·회상형(좋아했어/좋아할 거야/좋아하네)이 계속 빠지므로,
+  // 관형·연결형만 허용하고 나머지는 모두 막는다. 의문형은 아래 전처리가 "좋아하니"로 바꿔 둔다.
+  /(?:네|니|너|너의|당신의|이|그|저)\s*(?:그림|작품|색깔|색칠)\s*(?:을|를|이|은|도)?\s*(?:정말|진짜|참|너무|아주|매우)?\s*좋아(?!하니|하는|하던|하면|하고|하지|하게|해서)/iu,
   /(?:천재|영재|재능|소질|재주|그림\s*실력)/iu,
   /(?:\d{1,3}\s*점|점수|등수|순위|평가|채점|합격|불합격)/iu,
   /(?:틀렸|틀린|오답|정답|실패|못했|못\s*그렸)/iu,
@@ -127,7 +128,9 @@ export function compactCoachingPolicyText(value: string) {
 export function isChildSafeCoachingText(value: string) {
   // "좋아해?"는 아이에게 되묻는 질문이고 "좋아해."는 승인이다. 정규화가 문장부호를
   // 지우면 둘이 같아지므로, 지우기 전에 의문형을 의문 어미로 바꿔 구분을 남긴다.
-  const questionAware = value.replace(/좋아해\s*\?/gu, "좋아하니");
+  // 활용형을 하나씩 적으면 존댓말("좋아해요?")이 빠지므로 물음표로 일반화하고,
+  // 전각 물음표가 그대로 남지 않게 NFKC를 먼저 적용한다.
+  const questionAware = value.normalize("NFKC").replace(/좋아[가-힣]*\s*\?/gu, "좋아하니");
   const normalized = normalizeCoachingPolicyText(questionAware);
   if (/[\p{Script_Extensions=Greek}\p{Script_Extensions=Cyrillic}]/u.test(normalized)) return false;
   if (forbiddenMeaningPatterns.some((pattern) => pattern.test(normalized))) return false;
