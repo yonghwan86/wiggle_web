@@ -68,6 +68,12 @@ function finiteUnit(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
+// 정규식은 값을 문자열로 강제 변환한다. [["#FF0000"]] 같은 중첩 배열이 통과해
+// 그대로 복사되면 DrawDocument 타입이 깨지고, 렌더러의 문자열 전제와 크기 상한도 무너진다.
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value);
+}
+
 // points:[null] 같은 입력에서 point.x를 바로 읽으면 TypeError가 나 검증이 거부 대신 500이 된다.
 function invalidPoint(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return true;
@@ -92,14 +98,14 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
     if (!["stroke", "fill", "shape", "sticker"].includes(op.type) || op.at.length > 40 || !Number.isFinite(Date.parse(op.at))) return null;
     if (op.type === "stroke") {
       if (!op.tool || !["pen", "crayon", "eraser"].includes(op.tool) || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length < 1 || op.points.length > MAX_STROKE_POINTS) return null;
-      if (op.tool !== "eraser" && !/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "")) return null;
+      if (op.tool !== "eraser" && !isHexColor(op.color)) return null;
       if (op.points.some(invalidPoint)) return null;
     }
     if (op.type === "fill") {
-      if (!/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "") || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint)) return null;
+      if (!isHexColor(op.color) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint)) return null;
     }
     if (op.type === "shape") {
-      if (!op.shape || !["circle", "triangle", "rectangle", "line"].includes(op.shape) || !/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "") || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length !== 2 || op.points.some(invalidPoint)) return null;
+      if (!op.shape || !["circle", "triangle", "rectangle", "line"].includes(op.shape) || !isHexColor(op.color) || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length !== 2 || op.points.some(invalidPoint)) return null;
     }
     if (op.type === "sticker" && (!STICKER_ALLOWLIST.includes(op.sticker as (typeof STICKER_ALLOWLIST)[number]) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint))) return null;
   }

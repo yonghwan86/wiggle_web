@@ -103,6 +103,27 @@ test("non-string or padded timestamps are rejected and survivors normalize to IS
   assert.equal(loose.ops[0].at, new Date("2026-07-29T01:00:00+09:00").toISOString(), "통과한 날짜는 ISO로 정규화된다");
 });
 
+test("no field accepts a value that merely coerces to a valid string", () => {
+  // 정규식이나 String(...)에 기대면 배열·객체가 문자열로 변환돼 통과하고,
+  // 그 원본이 그대로 저장돼 타입 계약과 크기 상한이 함께 깨진다.
+  const coercing = [
+    ["color", [["#FF0000"]]],
+    ["color", { toString: () => "#FF0000" }],
+    ["opId", [["op_abcdefgh"]]],
+    ["clientOpId", [["client_abcdefgh"]]],
+    ["at", [["2026-07-29T01:00:00.000Z"]]],
+    ["tool", [["pen"]]],
+  ];
+  for (const [field, value] of coercing) {
+    const document = documentWith([{ ...stroke("coerce", 2), [field]: value }]);
+    assert.equal(validateDrawDocument(document), null, `${field}에 강제 변환 값이 통과하면 안 됨: ${JSON.stringify(value)}`);
+  }
+
+  // 중첩 배열 색상이 통과하면 추정이 실제보다 훨씬 작아진다(감사 실측: 283 vs 1,206).
+  const nested = documentWith([{ ...stroke("nested", 2), color: JSON.parse(`${"[".repeat(200)}"#FF0000"${"]".repeat(200)}`) }]);
+  assert.equal(validateDrawDocument(nested), null);
+});
+
 test("ids longer than the server limit are rejected instead of silently truncated", () => {
   const tooLong = "a".repeat(81);
   assert.equal(validateDrawDocument(documentWith([{ ...stroke("idcheck", 1), opId: tooLong }])), null);
