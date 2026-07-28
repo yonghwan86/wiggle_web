@@ -35,9 +35,12 @@ const praise = [
   "내가 이 그림을 좋아한다",
   // 질문 뒤에 이어지는 승인 문장도 그 문장 단위로 잡아야 한다.
   "무엇을 그렸어? 그림을 좋아해.",
-  // 문장 끝이 물음표여도 앞 절이 승인이면 막아야 한다.
+  // 문장 끝이 물음표여도 앞 절이 승인이면 막아야 한다. 절 경계는 쉼표만이 아니다.
   "네 그림을 좋아해, 무엇을 더 그리고 싶어?",
   "그림이 참 좋네, 무엇을 더 그릴까?",
+  "네 그림을 좋아해; 무엇을 더 그리고 싶어?",
+  "네 그림을 좋아해: 무엇을 더 그릴까?",
+  "네 그림을 좋아해\n무엇을 더 그리고 싶어?",
   // 소유자를 열거하면 이름과 일반 명사가 빠진다.
   "아이의 그림을 좋아해요.",
   "나는 아이의 그림을 좋아해요.",
@@ -116,6 +119,10 @@ const allowed = [
   // 관형절 소유 규칙이 조사를 중간말로 오인하면 제3자 관찰까지 막힌다.
   "아이가 만든 그림을 좋아하는 친구를 그려 봐.",
   "아이가 좋아하는 그림을 그려 봐.",
+  // 절 앞에 제3자 주어가 있으면 승인이 아니라 관찰이다.
+  "아이는 엄마가 그린 그림을 좋아해요",
+  // 평가자가 그린 사람일 뿐이면 아이에게 묻는 질문이다.
+  "내가 그린 그림을 좋아하니?",
   "좋아, 이제 다음 선을 그어 보자.",
   "무슨 색을 더 칠하고 싶어?",
   "이 자리에 무엇을 만들까?",
@@ -174,6 +181,13 @@ test("praise reaches neither the child coaching payload nor the teacher draft", 
   }
   // 전각 물음표를 쓴 정상 질문은 통과해야 한다(안전 검사와 물음표 개수 검사의 기준이 같아야 한다).
   assert.ok(validateStudentCoaching(studentPayload({ question: "여기 동그란 건 무엇이니？" })), "전각 물음표 질문이 막히면 502가 난다");
+  // 화면에서는 emoji와 label이 한 버튼에 붙어 나온다. 따로만 검사하면 쪼갠 칭찬이 통과한다.
+  assert.equal(validateStudentCoaching(studentPayload({
+    choices: [{ emoji: "잘", label: "했어요", answer: "강아지를 그렸어요" }, { emoji: "🌳", label: "나무", answer: "나무를 그렸어요" }],
+  })), null, "emoji 자리에 글자를 넣어 칭찬을 쪼개면 막아야 한다");
+  assert.equal(validateStudentCoaching(studentPayload({
+    choices: [{ emoji: "멋", label: "있다", answer: "강아지를 그렸어요" }, { emoji: "🌳", label: "나무", answer: "나무를 그렸어요" }],
+  })), null);
   // 아이가 고른 색 선호는 choice answer로 자주 온다.
   assert.ok(validateStudentCoaching(studentPayload({
     choices: [{ emoji: "🔴", label: "빨강", answer: "빨간색이 좋아요" }, { emoji: "🔵", label: "파랑", answer: "파란색이 좋아요" }],

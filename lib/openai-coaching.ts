@@ -116,8 +116,9 @@ const workApprovalPatterns = [
   //    맨몸의 "색"은 아이의 색 선호("빨간색이 좋아요")라서 작품 문맥이 있을 때만 본다.
   //    조사 "의"는 흔히 생략되므로 있으나 없으나 같게 본다.
   new RegExp(String.raw`(?:그림|작품)\s*(?:의\s*)?(?:(?:색깔|색칠|색)\s*)?(?:이|은|도|까지)?\s*${EMPHASIS}좋(?:아(?!하)|네|다|은|군|구나)`, "iu"),
-  // ② 소유자가 붙은 작품 승인: "네 그림을 좋아해", "아이의 그림을 좋아해요", "네가 그린 그림을 좋아해요"
-  new RegExp(String.raw`${OWNER}\s*${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
+  // ② 소유자로 절을 여는 작품 승인: "네 그림을 좋아해", "네가 그린 그림을 좋아해요"
+  //    절 앞에 제3자 주어가 있으면 관찰이다("아이는 엄마가 그린 그림을 좋아해요").
+  new RegExp(String.raw`^${EMPHASIS}${OWNER}\s*${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
   // ④ 주어를 생략한 채 절을 여는 승인: "그림을 좋아해.", "작품을 정말 좋아합니다."
   //    제3자를 주어로 둔 관찰("아이가 그림을 좋아해요")은 절 앞이 아니므로 걸리지 않는다.
   new RegExp(String.raw`^${EMPHASIS}${WORK_NOUN}\s*(?:을|를)\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
@@ -125,10 +126,18 @@ const workApprovalPatterns = [
 
 // 평가자가 자기를 주어로 밝히면 어미와 무관하게 승인이다. 의문문으로 감싸도 마찬가지다
 // ("내가 네 그림을 좋아하는 게 느껴지니?"). 그래서 의문절에서도 이 규칙만은 계속 적용한다.
-const evaluatorApprovalPattern = new RegExp(String.raw`${EVALUATOR}\s*(?:${OWNER}\s*)?${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}좋아`, "iu");
+// 다만 평가자가 그린 사람일 뿐인 "내가 그린 그림을 좋아하니?"는 아이에게 묻는 질문이므로,
+// 평가자 바로 뒤에 오는 소유자는 소유격·지시어이거나 주어를 갖춘 관형절일 때만 인정한다.
+const OWNER_AFTER_EVALUATOR = String.raw`(?:[가-힣]{1,10}의\s*|(?<![가-힣])(?:네|니|너|너의|당신의|이|그|저)\s*|[가-힣]{1,10}[가이]\s+[가-힣]{1,8}\s+)`;
+const evaluatorApprovalPattern = new RegExp(String.raw`${EVALUATOR}\s*(?:${OWNER_AFTER_EVALUATOR})?${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}좋아`, "iu");
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+// emoji 자리에 글자를 넣어 label과 이어 붙이는 우회를 막는다. 그림 기호만 허용한다.
+function isEmojiToken(value: string) {
+  return /\p{Extended_Pictographic}/u.test(value) && !/[\p{Script=Hangul}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}a-zA-Z0-9]/u.test(value);
 }
 
 function shortText(value: unknown, max: number) {
@@ -157,7 +166,9 @@ export function isChildSafeCoachingText(value: string) {
   // 문장이 아니라 절 단위로 본다. 문장 끝이 물음표여도 앞 절은 승인일 수 있다
   // ("네 그림을 좋아해, 무엇을 더 그리고 싶어?").
   const nfkc = value.normalize("NFKC");
-  const clauses = nfkc.split(/(?<=[.!?])\s*|,\s*/u).filter(Boolean);
+  // 절 경계는 마침표류만이 아니다. 세미콜론·콜론·줄바꿈으로 가른 승인이
+  // 뒤 절의 물음표 때문에 통째로 면제되면 안 된다.
+  const clauses = nfkc.split(/(?<=[.!?])\s*|[,;:、·]\s*|\r?\n\s*/u).filter(Boolean);
   const normalizedClauses = clauses.map((clause) => ({ text: normalizeCoachingPolicyText(clause), question: /\?\s*$/u.test(clause) })).filter((clause) => clause.text);
   // 선호를 묻는 질문("어떤 색이 좋아?")은 통과시키되, 질문에 감싼 평가자의 승인은 계속 막는다.
   const declarativeClauses = normalizedClauses.filter((clause) => !clause.question).map((clause) => clause.text);
@@ -204,7 +215,10 @@ export function validateStudentCoaching(value: unknown): StudentCoaching | null 
   for (const raw of item.choices) {
     const choice = record(raw); if (!choice) return null;
     const emoji = shortText(choice.emoji, 12); const label = shortText(choice.label, 20); const answer = shortText(choice.answer, 50);
-    if (!emoji || !label || !answer || ![emoji, label, answer].every(isChildSafeCoachingText)) return null;
+    // 화면에서는 emoji와 label이 한 버튼에 붙어 나온다. 따로만 검사하면
+    // emoji "잘" + label "했어요"처럼 쪼개 넣은 칭찬이 통과한다.
+    if (!emoji || !label || !answer || !isEmojiToken(emoji)) return null;
+    if (![emoji, label, answer, `${emoji}${label}`, `${emoji} ${label}`].every(isChildSafeCoachingText)) return null;
     choices.push({ emoji, label, answer });
   }
   if (new Set(choices.map((choice) => choice.label)).size !== choices.length) return null;
