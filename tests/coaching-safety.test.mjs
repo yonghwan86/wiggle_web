@@ -42,9 +42,16 @@ const praise = [
   "아이의 그림을 좋아해요.",
   "나는 아이의 그림을 좋아해요.",
   "선생님은 민수의 작품을 정말 좋아합니다.",
-  // 소유는 관형절로도 온다.
+  // 소유는 관형절로도 온다. 제작 동사를 열거하면 만든·색칠한·완성한이 계속 빠진다.
   "네가 그린 그림을 좋아해요",
   "민수가 그린 작품을 좋아합니다",
+  "네가 만든 작품을 좋아해요",
+  "민수가 색칠한 그림을 좋아합니다",
+  "네가 완성한 그림을 좋아해",
+  "내가 네가 만든 작품을 좋아하는 게 느껴지니?",
+  // 조사 "의"는 흔히 생략된다.
+  "네 그림 색이 좋다",
+  "이 작품 색깔이 정말 좋아요",
   // 의문문으로 감싸도 평가자의 승인은 승인이다.
   "내가 네 그림을 좋아하는 게 느껴지니?",
   // 작품 문맥이 있으면 색 평가도 승인이다.
@@ -106,6 +113,9 @@ const allowed = [
   "빨간색이 좋아요",
   "아이는 빨간색이 좋아요",
   "파란색이 좋아",
+  // 관형절 소유 규칙이 조사를 중간말로 오인하면 제3자 관찰까지 막힌다.
+  "아이가 만든 그림을 좋아하는 친구를 그려 봐.",
+  "아이가 좋아하는 그림을 그려 봐.",
   "좋아, 이제 다음 선을 그어 보자.",
   "무슨 색을 더 칠하고 싶어?",
   "이 자리에 무엇을 만들까?",
@@ -154,6 +164,14 @@ test("praise reaches neither the child coaching payload nor the teacher draft", 
     choices: [{ emoji: "🐶", label: "강아지", answer: "그림을 좋아해" }, { emoji: "🌳", label: "나무", answer: "나무를 그렸어요" }],
   })), null, "뒤쪽 필드의 승인도 막아야 한다");
   assert.equal(validateStudentCoaching(studentPayload({ growth_event: "그림을 좋아해" })), null);
+  for (const text of ["네 그림 색이 좋다", "네가 만든 작품을 좋아해요", "민수가 색칠한 그림을 좋아합니다"]) {
+    assert.equal(validateStudentCoaching(studentPayload({ growth_event: text })), null, `학생 코칭으로 새면 안 됨: ${text}`);
+    assert.equal(validateTeacherDraft({ body: "다음에는 배경을 더 그려볼까?", observation: text, next_action: "선을 하나 더 그려 보게 해 주세요." }), null, `교사 초안으로 새면 안 됨: ${text}`);
+  }
+  for (const text of ["빨간색이 좋아요", "아이가 그림을 좋아해요"]) {
+    assert.ok(validateStudentCoaching(studentPayload({ growth_event: text })), `막히면 502가 난다: ${text}`);
+    assert.ok(validateTeacherDraft({ body: "다음에는 배경을 더 그려볼까?", observation: text, next_action: "선을 하나 더 그려 보게 해 주세요." }), `막히면 502가 난다: ${text}`);
+  }
   // 전각 물음표를 쓴 정상 질문은 통과해야 한다(안전 검사와 물음표 개수 검사의 기준이 같아야 한다).
   assert.ok(validateStudentCoaching(studentPayload({ question: "여기 동그란 건 무엇이니？" })), "전각 물음표 질문이 막히면 502가 난다");
   // 아이가 고른 색 선호는 choice answer로 자주 온다.
