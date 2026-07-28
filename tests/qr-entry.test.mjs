@@ -62,5 +62,7 @@ test("large QR dialog traps keyboard focus and restores the opener without chang
   assert.match(teacher, /if \(opener\?\.isConnected\) opener\.focus\(\)/);
   assert.match(teacher, /onCancel=\{\(event\) => \{ event\.preventDefault\(\); setQrExpanded\(false\); \}\}/);
   assert.match(css, /\.qr-modal-backdrop::backdrop/);
-  assert.match(teacher, /viewingStudent && <div className="modal-backdrop" role="dialog"/);
+  // 학생 미리보기 모달도 같은 초점 규약을 공유 훅으로 지킨다.
+  assert.match(teacher, /viewingStudent && <div className="modal-backdrop" ref=\{previewDialogRef\} tabIndex=\{-1\} role="dialog"/);
+  assert.match(teacher, /useModalDialog\(previewDialogRef, closePreview, Boolean\(viewingStudent\)\)/);
 });

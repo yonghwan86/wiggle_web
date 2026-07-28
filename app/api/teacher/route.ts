@@ -114,7 +114,9 @@ export async function POST(request: Request) {
     const studentId = cleanText(payload.studentId, 40);
     const activeOwnedStudent = `EXISTS (SELECT 1 FROM classrooms c WHERE c.id = student_profiles.classroom_id AND c.teacher_id = ? AND c.active = 1)`;
     const results = await db.batch([
-      db.prepare(`UPDATE student_profiles SET archived_at = CURRENT_TIMESTAMP WHERE id = ? AND classroom_id = ? AND archived_at IS NULL AND ${activeOwnedStudent}`).bind(studentId, classroomId, teacher.id),
+      // 클라이언트가 new Date()로 파싱하므로 ISO-8601로 저장한다. CURRENT_TIMESTAMP의
+      // 'YYYY-MM-DD HH:MM:SS'는 Safari에서 Invalid Date, V8에서는 로컬 시각으로 오독된다.
+      db.prepare(`UPDATE student_profiles SET archived_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND classroom_id = ? AND archived_at IS NULL AND ${activeOwnedStudent}`).bind(studentId, classroomId, teacher.id),
       db.prepare(`UPDATE device_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE student_id = ? AND revoked_at IS NULL AND EXISTS (SELECT 1 FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id WHERE s.id = ? AND s.classroom_id = ? AND s.archived_at IS NOT NULL AND c.teacher_id = ? AND c.active = 1)`).bind(studentId, studentId, classroomId, teacher.id),
       db.prepare(`UPDATE family_share_links SET revoked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE student_id = ? AND teacher_id = ? AND revoked_at IS NULL AND EXISTS (SELECT 1 FROM student_profiles s WHERE s.id = ? AND s.classroom_id = ? AND s.archived_at IS NOT NULL)`).bind(studentId, teacher.id, studentId, classroomId),
       db.prepare(`DELETE FROM teacher_views WHERE student_id = ? AND classroom_id = ? AND teacher_id = ?`).bind(studentId, classroomId, teacher.id),
@@ -124,7 +126,7 @@ export async function POST(request: Request) {
   }
   if (action === "restoreStudent") {
     const studentId = cleanText(payload.studentId, 40);
-    const restored = await db.prepare(`UPDATE student_profiles SET archived_at = NULL, last_activity_at = CURRENT_TIMESTAMP WHERE id = ? AND classroom_id = ? AND archived_at IS NOT NULL AND EXISTS (SELECT 1 FROM classrooms c WHERE c.id = student_profiles.classroom_id AND c.teacher_id = ? AND c.active = 1)`).bind(studentId, classroomId, teacher.id).run();
+    const restored = await db.prepare(`UPDATE student_profiles SET archived_at = NULL, last_activity_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND classroom_id = ? AND archived_at IS NOT NULL AND EXISTS (SELECT 1 FROM classrooms c WHERE c.id = student_profiles.classroom_id AND c.teacher_id = ? AND c.active = 1)`).bind(studentId, classroomId, teacher.id).run();
     if (!restored.meta.changes) return jsonError("복원할 학생을 찾지 못했어요.", 404);
     return noStoreJson({ restored: true, studentId });
   }

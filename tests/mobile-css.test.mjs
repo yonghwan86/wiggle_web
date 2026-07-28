@@ -33,7 +33,8 @@ test("mobile forms, actions and overlays honor iPhone zoom, touch and safe-area 
 
 test("mobile studio and teacher layouts finish in two rows without horizontal text overflow", async () => {
   const [css, studio, teacher] = await Promise.all([read("../app/globals.css"), read("../app/components/DrawingStudio.tsx"), read("../app/components/TeacherApp.tsx")]);
-  const finalMobile = css.slice(css.lastIndexOf("@media (max-width:720px)"), css.lastIndexOf("@media (max-width:460px) and (orientation:portrait)"));
+  // 그리미 바텀시트 규칙이 "@media (max-width:720px), ..." 조합 질의를 쓰므로 단독 720px 블록만 고른다.
+  const finalMobile = css.slice(css.lastIndexOf("@media (max-width:720px) {\n"), css.lastIndexOf("@media (max-width:460px) and (orientation:portrait)"));
   assert.ok(css.lastIndexOf("grid-template-rows:calc(60px + env(safe-area-inset-top)) minmax(0,1fr)") > css.lastIndexOf("grid-template-rows:60px 1fr 92px"));
   assert.match(css, /\.canvas-message,\.save-conflict,\.teacher-viewing,\.voice-speaking \{[^}]*max-width:calc\(100vw - max\(12px,env\(safe-area-inset-left\)\) - max\(12px,env\(safe-area-inset-right\)\)\);[^}]*overflow-wrap:break-word;/);
   assert.match(css, /\.artwork-name b,\.artwork-name small \{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; \}/);
@@ -62,11 +63,13 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(finalMobile, /\.canvas-zone \{ container-type:size; \}/);
   assert.match(finalMobile, /@supports \(width:1cqh\) \{ \.canvas-zone \.canvas-wrap \{ width:min\(100cqw,100cqh\); height:auto; max-width:100%; max-height:100%; \} \}/);
   assert.match(finalMobile, /@supports not \(width:1cqh\) \{ \.canvas-zone \.canvas-wrap \{ width:auto; height:100%; max-width:100%; max-height:100%; \} \}/);
-  assert.ok(css.lastIndexOf(".step-panel .choice-chips { display:flex") > css.lastIndexOf(".step-panel .choice-chips,.step-actions,.step-panel>.text-button { display:none"));
+  assert.ok(css.lastIndexOf(".step-panel .choice-chips { display:flex") > css.lastIndexOf(".step-panel .choice-chips,.step-panel .step-actions,.step-panel>.text-button { display:none"));
+  // 숨김은 수업 패널에만 적용해야 한다. 범위를 넓히면 그리미 AI 가이드의 이전·다음 버튼까지 사라진다.
+  assert.doesNotMatch(css, /,\.step-actions,[^{]*\{ display:none/);
   assert.match(css, /\.step-panel \.choice-chips \{ display:flex; grid-column:1\/-1;[^}]*overflow-x:auto;/);
   assert.match(css, /\.step-panel \.choice-chips button \{[^}]*min-height:44px;/);
   assert.match(css, /\.step-panel \.step-actions \{ display:grid; grid-column:1\/-1;[^}]*overflow:visible;/);
-  assert.match(teacher, /className="modal-close" aria-label="학생 그림 미리보기 닫기" onClick=\{\(\) => \{ setViewingStudent\(null\)/);
+  assert.match(teacher, /className="modal-close" aria-label="학생 그림 미리보기 닫기" onClick=\{closePreview\}/);
 });
 
 test("desktop teacher controls use a compact two-row layout without changing smaller breakpoints", async () => {

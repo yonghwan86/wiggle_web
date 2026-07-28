@@ -3,8 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [speak, join, home, studio, css] = await Promise.all([
+const [speak, speech, join, home, studio, css] = await Promise.all([
   read("../app/components/SpeakButton.tsx"),
+  read("../lib/speech.ts"),
   read("../app/components/JoinClient.tsx"),
   read("../app/components/StudentHome.tsx"),
   read("../app/components/DrawingStudio.tsx"),
@@ -12,12 +13,14 @@ const [speak, join, home, studio, css] = await Promise.all([
 ]);
 
 test("important child prompts can be heard on demand without automatic classroom audio", () => {
-  assert.match(speak, /new SpeechSynthesisUtterance/);
-  assert.match(speak, /utterance\.lang = "ko-KR"/);
-  assert.match(speak, /utterance\.rate = 0\.82/);
-  assert.match(speak, /onClick=\{speak\}/);
-  assert.ok(speak.indexOf("function speak()") < speak.indexOf("window.speechSynthesis.speak(utterance)"));
-  assert.match(speak, /disabled=\{!supported\}/);
+  assert.match(speech, /new SpeechSynthesisUtterance/);
+  assert.match(speech, /utterance\.lang = "ko-KR"/);
+  assert.match(speech, /utterance\.rate = 0\.82/);
+  assert.match(speak, /onClick=\{handleClick\}/);
+  // 음성 미지원·실패 시에도 버튼을 비활성화하지 않고 접근 가능한 대체 행동을 남긴다.
+  assert.doesNotMatch(speak, /disabled=/);
+  assert.match(speak, /같이 읽기/);
+  assert.match(speak, /선생님과 같이 읽어요/);
   assert.match(home, /SpeakButton text=\{`오늘은/);
   assert.match(home, /선생님이 말했어요/);
   assert.match(studio, /SpeakButton text=\{`\$\{lesson\.steps\[step\]\.instruction\}/);

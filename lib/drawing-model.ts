@@ -2,6 +2,16 @@ export const DRAWING_SCHEMA_VERSION = 1;
 export const RENDERER_VERSION = 1;
 export const DOCUMENT_SIZE = 1024;
 export const STICKER_ALLOWLIST = ["star", "heart", "leaf", "cloud", "sparkle"] as const;
+// 서버가 거부하는 한도. 클라이언트가 같은 값을 미리 지켜야 저장이 영구 실패하지 않는다.
+export const MAX_DOCUMENT_OPS = 5000;
+export const MAX_STROKE_POINTS = 12000;
+export const MAX_DOCUMENT_BYTES = 1_250_000;
+// 좌표를 소수 4자리로 줄이면 1024px 캔버스에서 0.1px 미만 오차로 직렬화 크기를 크게 줄인다.
+export const POINT_PRECISION = 4;
+
+export function roundUnit(value: number) {
+  return Number(value.toFixed(POINT_PRECISION));
+}
 
 type Point = { x: number; y: number; pressure?: number };
 
@@ -32,7 +42,7 @@ function finiteUnit(value: unknown) {
 export function validateDrawDocument(value: unknown): DrawDocument | null {
   if (!value || typeof value !== "object") return null;
   const doc = value as Partial<DrawDocument>;
-  if (doc.schemaVersion !== DRAWING_SCHEMA_VERSION || doc.rendererVersion !== RENDERER_VERSION || doc.size !== DOCUMENT_SIZE || !Array.isArray(doc.ops) || doc.ops.length > 5000) return null;
+  if (doc.schemaVersion !== DRAWING_SCHEMA_VERSION || doc.rendererVersion !== RENDERER_VERSION || doc.size !== DOCUMENT_SIZE || !Array.isArray(doc.ops) || doc.ops.length > MAX_DOCUMENT_OPS) return null;
   const seen = new Set<string>();
   for (const raw of doc.ops) {
     if (!raw || typeof raw !== "object") return null;
@@ -41,7 +51,7 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
     seen.add(op.clientOpId);
     if (!["stroke", "fill", "shape", "sticker"].includes(op.type) || !Number.isFinite(Date.parse(op.at))) return null;
     if (op.type === "stroke") {
-      if (!op.tool || !["pen", "crayon", "eraser"].includes(op.tool) || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length < 1 || op.points.length > 12000) return null;
+      if (!op.tool || !["pen", "crayon", "eraser"].includes(op.tool) || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length < 1 || op.points.length > MAX_STROKE_POINTS) return null;
       if (op.tool !== "eraser" && !/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "")) return null;
       if (op.points.some((point) => !finiteUnit(point.x) || !finiteUnit(point.y) || (point.pressure !== undefined && !finiteUnit(point.pressure)))) return null;
     }

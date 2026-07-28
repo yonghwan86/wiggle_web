@@ -14,8 +14,11 @@ test("declares D1 and R2 and ships a migration", async () => {
 });
 
 test("enforces ownership, hashing, expiry, rate limits and idempotent revisions", async () => {
-  const [security, artwork, teacher, student] = await Promise.all([read("../lib/security.ts"), read("../app/api/artworks/[id]/route.ts"), read("../app/api/teacher/route.ts"), read("../app/api/student/route.ts")]);
-  assert.match(security, /PBKDF2/); assert.match(security, /PBKDF2_ITERATIONS = 100_000/); assert.doesNotMatch(security, /PBKDF2_ITERATIONS = 1[0-9]{2}_001|PBKDF2_ITERATIONS = 120_000/); assert.match(security, /from "node:crypto"/); assert.doesNotMatch(security, /crypto\.subtle|deriveBits/); assert.match(security, /expires_at >/); assert.match(security, /sameOrigin/); assert.match(security, /rateLimits|rate_limits/);
+  const [security, rateLimitModule, artwork, teacher, student] = await Promise.all([read("../lib/security.ts"), read("../lib/rate-limit.ts"), read("../app/api/artworks/[id]/route.ts"), read("../app/api/teacher/route.ts"), read("../app/api/student/route.ts")]);
+  assert.match(security, /PBKDF2/); assert.match(security, /PBKDF2_ITERATIONS = 100_000/); assert.doesNotMatch(security, /PBKDF2_ITERATIONS = 1[0-9]{2}_001|PBKDF2_ITERATIONS = 120_000/); assert.match(security, /from "node:crypto"/); assert.doesNotMatch(security, /crypto\.subtle|deriveBits/); assert.match(security, /expires_at >/); assert.match(security, /sameOrigin/); assert.match(security, /rateLimit/);
+  // 시도 계수는 한 문장 안에서 검사와 증가를 함께 해야 동시 요청이 상한을 넘지 못한다.
+  assert.match(rateLimitModule, /rate_limits/); assert.match(rateLimitModule, /ON CONFLICT\(key\) DO UPDATE[\s\S]*RETURNING count/);
+  assert.doesNotMatch(rateLimitModule, /SELECT count[\s\S]*prepare\(`UPDATE rate_limits SET count = count \+ 1/);
   assert.match(artwork, /student_id = \?/); assert.match(artwork, /REVISION_CONFLICT/); assert.match(artwork, /artwork_mutations/); assert.match(artwork, /ARTWORKS\.put/); assert.match(artwork, /last_mutation_id/);
   assert.match(teacher, /teacher_id = \?/); assert.match(teacher, /student_profiles WHERE id = \? AND classroom_id = \?/); assert.match(student, /picture_hash/); assert.match(student, /personal_qr_hash/);
 });

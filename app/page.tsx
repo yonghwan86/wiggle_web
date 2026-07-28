@@ -9,7 +9,7 @@ export default function Home() {
           <p className="eyebrow">설치 없이, 바로 시작하는 그림 수업</p>
           <h1>선을 긋고,<br /><span>생각을 키워요.</span></h1>
           <p className="hero-lead">기초 도형부터 나만의 이야기까지. 아이의 그림을 대신하지 않고, 스스로 다음 선을 찾도록 돕습니다.</p>
-          <div className="hero-actions"><a className="button primary large" href="/join">학생으로 입장</a><a className="button secondary large" href="/teacher">교사 수업 열기</a></div>
+          <div className="hero-actions"><a className="button primary large role-button student-role" href="/join"><span className="role-emoji" aria-hidden="true">🧒🎨</span><b>학생으로 입장</b><small>그림 그리러 가요</small></a><a className="button secondary large role-button teacher-role" href="/teacher"><span className="role-emoji" aria-hidden="true">👩‍🏫</span><b>교사 수업 열기</b><small>수업을 만들어요</small></a></div>
           <p className="privacy-note">학생 이메일과 실명을 받지 않아요 · 점수와 순위가 없어요</p>
         </div>
         <div className="hero-art" aria-label="도형이 그림으로 자라는 모습">

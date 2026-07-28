@@ -165,7 +165,13 @@ WIGGLE_SUBSCRIPTIONS_ENABLED=false
 
 P0 데이터 손실이나 전면 중단은 발견되지 않았다. 다음 P1/P2를 해결하기 전에는 새 기능보다 사용성·접근성 보완을 우선한다.
 
+> **2026-07-28 갱신** — 아래 10절의 P1/P2와 접근성 항목은 `claude/audit-and-ux-fixes` 브랜치에서 모두 구현했고, `scripts/browser-check.mjs`가 320×568·390×844·844×390 실제 Chrome에서 재현 검증한다. 같은 브랜치에서 감사로 확정된 보안·데이터 정합성 결함(레이트리밋 동시성 우회, switchProfile 무차별 대입, NAT 잠금, 초안 승인 FK 실패, 가족 초대 GET 소비, 문서 한도 초과 시 그림 유실 등)도 함께 고쳤다. 상세와 남은 위험은 [docs/agent-handoff/latest.md](agent-handoff/latest.md)에 있다.
+>
+> 출시 판정은 그대로 **NO-GO**다. Codex 독립 검증과 실기기·실제 아동 검증(16절)이 남아 있고, 그 전까지 수업 배포 완료로 취급하지 않는다.
+
 ## 10. 우선 수정할 결함
+
+아래 항목은 모두 2026-07-28에 수정됐다(각 항목의 현재 상태를 함께 적어 둔다). 재발 방지 기준으로 계속 읽되, "아직 남아 있는 결함 목록"으로 읽지 않는다.
 
 ### P1 — 모바일 그리미 패널 잘림
 
@@ -286,6 +292,23 @@ P0 데이터 손실이나 전면 중단은 발견되지 않았다. 다음 P1/P2�
 - 아이가 오류에서 스스로 복구하는 행동
 
 회귀 테스트를 추가할 때 문자열 존재 검사만 늘리지 말고 mounted component 또는 실제 브라우저 행동을 검증한다.
+
+### 2026-07-28 이후 사용할 실동작 검증
+
+```powershell
+npm.cmd run dev            # 별도 창에서 로컬 서버
+npm.cmd run check:browser  # headless Chrome(CDP)으로 3뷰포트 실측
+```
+
+`scripts/browser-check.mjs`는 교사 로그인 → 학급 생성 → 학생 입장 → 작품 생성까지 로컬 API로 준비한 뒤, 320×568·390×844·844×390에서 다음을 실제 DOM으로 측정한다. 새 UX 회귀 테스트는 문자열 검사 대신 이 스크립트에 항목을 추가한다.
+
+- `getComputedStyle`·`getBoundingClientRect` 기반 터치 목표 최소 44px
+- `document.documentElement.scrollWidth`와 `clientWidth` 비교로 가로 스크롤
+- `elementFromPoint`로 고정 버튼·알림이 가리는 요소 판정
+- `document.activeElement`와 `inert` 속성으로 모달 초점 이동·복귀
+- 그리미 시트의 스크롤 영역 대비 내용 높이(숨은 중첩 스크롤 검출)
+
+음성은 `lib/speech.ts`를 주입 가능한 환경으로 분리해 `tests/speak-button.test.mjs`에서 연속 탭·다른 버튼 탭·unmount·엔진 오류·무음 timeout을 가짜 엔진으로 실행한다.
 
 ## 12. Claude 개발 완료 조건
 

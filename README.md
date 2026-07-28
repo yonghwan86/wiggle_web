@@ -296,13 +296,20 @@ git diff --check
 현재 기준:
 
 ```text
-84 tests
-84 passed
+112 tests
+112 passed
 0 failed
 ```
 
+실제 브라우저 행동 검증은 별도 명령입니다. 로컬 서버를 띄운 뒤 실행하면 headless Chrome을 CDP로 몰아 `320×568`, `390×844`, `844×390`에서 computed size, 가로 스크롤, 가려진 버튼, 모달 초점, 그리미 시트 스크롤을 실제 DOM으로 측정합니다.
+
+```powershell
+npm.cmd run dev            # 별도 창
+npm.cmd run check:browser
+```
+
 > [!WARNING]
-> 자동 테스트 통과는 실제 저학년 UX 통과를 의미하지 않습니다. 일부 모바일·비문해 UX 테스트는 소스 계약 검사이므로, 실제 브라우저의 computed size, 잘림, 초점, 연속 탭, 오류 복구를 별도로 확인해야 합니다.
+> 자동 테스트 통과는 실제 저학년 UX 통과를 의미하지 않습니다. `check:browser`는 실측이지만 headless 환경이며, 실기기(iPad Safari·Android Chrome)와 실제 아동 관찰을 대신하지 못합니다.
 
 ### 모바일 필수 확인 크기
 

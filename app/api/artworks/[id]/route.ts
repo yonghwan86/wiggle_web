@@ -1,5 +1,5 @@
 import { bindings } from "@/db/runtime";
-import { validateDrawDocument } from "@/lib/drawing-model";
+import { MAX_DOCUMENT_BYTES, validateDrawDocument } from "@/lib/drawing-model";
 import { cleanText, id, jsonError, noStoreJson, randomToken, rateLimit, sameOrigin, studentFromRequest } from "@/lib/security";
 
 type Artwork = { id: string; studentId: string; classroomId: string; title: string; topic: string; learningMode: string; lessonSlug: string | null; intent: string; opsJson: string; currentStep: number; revision: number; status: string; versionCount: number; thumbnailKey: string | null; finalImageKey: string | null; updatedAt: string };
@@ -49,7 +49,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   const expectedRevision = Number(payload.expectedRevision);
   if (!Number.isInteger(expectedRevision) || expectedRevision !== artwork.revision) return noStoreJson({ error: "다른 저장이 먼저 반영됐어요.", code: "REVISION_CONFLICT", serverRevision: artwork.revision }, { status: 409 });
   const document = validateDrawDocument(payload.document); if (!document) return jsonError("그림 동작 데이터가 올바르지 않아요.");
-  const serialized = JSON.stringify(document); if (serialized.length > 1_250_000) return jsonError("한 작품의 동작이 너무 커요.", 413);
+  const serialized = JSON.stringify(document); if (serialized.length > MAX_DOCUMENT_BYTES) return jsonError("한 작품의 동작이 너무 커요.", 413);
   const currentStep = Math.max(0, Math.min(30, Number(payload.currentStep) || 0)); const complete = payload.complete === true;
   const reflection = (payload.reflection ?? {}) as Record<string, unknown>;
   const favoritePart = cleanText(reflection.favoritePart, 80); const favoriteReason = cleanText(reflection.favoriteReason, 180);
@@ -71,7 +71,9 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     db.prepare(`INSERT OR IGNORE INTO artwork_mutations(request_id, artwork_id, student_id, result_revision) SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM artworks WHERE id = ? AND student_id = ? AND revision = ? AND last_mutation_id = ?)`).bind(requestId, artworkId, student.id, newRevision, artworkId, student.id, newRevision, requestId),
   ];
   if (complete) {
-    statements.push(db.prepare(`INSERT INTO artwork_versions(id, artwork_id, sequence, ops_json, image_key, reason) SELECT ?, ?, ?, ?, ?, 'complete' WHERE EXISTS (SELECT 1 FROM artworks WHERE id = ? AND student_id = ? AND revision = ? AND last_mutation_id = ?)`).bind(versionId, artworkId, artwork.versionCount + 1, serialized, finalKey, artworkId, student.id, newRevision, requestId));
+    // sequence는 batch 안에서 갱신된 version_count로 계산한다. 요청 시작 시점에 읽은 값을 쓰면
+    // 그 사이 코칭 저장이 만든 버전과 UNIQUE(artwork_id, sequence) 충돌이 나 batch 전체가 실패한다.
+    statements.push(db.prepare(`INSERT INTO artwork_versions(id, artwork_id, sequence, ops_json, image_key, reason) SELECT ?, a.id, a.version_count, ?, ?, 'complete' FROM artworks a WHERE a.id = ? AND a.student_id = ? AND a.revision = ? AND a.last_mutation_id = ?`).bind(versionId, serialized, finalKey, artworkId, student.id, newRevision, requestId));
     statements.push(db.prepare(`INSERT INTO reflections(artwork_id, favorite_part, favorite_reason, spoken_description, story_text, next_suggestion) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM artworks WHERE id = ? AND student_id = ? AND revision = ? AND last_mutation_id = ?) ON CONFLICT(artwork_id) DO UPDATE SET favorite_part = excluded.favorite_part, favorite_reason = excluded.favorite_reason, spoken_description = excluded.spoken_description, story_text = excluded.story_text, next_suggestion = excluded.next_suggestion, updated_at = CURRENT_TIMESTAMP`).bind(artworkId, favoritePart, favoriteReason, spokenDescription, storyText, "다음 그림에는 어떤 일이 생길까?", artworkId, student.id, newRevision, requestId));
   }
 

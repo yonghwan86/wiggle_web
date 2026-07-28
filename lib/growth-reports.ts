@@ -168,7 +168,7 @@ export async function buildWeeklyGrowthReport(DB: D1Database, input: {
     FROM family_share_artworks f
     JOIN coaching_events e ON e.artwork_id = f.artwork_id
     LEFT JOIN coaching_event_details d ON d.event_id = e.id
-    WHERE f.link_id = ? AND e.created_at >= ? AND e.created_at <= ?
+    WHERE f.link_id = ? AND datetime(e.created_at) >= datetime(?) AND datetime(e.created_at) <= datetime(?)
     ORDER BY f.position ASC, e.created_at ASC`)
     .bind(input.linkId, input.reportStartAt, input.reportEndAt)
     .all<{ position: number; studentAnswer: string | null; newElementsJson: string | null }>();

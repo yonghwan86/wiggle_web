@@ -23,8 +23,10 @@ export function VoiceWhisperButton({ classroomId, studentId }: { classroomId: st
         const duration = Math.min(WHISPER_MAX_DURATION_MS, Date.now() - startedAt.current); const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" }); chunks.length = 0;
         if (!blob.size || duration < 100) { setStatus("누르고 있는 동안만 말할 수 있어요."); return; }
         setStatus("짧은 음성을 전달하는 중…");
-        const response = await fetch("/api/voice", { method: "POST", headers: { "content-type": blob.type, "x-wiggle-student": studentId, "x-wiggle-classroom": classroomId, "x-wiggle-duration-ms": String(duration) }, body: blob, cache: "no-store" });
-        setStatus(response.ok ? "음성을 바로 전달했어요. 녹음은 보관하지 않아요." : "음성을 보내지 못했어요. 텍스트로 전해 주세요.");
+        try {
+          const response = await fetch("/api/voice", { method: "POST", headers: { "content-type": blob.type, "x-wiggle-student": studentId, "x-wiggle-classroom": classroomId, "x-wiggle-duration-ms": String(duration) }, body: blob, cache: "no-store" });
+          setStatus(response.ok ? "음성을 바로 전달했어요. 녹음은 보관하지 않아요." : "음성을 보내지 못했어요. 텍스트로 전해 주세요.");
+        } catch { setStatus("음성을 보내지 못했어요. 텍스트로 전해 주세요."); }
       };
       recorder.current = mediaRecorder; startedAt.current = Date.now(); mediaRecorder.start(200); setRecording(true); setStatus("선생님이 말하고 있어요. 손을 떼면 전송돼요.");
       timeout.current = window.setTimeout(() => finish(), WHISPER_MAX_DURATION_MS);
@@ -42,19 +44,28 @@ export function VoiceWhisperButton({ classroomId, studentId }: { classroomId: st
 export function VoiceWhisperStatus() {
   const [enabled, setEnabled] = useState(false); const [speaking, setSpeaking] = useState(false);
   useEffect(() => {
-    let timer: number | undefined; let objectUrl = "";
+    let timer: number | undefined; let playingUrl = ""; let busy = false; let cancelled = false;
     studentFetch("/api/voice?role=student").then(async (response) => {
-      const value = await response.json() as { enabled?: boolean }; if (!value.enabled) return; setEnabled(true);
+      const value = await response.json() as { enabled?: boolean }; if (!value.enabled || cancelled) return; setEnabled(true);
       const receive = async () => {
-        const audioResponse = await studentFetch("/api/voice?role=student&receive=1");
-        if (audioResponse.status === 200) {
-          const blob = await audioResponse.blob(); objectUrl = URL.createObjectURL(blob); const audio = new Audio(objectUrl); setSpeaking(true);
-          audio.onended = () => { setSpeaking(false); URL.revokeObjectURL(objectUrl); objectUrl = ""; }; await audio.play().catch(() => setSpeaking(false));
-        }
+        // 재생 중에는 다음 귓속말을 받지 않는다. 겹쳐 재생하면 앞 음성의 onended가
+        // 뒤 음성의 blob URL을 회수하고 재생 표시도 먼저 꺼진다.
+        if (busy || cancelled) return;
+        busy = true;
+        try {
+          const audioResponse = await studentFetch("/api/voice?role=student&receive=1");
+          if (audioResponse.status !== 200 || cancelled) { busy = false; return; }
+          const blob = await audioResponse.blob();
+          const url = URL.createObjectURL(blob); playingUrl = url;
+          const audio = new Audio(url); setSpeaking(true);
+          const done = () => { if (playingUrl === url) playingUrl = ""; URL.revokeObjectURL(url); setSpeaking(false); busy = false; };
+          audio.onended = done; audio.onerror = done;
+          await audio.play().catch(done);
+        } catch { busy = false; }
       };
-      void receive(); timer = window.setInterval(receive, 1500);
+      void receive(); timer = window.setInterval(() => void receive(), 1500);
     }).catch(() => {});
-    return () => { if (timer) clearInterval(timer); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    return () => { cancelled = true; if (timer) clearInterval(timer); if (playingUrl) URL.revokeObjectURL(playingUrl); };
   }, []);
   if (!enabled || !speaking) return null;
   return <div className="voice-speaking" role="status">🎧 선생님이 지금 말하고 있어요. 이어폰을 확인해 주세요.</div>;

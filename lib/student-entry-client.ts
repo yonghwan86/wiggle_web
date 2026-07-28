@@ -9,6 +9,16 @@ export type StudentEntryResponse = {
 
 export class StudentEntryResponseError extends Error {}
 
+export type EntryErrorKind = "code" | "password" | "general";
+
+// 아이가 스스로 복구할 행동을 고르기 위한 실패 분류:
+// code → 수업 코드 칸 강조 + 선생님 불러요, password → 그림 비밀번호 다시 골라요.
+export function classifyEntryError(input: { status: number; action: "join" | "switchProfile" | "recover"; hasPersonalQrToken: boolean }): EntryErrorKind {
+  if (input.status === 404 && input.action === "join") return "code";
+  if (input.status === 401 && input.action !== "join" && !input.hasPersonalQrToken) return "password";
+  return "general";
+}
+
 export async function readStudentEntryResponse(response: Response): Promise<StudentEntryResponse> {
   try {
     const value = JSON.parse(await response.text()) as unknown;

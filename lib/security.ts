@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { bindings, ensureSchema } from "@/db/runtime";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { id, sha256 } from "@/lib/token-crypto";
+import { consumeRateLimit, releaseRateLimit } from "@/lib/rate-limit";
 
 export { id, randomToken, sha256 } from "@/lib/token-crypto";
 export { normalizePicturePassword, picturePasswordLength } from "@/lib/picture-password";
@@ -117,15 +118,10 @@ export function sameOrigin(request: Request) {
 
 export async function rateLimit(key: string, max: number, seconds: number) {
   await ensureSchema();
-  const db = bindings().DB;
-  const now = new Date();
-  const current = await db.prepare(`SELECT count, window_ends_at AS windowEndsAt FROM rate_limits WHERE key = ?`).bind(key).first<{ count: number; windowEndsAt: string }>();
-  if (!current || new Date(current.windowEndsAt) <= now) {
-    const ends = new Date(now.getTime() + seconds * 1000).toISOString();
-    await db.prepare(`INSERT INTO rate_limits(key, count, window_ends_at) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = 1, window_ends_at = excluded.window_ends_at`).bind(key, ends).run();
-    return true;
-  }
-  if (current.count >= max) return false;
-  await db.prepare(`UPDATE rate_limits SET count = count + 1 WHERE key = ?`).bind(key).run();
-  return true;
+  return consumeRateLimit(bindings().DB, key, max, seconds);
+}
+
+export async function clearRateLimit(key: string) {
+  await ensureSchema();
+  await releaseRateLimit(bindings().DB, key);
 }

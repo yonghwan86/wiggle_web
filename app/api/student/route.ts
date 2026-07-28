@@ -1,5 +1,5 @@
 import { bindings, ensureSchema } from "@/db/runtime";
-import { cleanText, deriveSecret, id, jsonError, noStoreJson, normalizePicturePassword, picturePasswordLength, randomToken, rateLimit, sameOrigin, sha256, studentFromRequest, verifySecret } from "@/lib/security";
+import { cleanText, clearRateLimit, deriveSecret, id, jsonError, noStoreJson, normalizePicturePassword, picturePasswordLength, randomToken, rateLimit, sameOrigin, sha256, studentFromRequest, verifySecret } from "@/lib/security";
 import { activityLabel, normalizeActivityKey } from "@/lib/lesson-content";
 
 type RecoveredStudent = { id: string; nickname: string; animal: string; classroomName: string; pictureHash: string; pictureSalt: string };
@@ -24,7 +24,19 @@ async function classroomForEntry(codeOrToken: string) {
   return bindings().DB.prepare(`SELECT id, display_name AS displayName, class_code AS classCode, admission_open AS admissionOpen FROM classrooms WHERE active = 1 AND (class_code = ? OR join_token = ?)`).bind(codeOrToken, codeOrToken).first<{ id: string; displayName: string; classCode: string; admissionOpen: number }>();
 }
 
-function entryRateKey(request: Request) { return `student-entry:${request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? "local"}`; }
+// 학교 Wi-Fi는 NAT 뒤라 한 학급 전체가 공인 IP 하나로 보인다. IP 한도는 학급 규모를
+// 견딜 만큼 넉넉히 두고, 무차별 대입은 대상(학생·프로필) 단위 한도로 막는다.
+const IP_ENTRY_LIMIT = 180;
+const IP_ENTRY_WINDOW_SECONDS = 10 * 60;
+const TARGET_ATTEMPT_LIMIT = 8;
+const TARGET_ATTEMPT_WINDOW_SECONDS = 15 * 60;
+const CLASSROOM_JOIN_LIMIT = 60;
+
+function requestIp(request: Request) { return request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? "local"; }
+function entryRateKey(request: Request) { return `student-entry:${requestIp(request)}`; }
+function ipAllowed(request: Request) { return rateLimit(entryRateKey(request), IP_ENTRY_LIMIT, IP_ENTRY_WINDOW_SECONDS); }
+function targetKey(target: string) { return `student-target:${target}`; }
+function targetAllowed(target: string) { return rateLimit(targetKey(target), TARGET_ATTEMPT_LIMIT, TARGET_ATTEMPT_WINDOW_SECONDS); }
 function presentedToken(request: Request) { return request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? ""; }
 
 export async function GET(request: Request) {
@@ -55,10 +67,12 @@ async function studentPost(request: Request) {
   }
 
   if (action === "join") {
-    if (!(await rateLimit(entryRateKey(request), 12, 10 * 60))) return jsonError("입장 시도가 많아요. 잠시 후 다시 해 주세요.", 429);
+    if (!(await ipAllowed(request))) return jsonError("입장 시도가 많아요. 잠시 후 다시 해 주세요.", 429);
     const entry = cleanText(payload.entry, 80); const classroom = await classroomForEntry(entry);
     if (!classroom) return jsonError("수업 코드를 다시 확인해 주세요.", 404);
     if (!classroom.admissionOpen) return jsonError("선생님이 입장을 열 때까지 기다려 주세요.", 403);
+    // 학급 단위 상한이 명단 존재 여부를 캐내는 409 오라클 반복과 가짜 프로필 누적을 함께 제한한다.
+    if (!(await rateLimit(`student-join-class:${classroom.id}`, CLASSROOM_JOIN_LIMIT, IP_ENTRY_WINDOW_SECONDS))) return jsonError("이 수업의 입장 시도가 많아요. 선생님께 알려 주세요.", 429);
     const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword); const allowDuplicate = payload.allowDuplicate === true;
     if (nickname.length < 2 || !animal || pictureLength !== 3) return jsonError("별명, 동물, 그림 비밀번호 세 개를 모두 골라 주세요.");
     const db = bindings().DB;
@@ -88,25 +102,31 @@ async function studentPost(request: Request) {
   }
 
   if (action === "switchProfile") {
-    if (!(await rateLimit(entryRateKey(request), 8, 10 * 60))) return jsonError("확인 시도가 많아요. 잠시 기다려 주세요.", 429);
+    if (!(await ipAllowed(request))) return jsonError("확인 시도가 많아요. 잠시 기다려 주세요.", 429);
     const studentId = cleanText(payload.studentId, 40); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
     if (pictureLength !== 3 && pictureLength !== 4) return jsonError("그림 비밀번호는 세 개 또는 예전에 만든 네 개를 골라 주세요.");
+    // 대상 학생 계정 단위 한도가 없으면 그림 비밀번호 512가지를 IP만 바꿔 가며 전수 시도할 수 있다.
+    if (!(await targetAllowed(`unlock:${studentId}`))) return jsonError("여러 번 틀렸어요. 선생님께 도움을 요청해 주세요.", 429);
     const candidate = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id JOIN recovery_credentials r ON r.student_id = s.id WHERE s.id = ? AND s.archived_at IS NULL AND c.active = 1`).bind(studentId).first<RecoveredStudent>();
     const valid = candidate ? await verifySecret(picture, candidate.pictureSalt, candidate.pictureHash) : Boolean(await deriveSecret(picture, "missing-profile-salt")) && false;
     if (!candidate || !valid) return jsonError("그림 비밀번호를 다시 확인해 주세요.", 401);
+    await clearRateLimit(targetKey(`unlock:${studentId}`));
     const device = await issueDeviceSession(candidate.id);
     if (!device) return jsonError("이 학급은 더 이상 이용할 수 없어요. 선생님께 확인해 주세요.", 403);
     return noStoreJson({ student: { id: candidate.id, nickname: candidate.nickname, animal: candidate.animal, classroomName: candidate.classroomName }, deviceToken: device.token, expiresAt: device.expiresAt });
   }
 
   if (action === "recover") {
-    if (!(await rateLimit(entryRateKey(request), 8, 10 * 60))) return jsonError("복구 시도가 많아요. 선생님께 도움을 요청해 주세요.", 429);
+    if (!(await ipAllowed(request))) return jsonError("복구 시도가 많아요. 선생님께 도움을 요청해 주세요.", 429);
     const personalQrToken = cleanText(payload.personalQrToken, 120); let student: RecoveredStudent | null = null;
     if (personalQrToken) {
+      if (!(await targetAllowed(`qr:${await sha256(personalQrToken)}`))) return jsonError("복구 시도가 많아요. 선생님께 도움을 요청해 주세요.", 429);
       student = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM recovery_credentials r JOIN student_profiles s ON s.id = r.student_id JOIN classrooms c ON c.id = s.classroom_id WHERE r.personal_qr_hash = ? AND s.archived_at IS NULL AND c.active = 1`).bind(await sha256(personalQrToken)).first<RecoveredStudent>();
     } else {
       const classCode = cleanText(payload.classCode, 12); const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
       if (pictureLength !== 3 && pictureLength !== 4) return jsonError("그림 비밀번호는 세 개 또는 예전에 만든 네 개를 골라 주세요.");
+      const recoverTarget = `recover:${classCode}:${nickname}:${animal}`;
+      if (!(await targetAllowed(recoverTarget))) return jsonError("여러 번 틀렸어요. 선생님께 도움을 요청해 주세요.", 429);
       const candidates = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id JOIN recovery_credentials r ON r.student_id = s.id WHERE c.class_code = ? AND s.nickname = ? AND s.animal = ? AND s.archived_at IS NULL AND c.active = 1 ORDER BY s.id`).bind(classCode, nickname, animal).all<RecoveredStudent>();
       const checks = await Promise.all(candidates.results.map((candidate) => verifySecret(picture, candidate.pictureSalt, candidate.pictureHash)));
       if (!candidates.results.length) await deriveSecret(picture, "missing-recovery-salt");
@@ -114,6 +134,7 @@ async function studentPost(request: Request) {
       if (matches.length > 1) return jsonError("같은 프로필이 있어요. 개인 QR이나 선생님 도움으로 찾아 주세요.", 409);
       student = matches[0] ?? null;
       if (!student) return jsonError("프로필이나 그림 비밀번호를 다시 확인해 주세요.", 401);
+      await clearRateLimit(targetKey(recoverTarget));
     }
     if (!student) return jsonError("복구할 학생을 찾지 못했어요.", 404);
     const device = await issueDeviceSession(student.id);

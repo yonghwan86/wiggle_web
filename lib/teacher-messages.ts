@@ -38,8 +38,11 @@ export async function validateTeacherMessageTarget(DB: D1Database, input: {
 }
 
 export function prepareTeacherMessageInsert(DB: D1Database, target: TeacherMessageTarget, draftGuard?: { draftId: string }) {
+  // 승인 배치에서 이 INSERT가 먼저 실행된다. approved_message_id의 FK 부모가 되어야 하므로
+  // 초안이 아직 'draft'인지(=아무도 먼저 승인하지 않았는지)를 여기서 CAS로 확인한다.
   const draftClause = draftGuard
-    ? `AND EXISTS (SELECT 1 FROM teacher_coaching_drafts d WHERE d.id = ? AND d.teacher_id = ? AND d.classroom_id = ? AND d.student_id = ? AND d.status = 'approved' AND d.approved_message_id = ?)`
+    ? `AND EXISTS (SELECT 1 FROM teacher_coaching_drafts d JOIN artworks a ON a.id = d.artwork_id AND a.student_id = d.student_id AND a.classroom_id = d.classroom_id
+        WHERE d.id = ? AND d.teacher_id = ? AND d.classroom_id = ? AND d.student_id = ? AND d.status = 'draft' AND d.approved_message_id IS NULL)`
     : "";
   const statement = DB.prepare(`INSERT INTO teacher_messages(id, classroom_id, student_id, teacher_id, body)
     SELECT ?, ?, ?, ?, ?
@@ -50,7 +53,7 @@ export function prepareTeacherMessageInsert(DB: D1Database, target: TeacherMessa
     target.messageId, target.classroomId, target.studentId, target.teacherId, target.body,
     target.classroomId, target.teacherId, target.studentId, target.studentId, target.classroomId,
   ];
-  if (draftGuard) values.push(draftGuard.draftId, target.teacherId, target.classroomId, target.studentId, target.messageId);
+  if (draftGuard) values.push(draftGuard.draftId, target.teacherId, target.classroomId, target.studentId);
   return statement.bind(...values);
 }
 
@@ -68,16 +71,23 @@ export async function approveTeacherDraftMessage(DB: D1Database, input: { teache
   const validated = await validateTeacherMessageTarget(DB, { teacherId: input.teacherId, classroomId: input.classroomId, studentId: draft.studentId, body: input.body });
   if (!validated.ok) return { ok: false as const, reason: validated.reason };
   try {
+    // 메시지를 먼저 넣고 초안을 갱신한다. 반대 순서로 하면 approved_message_id의
+    // FOREIGN KEY 부모 행이 아직 없어 운영 스키마에서 batch 전체가 롤백된다.
     const results = await DB.batch([
+      prepareTeacherMessageInsert(DB, validated.target, { draftId: input.draftId }),
       DB.prepare(`UPDATE teacher_coaching_drafts SET body = ?, status = 'approved', approved_message_id = ?, approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND teacher_id = ? AND classroom_id = ? AND status = 'draft'
+        WHERE id = ? AND teacher_id = ? AND classroom_id = ? AND status = 'draft' AND approved_message_id IS NULL
+        AND EXISTS (SELECT 1 FROM teacher_messages m WHERE m.id = ?)
         AND EXISTS (SELECT 1 FROM classrooms c JOIN student_profiles s ON s.classroom_id = c.id JOIN artworks a ON a.classroom_id = c.id AND a.student_id = s.id
           WHERE c.id = teacher_coaching_drafts.classroom_id AND c.teacher_id = teacher_coaching_drafts.teacher_id AND c.active = 1
             AND s.id = teacher_coaching_drafts.student_id AND s.archived_at IS NULL AND a.id = teacher_coaching_drafts.artwork_id)`)
-        .bind(validated.target.body, validated.target.messageId, input.draftId, input.teacherId, input.classroomId),
-      prepareTeacherMessageInsert(DB, validated.target, { draftId: input.draftId }),
+        .bind(validated.target.body, validated.target.messageId, input.draftId, input.teacherId, input.classroomId, validated.target.messageId),
     ]);
-    if (!results[0]?.meta.changes || !results[1]?.meta.changes) return { ok: false as const, reason: "already_handled" as const };
+    if (!results[0]?.meta.changes || !results[1]?.meta.changes) {
+      // 두 문장의 가드는 같지만, 어긋난 경우 학생에게만 메시지가 남는 일이 없도록 되돌린다.
+      if (results[0]?.meta.changes) await DB.prepare(`DELETE FROM teacher_messages WHERE id = ?`).bind(validated.target.messageId).run().catch(() => undefined);
+      return { ok: false as const, reason: "already_handled" as const };
+    }
     return { ok: true as const, messageId: validated.target.messageId };
   } catch {
     return { ok: false as const, reason: "save_failed" as const };

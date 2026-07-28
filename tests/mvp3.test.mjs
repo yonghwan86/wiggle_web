@@ -6,6 +6,7 @@ import {
   createFamilyHandoffInvite,
   createFamilyShare,
   exchangeFamilyInvite,
+  peekFamilyInvite,
   FAMILY_HANDOFF_TTL_SECONDS,
   FAMILY_INITIAL_INVITE_TTL_SECONDS,
   familySecurityHeaders,
@@ -191,6 +192,31 @@ test("family invitations exchange once, sessions stay link-bound, and revoke or 
     assert.equal(expired.ok, true);
     await DB.prepare("UPDATE family_share_links SET expires_at = ? WHERE id = ?").bind("2026-07-22T11:59:59.000Z", expired.linkId).run();
     assert.equal((await exchangeFamilyInvite(DB, TOKEN_F, { now, sessionTokenFactory: () => TOKEN_E })).ok, false);
+  } finally { await mf.dispose(); }
+});
+
+test("peeking an invite never consumes it, so a link preview cannot burn the guardian's one-use link", async () => {
+  const { mf, DB } = await fixture();
+  try {
+    const now = new Date("2026-07-22T12:00:00.000Z");
+    const created = await createFamilyShare(DB, shareInput());
+    assert.equal(created.ok, true);
+    for (let visit = 0; visit < 3; visit += 1) {
+      const peeked = await peekFamilyInvite(DB, TOKEN_A, { now });
+      assert.equal(peeked.ok, true); assert.equal(peeked.linkId, created.linkId);
+    }
+    const stillPending = await DB.prepare("SELECT consumed_at AS consumedAt, consumed_session_hash AS sessionHash FROM family_share_invites WHERE link_id = ?").bind(created.linkId).first();
+    assert.equal(stillPending.consumedAt, null); assert.equal(stillPending.sessionHash, null);
+    assert.equal((await DB.prepare("SELECT COUNT(*) AS count FROM family_share_sessions").first()).count, 0);
+
+    const opened = await exchangeFamilyInvite(DB, TOKEN_A, { now, sessionTokenFactory: () => TOKEN_B });
+    assert.equal(opened.ok, true);
+    assert.equal((await peekFamilyInvite(DB, TOKEN_A, { now })).reason, "invite_unavailable");
+    assert.equal((await peekFamilyInvite(DB, "bad-token", { now })).reason, "invalid_invite");
+    const afterExpiry = new Date(now.getTime() + 600_000);
+    const later = await createFamilyShare(DB, shareInput({ artworkIds: ["artwork_two"], tokenFactory: () => TOKEN_G }));
+    assert.equal(later.ok, true);
+    assert.equal((await peekFamilyInvite(DB, TOKEN_G, { now: afterExpiry })).reason, "invite_unavailable");
   } finally { await mf.dispose(); }
 });
 
@@ -468,6 +494,10 @@ test("routes and UI preserve token-free family history, consent, no-store, and d
     read("../app/family/[token]/route.ts"), read("../app/api/family/session/route.ts"), read("../app/api/family/invite/route.ts"), read("../app/family/view/page.tsx"), read("../app/api/teacher/route.ts"), read("../app/components/TeacherApp.tsx"), read("../worker/index.ts"), read("../app/components/FamilyView.tsx"), read("../app/api/voice/route.ts"), read("../lib/voice-whisper.ts"), read("../app/components/VoiceWhisper.tsx"), read("../app/api/subscription/route.ts"), read("../app/api/subscription/webhook/route.ts"), read("../db/schema.ts"), read("../db/runtime.ts"), read("../drizzle/0003_perfect_smasher.sql"),
   ]);
   assert.match(exchangeRoute, /exchangeFamilyInvite/); assert.match(exchangeRoute, /status: 303/); assert.match(exchangeRoute, /familySessionCookieHeader/); assert.match(exchangeRoute, /\/family\/view/);
+  // 1회용 초대는 사람이 누른 POST에서만 소비된다. GET은 확인 화면만 그린다.
+  assert.match(exchangeRoute, /export async function GET[\s\S]*?peekFamilyInvite/);
+  assert.doesNotMatch(exchangeRoute.slice(exchangeRoute.indexOf("export async function GET"), exchangeRoute.indexOf("export async function POST")), /exchangeFamilyInvite|set-cookie/);
+  assert.match(exchangeRoute, /export async function POST[\s\S]*?sameOrigin\(request\)/);
   assert.match(sessionRoute, /familyCookieToken/); assert.match(sessionRoute, /resolveFamilySession/); assert.match(sessionRoute, /family-session:/);
   assert.match(inviteRoute, /createFamilyHandoffInvite/); assert.match(inviteRoute, /family-handoff:/); assert.match(familyPage, /<FamilyView \/>/); assert.doesNotMatch(familyPage, /params|token/);
   assert.doesNotMatch(familyUi, /location\.href|encodeURIComponent\(token\)|FamilyView\(\{ token/); assert.match(familyUi, /\/api\/family\/invite/); assert.match(familyUi, /navigator\.share/);

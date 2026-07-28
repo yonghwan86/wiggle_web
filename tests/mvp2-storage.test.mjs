@@ -20,7 +20,7 @@ async function fixture() {
     CREATE TABLE coaching_events (id TEXT PRIMARY KEY, artwork_id TEXT NOT NULL, actor TEXT NOT NULL, question TEXT NOT NULL, student_answer TEXT, applied_hint TEXT, before_version_id TEXT, after_version_id TEXT);
     CREATE TABLE coaching_event_details (event_id TEXT PRIMARY KEY, response_kind TEXT NOT NULL, choices_json TEXT NOT NULL DEFAULT '[]', guide_steps_json TEXT NOT NULL DEFAULT '[]', new_elements_json TEXT NOT NULL DEFAULT '[]', growth_event TEXT, current_step INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE teacher_messages (id TEXT PRIMARY KEY, classroom_id TEXT NOT NULL, student_id TEXT, teacher_id TEXT NOT NULL, body TEXT NOT NULL);
-    CREATE TABLE teacher_coaching_drafts (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, classroom_id TEXT NOT NULL, student_id TEXT NOT NULL, artwork_id TEXT NOT NULL, body TEXT NOT NULL, observation TEXT NOT NULL, next_action TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', approved_message_id TEXT, approved_at TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE teacher_coaching_drafts (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, classroom_id TEXT NOT NULL, student_id TEXT NOT NULL, artwork_id TEXT NOT NULL, body TEXT NOT NULL, observation TEXT NOT NULL, next_action TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', approved_message_id TEXT REFERENCES teacher_messages(id), approved_at TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     INSERT INTO classrooms(id, teacher_id, active) VALUES ('class_a', 'teacher_a', 1), ('class_b', 'teacher_b', 1);
     INSERT INTO student_profiles(id, classroom_id) VALUES ('student_a', 'class_a'), ('student_b', 'class_b');
     INSERT INTO artworks(id, student_id, classroom_id, revision, status, version_count) VALUES ('art_a', 'student_a', 'class_a', 0, 'drawing', 0), ('art_b', 'student_b', 'class_b', 0, 'drawing', 0);
@@ -108,6 +108,21 @@ test("teacher message helper rechecks class/student ownership and approves a dra
     assert.equal(approvals.filter((result) => !result.ok && result.reason === "already_handled").length, 1);
     const messages = await DB.prepare("SELECT classroom_id AS classroomId, student_id AS studentId, teacher_id AS teacherId, body FROM teacher_messages").all();
     assert.deepEqual(messages.results, [{ classroomId: "class_a", studentId: "student_a", teacherId: "teacher_a", body: "나무 옆에 새 선을 더 그려 봐." }]);
+    const approved = await DB.prepare("SELECT status, approved_message_id AS approvedMessageId FROM teacher_coaching_drafts WHERE id = 'draft_a'").first();
+    assert.equal(approved.status, "approved");
+    assert.equal(approved.approvedMessageId, messages.results.length ? (await DB.prepare("SELECT id FROM teacher_messages").first()).id : null);
+  } finally { await mf.dispose(); }
+});
+
+test("the draft fixture enforces the production approved_message_id foreign key", async () => {
+  const { mf, DB } = await fixture();
+  try {
+    // 이 테이블에 FK가 없으면 승인 배치의 문장 순서가 뒤집혀도 테스트가 통과해 버린다.
+    assert.equal((await DB.prepare("PRAGMA foreign_keys").first()).foreign_keys, 1);
+    await assert.rejects(
+      DB.prepare("UPDATE teacher_coaching_drafts SET approved_message_id = 'message_missing' WHERE id = 'draft_a'").run(),
+      /FOREIGN KEY/i,
+    );
   } finally { await mf.dispose(); }
 });
 

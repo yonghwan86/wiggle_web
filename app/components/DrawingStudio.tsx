@@ -2,15 +2,17 @@
 
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { DrawDocument, DrawOp, emptyDocument } from "@/lib/drawing-model";
+import { DrawDocument, DrawOp, emptyDocument, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, roundUnit } from "@/lib/drawing-model";
 import { renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
 import { lessonBySlug, Lesson } from "@/lib/lesson-content";
 import { activeProfile, clearQueuedArtworkSaves, createSerialTaskQueue, deleteQueuedArtworkSave, flushSaves, queueSave, queuedArtworkDraft, resolveArtworkDraftDisposition, studentFetch } from "@/lib/client-session";
+
 import type { QueuedArtworkDraft } from "@/lib/client-session";
 import { Logo } from "./Logo";
 import { SpeakButton } from "./SpeakButton";
 import { TimelapsePlayer } from "./TimelapsePlayer";
 import { VoiceWhisperStatus } from "./VoiceWhisper";
+import { useModalDialog } from "./useModalDialog";
 
 const PALETTE = ["#1B3A57", "#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#8D6E63", "#F06292", "#4DD0E1", "#FFCC80", "#FFFFFF"];
 const COLOR_NAMES: Record<(typeof PALETTE)[number], string> = {
@@ -199,6 +201,18 @@ function imageData(canvas: HTMLCanvasElement, size: 256 | 1024) {
   return output.toDataURL("image/png");
 }
 
+// 서버 한도에 부딪히면 그 작품은 이후 모든 저장이 실패해 조용히 유실된다.
+// 여유분을 두고 미리 멈춰서 아이가 완성으로 안내받게 한다.
+const STROKE_POINT_SPLIT = MAX_STROKE_POINTS - 500;
+const OPS_WARN_THRESHOLD = MAX_DOCUMENT_OPS - 200;
+const DOCUMENT_BYTES_WARN = MAX_DOCUMENT_BYTES - 100_000;
+const AUTOSAVE_DEBOUNCE_MS = 1500;
+const AUTOSAVE_MAX_WAIT_MS = 6000;
+
+function documentTooLarge(document: DrawDocument) {
+  return document.ops.length >= OPS_WARN_THRESHOLD || JSON.stringify(document).length >= DOCUMENT_BYTES_WARN;
+}
+
 function mutationId() { return `mutation_${crypto.randomUUID().replaceAll("-", "")}`; }
 function coachingRequestId() { return `coaching_${crypto.randomUUID().replaceAll("-", "")}`; }
 
@@ -217,7 +231,7 @@ export function DrawingStudio() {
   const [timelapseOpen, setTimelapseOpen] = useState(false);
   const [runSerial] = useState(createSerialTaskQueue);
   const [saveBranchId] = useState(() => `branch_${crypto.randomUUID().replaceAll("-", "")}`);
-  const canvasRef = useRef<HTMLCanvasElement>(null); const guideRef = useRef<HTMLCanvasElement>(null); const guideAnimationRef = useRef<number | null>(null); const activePoints = useRef(new Map<number, Array<{ x: number; y: number; pressure: number }>>()); const revisionRef = useRef(0); const initialized = useRef(false); const saveTimer = useRef<number | undefined>(undefined); const conflictDraftRef = useRef<QueuedArtworkDraft | null>(null); const completingRef = useRef(false); const documentStateRef = useRef(documentState); const currentStepRef = useRef(0); const loadingKeyRef = useRef<string | null>(null); const hydratedKeyRef = useRef<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null); const guideRef = useRef<HTMLCanvasElement>(null); const guideAnimationRef = useRef<number | null>(null); const activePoints = useRef(new Map<number, Array<{ x: number; y: number; pressure: number }>>()); const revisionRef = useRef(0); const initialized = useRef(false); const saveTimer = useRef<number | undefined>(undefined); const conflictDraftRef = useRef<QueuedArtworkDraft | null>(null); const completingRef = useRef(false); const documentStateRef = useRef(documentState); const currentStepRef = useRef(0); const loadingKeyRef = useRef<string | null>(null); const hydratedKeyRef = useRef<string | null>(null); const pendingSinceRef = useRef(0); const unsavedRef = useRef(false); const artworkRef = useRef<ArtworkPayload | null>(null);
 
   const createOrLoad = useCallback(async () => {
     const loadKey = params.id === "new" ? `new:${search.toString()}` : params.id;
@@ -226,7 +240,8 @@ export function DrawingStudio() {
     try {
       const profile = activeProfile(); if (!profile) { location.href = "/join"; return; }
       const artworkUrl = params.id === "new" ? undefined : `/api/artworks/${params.id}`;
-      const flushed = await flushSaves(profile.studentId, artworkUrl);
+      // 오프라인 큐는 부가 기능이다. IndexedDB를 못 열어도 그리기 화면은 온라인 모드로 열려야 한다.
+      const flushed = await flushSaves(profile.studentId, artworkUrl).catch(() => ({ flushed: 0, remaining: [], completedUrls: [] as string[], latestRevisions: {} as Record<string, number> }));
       const flushedDisposition = artworkUrl ? resolveArtworkDraftDisposition(flushed.remaining, artworkUrl, flushed.completedUrls.includes(artworkUrl)) : { action: "load" as const };
       if (flushedDisposition.action === "archive") { hydratedKeyRef.current = loadKey; location.replace("/student/archive"); return; }
       const restoredDraft = flushedDisposition.action === "recover" ? flushedDisposition.draft : null;
@@ -256,7 +271,8 @@ export function DrawingStudio() {
 
   useEffect(() => { createOrLoad().catch((cause) => setSaveState(cause instanceof Error ? cause.message : "불러오지 못했어요")); }, [createOrLoad]);
   useEffect(() => { documentStateRef.current = documentState; if (canvasRef.current) renderDocument(canvasRef.current, documentState); }, [documentState]);
-  useEffect(() => { currentStepRef.current = artwork?.currentStep ?? 0; }, [artwork?.currentStep]);
+  useEffect(() => { currentStepRef.current = artwork?.currentStep ?? 0; artworkRef.current = artwork; }, [artwork]);
+  useEffect(() => { if (editVersion > 0) unsavedRef.current = true; }, [editVersion]);
   const aiGuideShape = aiGuide?.steps[aiGuideStep]?.guideShape ?? "none";
   const currentGuideTraces = useMemo(() => guideTraces(aiGuide ? undefined : lesson, artwork?.currentStep ?? 0, aiGuideShape), [aiGuide, aiGuideShape, artwork?.currentStep, lesson]);
   const lessonGuideAvailable = currentGuideTraces.length > 0;
@@ -360,7 +376,7 @@ export function DrawingStudio() {
       }
       if (!response.ok) throw new Error(data.error);
       await clearQueuedArtworkSaves(profile.studentId, url, "pending", { createdAt, requestId }, saveBranchId);
-      revisionRef.current = data.revision ?? revisionRef.current; setSaveState(options?.complete ? "완성했어요" : "저장됨"); return true;
+      revisionRef.current = data.revision ?? revisionRef.current; unsavedRef.current = false; setSaveState(options?.complete ? "완성했어요" : "저장됨"); return true;
     } catch {
       const queued = { requestId, studentId: profile.studentId, url, body, createdAt, branchId: saveBranchId };
       if (options?.complete) await preserveDraft(queued, "완성한 그림을 기기에 안전하게 보관했어요");
@@ -371,10 +387,39 @@ export function DrawingStudio() {
   const save = useCallback((nextDocument: DrawDocument, options?: SaveOptions) => runSerial(() => performSave(nextDocument, options)), [performSave, runSerial]);
 
   useEffect(() => {
-    if (!initialized.current || !artwork || editVersion === 0 || conflictDraft || completingRef.current) return; window.clearTimeout(saveTimer.current); setSaveState("그리는 중…");
-    saveTimer.current = window.setTimeout(() => void save(documentState, { currentStep: artwork.currentStep }), 1500); return () => window.clearTimeout(saveTimer.current);
+    if (!initialized.current || !artwork || editVersion === 0 || conflictDraft || completingRef.current) { pendingSinceRef.current = 0; return; }
+    window.clearTimeout(saveTimer.current); setSaveState("그리는 중…");
+    // 선을 1.5초보다 촘촘히 이어 그리면 디바운스가 계속 미뤄져 저장이 한 번도 일어나지 않는다.
+    // 최초 미저장 편집 시각부터 최대 대기 시간을 두어 상한을 강제한다.
+    if (!pendingSinceRef.current) pendingSinceRef.current = Date.now();
+    const waited = Date.now() - pendingSinceRef.current;
+    const delay = Math.max(0, Math.min(AUTOSAVE_DEBOUNCE_MS, AUTOSAVE_MAX_WAIT_MS - waited));
+    saveTimer.current = window.setTimeout(() => { pendingSinceRef.current = 0; void save(documentState, { currentStep: artwork.currentStep }); }, delay);
+    return () => window.clearTimeout(saveTimer.current);
   }, [artwork, conflictDraft, documentState, editVersion, save]);
 
+  // 아이가 나가기를 누르거나 탭이 숨겨질 때, 아직 서버에 못 보낸 그림을 기기에 보관한다.
+  // 이 경로가 없으면 마지막 저장 이후의 선이 서버에도 IndexedDB에도 남지 않는다.
+  const preserveUnsavedOnExit = useCallback(() => {
+    if (!artworkRef.current || !unsavedRef.current || conflictDraftRef.current || completingRef.current) return;
+    const profile = activeProfile(); if (!profile) return;
+    const url = `/api/artworks/${artworkRef.current.id}`;
+    const requestId = mutationId();
+    const body = JSON.stringify({ requestId, expectedRevision: revisionRef.current, document: documentStateRef.current, currentStep: currentStepRef.current, complete: false });
+    void queueSave({ requestId, studentId: profile.studentId, url, body, createdAt: new Date().toISOString(), branchId: saveBranchId }).catch(() => undefined);
+  }, [saveBranchId]);
+  useEffect(() => {
+    const onHide = () => preserveUnsavedOnExit();
+    const onVisibility = () => { if (document.visibilityState === "hidden") preserveUnsavedOnExit(); };
+    window.addEventListener("pagehide", onHide);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { window.removeEventListener("pagehide", onHide); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [preserveUnsavedOnExit]);
+
+  const canvasFull = useMemo(() => documentTooLarge(documentState), [documentState]);
+  const reflectionDialogRef = useRef<HTMLDivElement>(null);
+  const closeReflection = useCallback(() => setReflectionOpen(false), []);
+  useModalDialog(reflectionDialogRef, closeReflection, reflectionOpen);
   const artworkId = artwork?.id;
   const flushCurrentArtwork = useCallback(() => {
     if (!artworkId) return;
@@ -412,13 +457,22 @@ export function DrawingStudio() {
     return () => window.removeEventListener("online", flushCurrentArtwork);
   }, [artworkId, flushCurrentArtwork]);
 
-  function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) { const rect = event.currentTarget.getBoundingClientRect(); return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)), pressure: event.pressure || 0.5 }; }
+  function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) { const rect = event.currentTarget.getBoundingClientRect(); return { x: roundUnit(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))), y: roundUnit(Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))), pressure: roundUnit(event.pressure || 0.5) }; }
   function chooseTool(nextTool: Tool) {
     setTool(nextTool);
     setWidth(nextTool === "eraser" ? 30 : 16);
   }
+  function commitStroke(points: Array<{ x: number; y: number; pressure: number }>) {
+    const operationId = crypto.randomUUID().replaceAll("-", "");
+    const op: DrawOp = { opId: `op_${operationId}`, clientOpId: `client_${operationId}`, type: "stroke", at: new Date().toISOString(), tool, color: tool === "eraser" ? undefined : color, width, points };
+    setDocumentState((current) => ({ ...current, ops: [...current.ops, op] })); setRedo([]); setEditVersion((value) => value + 1);
+  }
   function pointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (conflictDraftRef.current) { setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return; }
+    if (canvasFull) { setSaveState("종이가 가득 찼어요. ‘다 그렸어요’를 눌러 완성해요"); return; }
+    // 한 번에 한 포인터만 그린다. 그렇지 않으면 태블릿에 얹은 손바닥 접촉이 각각 별도의 선이 된다.
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (activePoints.current.size > 0 && !activePoints.current.has(event.pointerId)) return;
     if (guidePhase === "demo") stopGuideDemoForPractice();
     event.preventDefault();
     const first = canvasPoint(event);
@@ -432,6 +486,12 @@ export function DrawingStudio() {
     if (last && Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= 2.5) {
       event.preventDefault(); points.push(next);
       renderLiveStroke(event.currentTarget, tool, color, width, [last, next]);
+      // 손을 떼지 않고 계속 문지르면 한 스트로크가 서버 한도를 넘는다. 화면은 그대로 두고
+      // 안쪽에서만 끊어 이어 붙인다.
+      if (points.length >= STROKE_POINT_SPLIT) {
+        commitStroke(points.slice());
+        activePoints.current.set(event.pointerId, [next]);
+      }
     }
   }
   function pointerUp(event: ReactPointerEvent<HTMLCanvasElement>) {
@@ -439,13 +499,15 @@ export function DrawingStudio() {
     if (conflictDraftRef.current) {
       activePoints.current.delete(event.pointerId);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      // 미리보기로 그려 둔 픽셀을 지우지 않으면 문서에 없는 선이 썸네일에 섞인다.
+      renderDocument(event.currentTarget, documentStateRef.current);
       setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return;
     }
-    if (!points?.length) return; event.preventDefault(); const operationId = crypto.randomUUID().replaceAll("-", "");
-    const op: DrawOp = { opId: `op_${operationId}`, clientOpId: `client_${operationId}`, type: "stroke", at: new Date().toISOString(), tool, color: tool === "eraser" ? undefined : color, width, points };
-    activePoints.current.delete(event.pointerId); setDocumentState((current) => ({ ...current, ops: [...current.ops, op] })); setRedo([]); setEditVersion((value) => value + 1);
+    if (!points?.length) return; event.preventDefault();
+    activePoints.current.delete(event.pointerId);
+    commitStroke(points);
     if ((guidePhase === "practice" || guidePhase === "demo") && lessonGuideAvailable && tool !== "eraser") setGuidePracticeTried(true);
-    event.currentTarget.releasePointerCapture(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
   function undo() { if (conflictDraftRef.current) return; setDocumentState((current) => { const op = current.ops.at(-1); if (!op) return current; setRedo((items) => [...items, op]); setEditVersion((value) => value + 1); return { ...current, ops: current.ops.slice(0, -1) }; }); }
   function redoLast() { if (conflictDraftRef.current) return; setRedo((items) => { const op = items.at(-1); if (!op) return items; setDocumentState((current) => ({ ...current, ops: [...current.ops, op] })); setEditVersion((value) => value + 1); return items.slice(0, -1); }); }
@@ -458,6 +520,11 @@ export function DrawingStudio() {
   }
 
   async function saveAsCopy() {
+    try { await performSaveAsCopy(); }
+    catch { setSaveState("사본을 만들지 못했어요. 인터넷을 확인하고 다시 눌러 주세요"); }
+  }
+
+  async function performSaveAsCopy() {
     const draft = conflictDraftRef.current; const profile = activeProfile();
     if (!artwork || !canvasRef.current || !draft || !profile) return; setSaveState("새 사본을 만드는 중…");
     const stableKey = draft.save.requestId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 50);
@@ -574,17 +641,17 @@ export function DrawingStudio() {
     {teacherViewing && <div className="teacher-viewing" role="status">선생님이 지금 내 그림을 보고 있어요.</div>}
     <VoiceWhisperStatus />
     {message && <div className="canvas-message"><b>👩‍🏫 선생님</b> {message}<SpeakButton text={`선생님이 말했어요. ${message}`} compact /></div>}
-    <div className={`studio-body ${grimiOpen || lesson ? "" : "without-step-panel"}`}>{grimiOpen ? <aside className="grimi-panel" aria-live="polite"><div className="grimi-head"><div><span>✨</span><b>그리미</b></div><button onClick={dismissGrimi} aria-label="그리미 닫기">×</button></div>
+    <div className={`studio-body ${grimiOpen || lesson ? "" : "without-step-panel"}${grimiOpen ? " grimi-open" : ""}`}>{grimiOpen ? <aside className="grimi-panel" aria-live="polite"><div className="grimi-head"><div><span>✨</span><b>그리미</b></div><button onClick={dismissGrimi} aria-label="그리미 닫기">×</button></div><div className="grimi-scroll">
         {grimiLoading && <div className="grimi-thinking"><span>●</span><span>●</span><span>●</span><p>그림을 보고 있어요…</p></div>}
         {grimiError && <p className="error-box">{grimiError}</p>}
         {coaching && !grimiLoading && <div className="grimi-coaching"><p className="eyebrow">그리미가 궁금해요</p><div className="spoken-prompt"><h2>{coaching.question}</h2><SpeakButton text={`${coaching.question} 고를 수 있어요. ${coaching.choices.map((choice) => choice.label).join(", ")}`} compact /></div><div className="grimi-chips">{coaching.choices.map((choice) => <button aria-pressed={answer === choice.answer} onClick={() => { setAnswer(choice.answer); setAnswerLabel(choice.label); setAnswerSaved(false); }} key={choice.label}><span>{choice.emoji}</span>{choice.label}</button>)}</div><label className="direct-answer">직접 말하기<input maxLength={80} value={answerLabel ? "" : answer} onChange={(event) => { setAnswer(event.target.value); setAnswerLabel(""); setAnswerSaved(false); }} placeholder="내 생각을 짧게 적어도 돼요" /></label>{answer && <div className="next-action"><small>이제 그려 볼 일</small><div className="spoken-prompt"><b>{coaching.nextAction}</b><SpeakButton text={coaching.nextAction} compact /></div><button className="button primary full child-primary-action" disabled={grimiLoading || answerSaved} onClick={recordCoachingAnswer}><span aria-hidden="true">✅</span>{answerSaved ? "과정에 남겼어요" : "그린 뒤 ‘했어요’"}</button></div>}</div>}
         {aiGuide && !grimiLoading && <div className="ai-guide"><p className="eyebrow">{aiGuide.topic} · {aiGuideStep + 1}/{aiGuide.steps.length}</p><div className="spoken-prompt"><h2>{aiGuide.steps[aiGuideStep].instruction}</h2><SpeakButton text={`${aiGuide.steps[aiGuideStep].instruction}${aiGuide.steps[aiGuideStep].choices.length ? ` 고를 수 있어요. ${aiGuide.steps[aiGuideStep].choices.join(", ")}` : ""}`} compact /></div>{aiGuide.steps[aiGuideStep].openChoice && <div className="grimi-chips">{aiGuide.steps[aiGuideStep].choices.map((choice) => <button aria-pressed={childChoice === choice} onClick={() => setChildChoice(choice)} key={choice}>{choice}</button>)}</div>}{guideControls()}<div className="step-actions"><button disabled={Boolean(conflictDraft) || aiGuideStep === 0} onClick={() => chooseGuideStep(aiGuideStep - 1)}>⬅️ 이전</button><button disabled={Boolean(conflictDraft)} onClick={() => aiGuideStep === aiGuide.steps.length - 1 ? void finishGuide("completed") : chooseGuideStep(aiGuideStep + 1)}>{aiGuideStep === aiGuide.steps.length - 1 ? "🎨 이제 내 마음대로" : "➡️ 다음"}</button></div></div>}
         {!aiGuide && !grimiLoading && <div className="guide-request"><label>그리고 싶은 게 있어?<div className="quick-topic-row">{QUICK_DRAW_TOPICS.map((topic) => <button type="button" aria-pressed={guideTopic === topic.label} onClick={() => setGuideTopic(topic.label)} key={topic.label}><span>{topic.emoji}</span>{topic.label}</button>)}</div><input maxLength={60} value={guideTopic} onChange={(event) => setGuideTopic(event.target.value)} placeholder="예: 우주 자전거" /></label><button className="button secondary full child-primary-action" disabled={guideTopic.trim().length < 2} onClick={requestAiGuide}><span aria-hidden="true">🪄</span>단계 가이드 만들기</button></div>}
-        <button className="text-button free-exit" onClick={dismissGrimi}>그냥 내 마음대로 그릴래</button>
+        </div><button className="text-button free-exit" onClick={dismissGrimi}>그냥 내 마음대로 그릴래</button>
       </aside> : lesson && <aside className="step-panel"><div className="reference-tile"><span>{lesson.emoji}</span><small>{lesson.topic} {lesson.mode === "observe" ? "관찰하기" : "그려 보기"}</small></div><p className="eyebrow">지금 할 일</p><div className="spoken-prompt lesson-spoken-prompt"><h2>{lesson.steps[step].instruction}</h2><SpeakButton text={`${lesson.steps[step].instruction}${lesson.steps[step].choices?.length ? ` 고를 수 있어요. ${lesson.steps[step].choices.join(", ")}` : ""}`} compact /></div>{lesson.steps[step].choices?.length && <div className="choice-chips">{lesson.steps[step].choices.map((choice) => <button aria-pressed={childChoice === choice} onClick={() => setChildChoice(choice)} key={choice}>{choice}</button>)}</div>}{guideControls()}<div className="step-actions"><button disabled={Boolean(conflictDraft) || step === 0} onClick={() => changeLessonStep(-1)}>⬅️ 이전</button><button disabled={Boolean(conflictDraft)} onClick={() => { if (step === lesson.steps.length - 1) { setReflectionOpen(true); return; } changeLessonStep(1); }}><span aria-hidden="true">{step === lesson.steps.length - 1 ? "⭐" : "➡️"}</span>{nextStepLabel}</button></div><button className="text-button" onClick={chooseIndependentDrawing}>🎨 그냥 그릴래</button></aside>}
-      <section className="canvas-zone"><div className="canvas-wrap">{guideNotice && <div className="guide-notice" role="status" aria-live="polite">{guidePhase === "demo" ? "✏️" : "🟢"} {guideNotice}</div>}{!lesson && !aiGuide && !documentState.ops.length && <div className="canvas-start-hint" role="status">✏️ 연필로 하얀 종이에 그어 봐!</div>}<canvas ref={guideRef} className={guidePhase !== "independent" && lessonGuideAvailable ? "guide-canvas" : "guide-canvas hidden"} aria-hidden="true" /><canvas ref={canvasRef} className="draw-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} aria-disabled={Boolean(conflictDraft)} aria-label="그림 그리는 도화지" /></div></section>
+      <section className="canvas-zone"><div className="canvas-wrap">{guideNotice && <div className="guide-notice" role="status" aria-live="polite">{guidePhase === "demo" ? "✏️" : "🟢"} {guideNotice}</div>}{!lesson && !aiGuide && !documentState.ops.length && <div className="canvas-start-hint" role="status">✏️ 연필로 하얀 종이에 그어 봐!</div>}{canvasFull && <div className="canvas-full-hint" role="alert"><span aria-hidden="true">🌟</span> 종이가 가득 찼어! ‘다 그렸어요’를 눌러 완성하자.<SpeakButton text="종이가 가득 찼어요. 위에 있는 다 그렸어요를 눌러 작품을 완성해요." compact /></div>}<canvas ref={guideRef} className={guidePhase !== "independent" && lessonGuideAvailable ? "guide-canvas" : "guide-canvas hidden"} aria-hidden="true" /><canvas ref={canvasRef} className="draw-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} aria-disabled={Boolean(conflictDraft)} aria-label="그림 그리는 도화지" /></div></section>
       <aside className="tool-panel" aria-label="그리기 도구 모음"><p className="tool-section-label tools-label">무엇으로 그릴까?</p><div className="tool-group" role="group" aria-label="그리기 도구"><button type="button" aria-pressed={tool === "pen"} onClick={() => chooseTool("pen")}><span className="tool-icon" aria-hidden="true">✏️</span>연필</button><button type="button" aria-pressed={tool === "crayon"} onClick={() => chooseTool("crayon")}><span className="tool-icon" aria-hidden="true">🖍️</span>크레용</button><button type="button" aria-pressed={tool === "eraser"} onClick={() => chooseTool("eraser")}><span className="tool-icon eraser-icon" aria-hidden="true"><i /><i /></span>지우개</button></div><p className="tool-section-label width-label">얼마나 굵게?</p><div className="width-row" role="group" aria-label="선 굵기">{([8, 16, 30] as const).map((value) => { const label = value === 8 ? "얇게" : value === 16 ? "보통" : "굵게"; return <button type="button" aria-label={label} aria-pressed={width === value} onClick={() => setWidth(value)} key={value}><i aria-hidden="true" style={{ width: Math.max(8, value * .72), height: Math.max(8, value * .72) }} /><small>{label}</small></button>; })}</div><p className="tool-section-label color-label">무슨 색?</p><div className="palette" role="group" aria-label="색 고르기">{PALETTE.map((value) => <button type="button" aria-label={COLOR_NAMES[value]} title={COLOR_NAMES[value]} aria-pressed={color === value} onClick={() => { setColor(value); if (tool === "eraser") chooseTool("pen"); }} key={value} style={{ background: value }} />)}</div><div className="history-row" role="group" aria-label="그리기 기록"><button type="button" onClick={undo} disabled={Boolean(conflictDraft) || !documentState.ops.length}>↶ 되돌리기</button><button type="button" onClick={redoLast} disabled={Boolean(conflictDraft) || !redo.length}>↷ 다시하기</button></div></aside></div>
     {timelapseOpen && <TimelapsePlayer document={documentState} onClose={() => setTimelapseOpen(false)} />}
-    {reflectionOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reflection-title"><section className="reflection-modal"><button className="modal-close" onClick={() => setReflectionOpen(false)} aria-label="닫기">×</button><span className="modal-emoji">🌟</span><div className="reflection-title-row"><h2 id="reflection-title">내 그림을 소개해 줘!</h2><SpeakButton text="제일 마음에 드는 곳과 그 이유를 그림으로 골라요." /></div><div className="reflection-question"><p>마음에 드는 곳은?</p><div className="reflection-choice-grid">{FAVORITE_PART_CHOICES.map((choice) => <button type="button" aria-pressed={favoritePart === choice.value} onClick={() => setFavoritePart(choice.value)} key={choice.value}><span>{choice.emoji}</span>{choice.label}</button>)}</div></div><div className="reflection-question"><p>왜 마음에 들어?</p><div className="reflection-choice-grid">{FAVORITE_REASON_CHOICES.map((choice) => <button type="button" aria-pressed={favoriteReason === choice.value} onClick={() => setFavoriteReason(choice.value)} key={choice.value}><span>{choice.emoji}</span>{choice.label}</button>)}</div></div><details className="reflection-write-more"><summary>⌨️ 직접 글로 쓰고 싶어요</summary><label htmlFor="favorite-part">마음에 드는 곳<input id="favorite-part" maxLength={80} value={favoritePart} onChange={(event) => setFavoritePart(event.target.value)} placeholder="예: 무지개 꼬리" /></label><label htmlFor="favorite-reason">마음에 드는 이유<textarea id="favorite-reason" maxLength={180} value={favoriteReason} onChange={(event) => setFavoriteReason(event.target.value)} placeholder="예: 내가 고른 색이 좋아서" /></label></details><div className="modal-actions"><button className="button secondary" onClick={() => setReflectionOpen(false)}>🎨 더 그릴래</button><button className="button primary child-primary-action" disabled={!favoritePart || !favoriteReason} onClick={complete}><span aria-hidden="true">⭐</span>작품 완성</button></div></section></div>}
+    {reflectionOpen && <div className="modal-backdrop" ref={reflectionDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="reflection-title"><section className="reflection-modal"><button className="modal-close" onClick={() => setReflectionOpen(false)} aria-label="닫기">×</button><span className="modal-emoji">🌟</span><div className="reflection-title-row"><h2 id="reflection-title">내 그림을 소개해 줘!</h2><SpeakButton text="제일 마음에 드는 곳과 그 이유를 그림으로 골라요." /></div><div className="reflection-question"><p>마음에 드는 곳은?</p><div className="reflection-choice-grid">{FAVORITE_PART_CHOICES.map((choice) => <button type="button" aria-pressed={favoritePart === choice.value} onClick={() => setFavoritePart(choice.value)} key={choice.value}><span>{choice.emoji}</span>{choice.label}</button>)}</div></div><div className="reflection-question"><p>왜 마음에 들어?</p><div className="reflection-choice-grid">{FAVORITE_REASON_CHOICES.map((choice) => <button type="button" aria-pressed={favoriteReason === choice.value} onClick={() => setFavoriteReason(choice.value)} key={choice.value}><span>{choice.emoji}</span>{choice.label}</button>)}</div></div><details className="reflection-write-more"><summary>⌨️ 직접 글로 쓰고 싶어요</summary><label htmlFor="favorite-part">마음에 드는 곳<input id="favorite-part" maxLength={80} value={favoritePart} onChange={(event) => setFavoritePart(event.target.value)} placeholder="예: 무지개 꼬리" /></label><label htmlFor="favorite-reason">마음에 드는 이유<textarea id="favorite-reason" maxLength={180} value={favoriteReason} onChange={(event) => setFavoriteReason(event.target.value)} placeholder="예: 내가 고른 색이 좋아서" /></label></details><div className="modal-actions"><button className="button secondary" onClick={() => setReflectionOpen(false)}>🎨 더 그릴래</button><button className="button primary child-primary-action" disabled={!favoritePart || !favoriteReason} onClick={complete}><span aria-hidden="true">⭐</span>작품 완성</button></div></section></div>}
   </main>;
 }

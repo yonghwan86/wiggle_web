@@ -127,7 +127,7 @@ export const coachingEventDetails = sqliteTable("coaching_event_details", {
   newElementsJson: text("new_elements_json").notNull().default("[]"),
   growthEvent: text("growth_event"),
   currentStep: integer("current_step").notNull().default(0),
-  status: text("status", { enum: ["open", "active", "answered", "dismissed"] }).notNull().default("open"),
+  status: text("status", { enum: ["open", "active", "answered", "dismissed", "completed"] }).notNull().default("open"),
   updatedAt: updatedAt(),
 }, (table) => [index("coaching_details_status_idx").on(table.status, table.updatedAt)]);
 

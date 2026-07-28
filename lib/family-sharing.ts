@@ -120,6 +120,19 @@ export async function createFamilyShare(DB: D1Database, input: {
   return { ok: false as const, reason: "save_failed" as const };
 }
 
+// 초대는 1회용이라 링크 미리보기 봇의 GET 한 번으로 태워지면 보호자가 열 수 없다.
+// 확인 화면은 이 읽기 전용 검사만 하고, 실제 소비는 사람이 누른 POST에서만 한다.
+export async function peekFamilyInvite(DB: D1Database, inviteToken: string, input: { now?: Date } = {}) {
+  if (!tokenPattern.test(inviteToken)) return { ok: false as const, reason: "invalid_invite" as const };
+  const at = (input.now ?? new Date()).toISOString();
+  const row = await DB.prepare(`SELECT i.link_id AS linkId FROM family_share_invites i JOIN family_share_links l ON l.id = i.link_id
+    WHERE i.token_hash = ? AND i.consumed_at IS NULL AND i.consumed_session_hash IS NULL AND i.expires_at > ?
+      AND l.revoked_at IS NULL AND l.expires_at > ? AND l.approval_kind = 'guardian' AND l.guardian_consent_at IS NOT NULL AND l.guardian_consent_at <> ''
+      AND l.consent_method IN ('paper', 'in_person', 'phone', 'school_portal') AND l.attested_by_teacher_id = l.teacher_id`)
+    .bind(await sha256(inviteToken), at, at).first<{ linkId: string }>();
+  return row ? { ok: true as const, linkId: row.linkId } : { ok: false as const, reason: "invite_unavailable" as const };
+}
+
 export async function exchangeFamilyInvite(DB: D1Database, inviteToken: string, input: { now?: Date; sessionTokenFactory?: () => string } = {}) {
   if (!tokenPattern.test(inviteToken)) return { ok: false as const, reason: "invalid_invite" as const };
   const now = input.now ?? new Date(); const at = now.toISOString(); const inviteHash = await sha256(inviteToken);
