@@ -83,10 +83,13 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
   for (const raw of doc.ops) {
     if (!raw || typeof raw !== "object") return null;
     const op = raw as DrawOp;
-    // slice(0, 80) 뒤에 검사하면 81자 이상 ID가 잘린 채 통과해 크기 상한이 깨진다.
-    if (!/^[a-zA-Z0-9_-]{8,80}$/.test(String(op.opId ?? "")) || !/^[a-zA-Z0-9_-]{8,80}$/.test(String(op.clientOpId ?? "")) || seen.has(op.clientOpId)) return null;
+    // 문자열 여부를 먼저 본다. String(...)으로 강제하면 객체가 통과해 원본이 그대로 복사되고,
+    // slice(0, 80) 뒤 검사는 81자 이상 ID를 잘린 채 통과시켜 크기 상한이 깨진다.
+    if (typeof op.opId !== "string" || typeof op.clientOpId !== "string" || typeof op.at !== "string") return null;
+    if (!/^[a-zA-Z0-9_-]{8,80}$/.test(op.opId) || !/^[a-zA-Z0-9_-]{8,80}$/.test(op.clientOpId) || seen.has(op.clientOpId)) return null;
     seen.add(op.clientOpId);
-    if (!["stroke", "fill", "shape", "sticker"].includes(op.type) || !Number.isFinite(Date.parse(op.at))) return null;
+    // 제어문자가 섞인 날짜도 Date.parse는 통과시킨다. JSON에서 이스케이프되며 길이가 폭증하므로 길이를 먼저 막는다.
+    if (!["stroke", "fill", "shape", "sticker"].includes(op.type) || op.at.length > 40 || !Number.isFinite(Date.parse(op.at))) return null;
     if (op.type === "stroke") {
       if (!op.tool || !["pen", "crayon", "eraser"].includes(op.tool) || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length < 1 || op.points.length > MAX_STROKE_POINTS) return null;
       if (op.tool !== "eraser" && !/^#[0-9A-Fa-f]{6}$/.test(op.color ?? "")) return null;
@@ -112,14 +115,22 @@ function normalizePoint(point: Point): Point {
   return normalized;
 }
 
+// op 종류마다 검증된 필드만 남긴다. 종류와 무관한 필드까지 복사하면,
+// 그 종류에서 검사하지 않는 자리(예: stroke의 sticker)에 거대한 값을 실어
+// 검증을 통과시키면서 크기 상한을 깨뜨릴 수 있다.
 function normalizeOp(raw: DrawOp): DrawOp {
-  const op: DrawOp = { opId: raw.opId, clientOpId: raw.clientOpId, type: raw.type, at: raw.at };
-  if (raw.tool !== undefined) op.tool = raw.tool;
-  if (raw.color !== undefined) op.color = raw.color;
-  if (raw.width !== undefined) op.width = raw.width;
-  if (raw.shape !== undefined) op.shape = raw.shape;
-  if (raw.sticker !== undefined) op.sticker = raw.sticker;
-  if (Array.isArray(raw.points)) op.points = raw.points.map(normalizePoint);
+  // at은 검증을 통과했으므로 항상 24자 ISO로 정규화된다.
+  const op: DrawOp = { opId: raw.opId, clientOpId: raw.clientOpId, type: raw.type, at: new Date(raw.at).toISOString() };
+  const points = Array.isArray(raw.points) ? raw.points.map(normalizePoint) : undefined;
+  if (raw.type === "stroke") {
+    op.tool = raw.tool;
+    if (raw.tool !== "eraser") op.color = raw.color;
+    op.width = raw.width;
+    op.points = points;
+  }
+  if (raw.type === "fill") { op.color = raw.color; op.points = points; }
+  if (raw.type === "shape") { op.shape = raw.shape; op.color = raw.color; op.width = raw.width; op.points = points; }
+  if (raw.type === "sticker") { op.sticker = raw.sticker; op.points = points; }
   return op;
 }
 

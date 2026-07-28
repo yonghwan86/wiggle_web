@@ -264,8 +264,15 @@ export function DrawingStudio() {
       const loadDraft = loadDisposition.action === "recover" ? loadDisposition.draft : restoredDraft;
       const loadedStep = loadDraft?.currentStep ?? data.artwork.currentStep;
       // 서버가 돌려준 문서를 정규화해 크기 추정이 상한으로 유지되게 한다.
-      // 정규화에 실패하면(옛 형식 등) 아이 그림을 지우는 대신 원본 그대로 연다.
-      const loadedDocument = loadDraft?.document ?? validateDrawDocument(data.artwork.document) ?? data.artwork.document;
+      const loadedDocument = loadDraft?.document ?? validateDrawDocument(data.artwork.document);
+      if (!loadedDocument) {
+        // 검증에 실패한 문서를 편집 상태로 올리면 렌더가 깨지거나, 아이가 그린 뒤
+        // 저장이 계속 거부된다. 빈 문서로 열면 자동 저장이 서버 원본을 덮어쓴다.
+        // 그래서 아예 열지 않고 원본을 서버에 그대로 둔 채 도움을 요청하게 한다.
+        hydratedKeyRef.current = loadKey;
+        setSaveState("이 그림을 열지 못했어요. 선생님을 불러 주세요.");
+        return;
+      }
       currentStepRef.current = loadedStep; documentStateRef.current = loadedDocument;
       setArtwork({ ...data.artwork, currentStep: loadedStep });
       setDocumentState(loadedDocument); setRedo([]); setEditVersion(0);

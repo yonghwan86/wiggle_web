@@ -79,6 +79,30 @@ test("every document validation accepts is bounded by the estimate", () => {
   }
 });
 
+test("fields irrelevant to the op type cannot smuggle bulk past the estimate", () => {
+  // stroke는 sticker를 검증하지 않는다. 그 자리에 거대한 값을 실어 상한을 깨뜨릴 수 없어야 한다.
+  const smuggled = documentWith([{ ...stroke("smuggle", 5), sticker: { blob: "z".repeat(200_000) } }]);
+  const validated = validateDrawDocument(smuggled);
+  assert.ok(validated, "stroke 자체는 정상이므로 통과한다");
+  assert.equal(validated.ops[0].sticker, undefined, "종류와 무관한 필드는 남지 않는다");
+  assert.ok(estimateDocumentBytes(validated) >= JSON.stringify(validated).length);
+
+  const eraser = validateDrawDocument(documentWith([{ ...stroke("eraserop", 3), tool: "eraser", color: undefined }]));
+  assert.ok(eraser);
+  assert.equal(eraser.ops[0].color, undefined, "지우개에는 색을 남기지 않는다");
+});
+
+test("non-string or padded timestamps are rejected and survivors normalize to ISO", () => {
+  const controlChars = `2026-07-29T01:00:00.000Z${"".repeat(200_000)}`;
+  assert.equal(validateDrawDocument(documentWith([{ ...stroke("ctrl", 2), at: controlChars }])), null, "제어문자로 부풀린 날짜는 거부한다");
+  assert.equal(validateDrawDocument(documentWith([{ ...stroke("objat", 2), at: { toString: () => "2026-07-29T01:00:00.000Z" } }])), null, "문자열이 아닌 at은 거부한다");
+  assert.equal(validateDrawDocument(documentWith([{ ...stroke("objid", 2), opId: { toString: () => "op_abcdefgh" } }])), null, "문자열이 아닌 id는 거부한다");
+
+  const loose = validateDrawDocument(documentWith([{ ...stroke("loose", 2), at: "2026-07-29T01:00:00+09:00" }]));
+  assert.ok(loose);
+  assert.equal(loose.ops[0].at, new Date("2026-07-29T01:00:00+09:00").toISOString(), "통과한 날짜는 ISO로 정규화된다");
+});
+
 test("ids longer than the server limit are rejected instead of silently truncated", () => {
   const tooLong = "a".repeat(81);
   assert.equal(validateDrawDocument(documentWith([{ ...stroke("idcheck", 1), opId: tooLong }])), null);
