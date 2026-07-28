@@ -18,7 +18,8 @@ export function roundUnit(value: number) {
 // 클라이언트가 한도를 넘긴 문서를 커밋해 저장이 영구 실패하므로,
 // 고정값이 아니라 op의 실제 문자열 길이를 더해 상한을 보장한다.
 const OP_FIXED_BYTES = 120;
-const POINT_BYTES = 42;
+// 정규화된 점 하나의 최악 직렬화: {"x":0.1234,"y":0.1234,"pressure":0.1234}, = 42자.
+const POINT_BYTES = 44;
 
 function opBytes(op: DrawOp) {
   return OP_FIXED_BYTES
@@ -99,7 +100,27 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
     }
     if (op.type === "sticker" && (!STICKER_ALLOWLIST.includes(op.sticker as (typeof STICKER_ALLOWLIST)[number]) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint))) return null;
   }
-  return value as DrawDocument;
+  // 알려진 필드만 남기고 좌표를 정규화한 사본을 돌려준다. 원본을 그대로 통과시키면
+  // 전체 정밀도 좌표(0.12345678901234568)와 미지의 속성이 함께 저장돼,
+  // 크기 추정이 실제 직렬화 길이의 상한이 아니게 되고 저장이 한도에 걸린다.
+  return { schemaVersion: 1, rendererVersion: 1, size: 1024, ops: doc.ops.map(normalizeOp) };
+}
+
+function normalizePoint(point: Point): Point {
+  const normalized: Point = { x: roundUnit(point.x), y: roundUnit(point.y) };
+  if (point.pressure !== undefined) normalized.pressure = roundUnit(point.pressure);
+  return normalized;
+}
+
+function normalizeOp(raw: DrawOp): DrawOp {
+  const op: DrawOp = { opId: raw.opId, clientOpId: raw.clientOpId, type: raw.type, at: raw.at };
+  if (raw.tool !== undefined) op.tool = raw.tool;
+  if (raw.color !== undefined) op.color = raw.color;
+  if (raw.width !== undefined) op.width = raw.width;
+  if (raw.shape !== undefined) op.shape = raw.shape;
+  if (raw.sticker !== undefined) op.sticker = raw.sticker;
+  if (Array.isArray(raw.points)) op.points = raw.points.map(normalizePoint);
+  return op;
 }
 
 export function emptyDocument(): DrawDocument {

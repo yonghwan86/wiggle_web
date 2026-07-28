@@ -2,7 +2,7 @@
 
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { DrawDocument, DrawOp, emptyDocument, estimateDocumentBytes, estimateStrokeBytes, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, roundUnit } from "@/lib/drawing-model";
+import { DrawDocument, DrawOp, emptyDocument, estimateDocumentBytes, estimateStrokeBytes, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, roundUnit, validateDrawDocument } from "@/lib/drawing-model";
 import { renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
 import { lessonBySlug, Lesson } from "@/lib/lesson-content";
 import { activeProfile, clearQueuedArtworkSaves, createSerialTaskQueue, deleteQueuedArtworkSave, flushSaves, queueSave, queuedArtworkDraft, resolveArtworkDraftDisposition, studentFetch } from "@/lib/client-session";
@@ -262,7 +262,10 @@ export function DrawingStudio() {
       const loadDisposition = artworkUrl ? resolveArtworkDraftDisposition(flushed.remaining, artworkUrl, data.artwork.status === "complete") : { action: "load" as const };
       if (loadDisposition.action === "archive") { hydratedKeyRef.current = loadKey; location.replace("/student/archive"); return; }
       const loadDraft = loadDisposition.action === "recover" ? loadDisposition.draft : restoredDraft;
-      const loadedStep = loadDraft?.currentStep ?? data.artwork.currentStep; const loadedDocument = loadDraft?.document ?? data.artwork.document;
+      const loadedStep = loadDraft?.currentStep ?? data.artwork.currentStep;
+      // 서버가 돌려준 문서를 정규화해 크기 추정이 상한으로 유지되게 한다.
+      // 정규화에 실패하면(옛 형식 등) 아이 그림을 지우는 대신 원본 그대로 연다.
+      const loadedDocument = loadDraft?.document ?? validateDrawDocument(data.artwork.document) ?? data.artwork.document;
       currentStepRef.current = loadedStep; documentStateRef.current = loadedDocument;
       setArtwork({ ...data.artwork, currentStep: loadedStep });
       setDocumentState(loadedDocument); setRedo([]); setEditVersion(0);

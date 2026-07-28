@@ -39,6 +39,46 @@ test("the estimate holds for the longest ids server validation accepts", () => {
   assert.ok(estimateDocumentBytes(document) >= JSON.stringify(document).length, "긴 ID에서도 추정이 실제 이상이어야 한다");
 });
 
+test("validation normalizes coordinates and drops unknown fields so the estimate stays an upper bound", () => {
+  // 검증기가 정밀도와 추가 속성을 제한하지 않으면 추정이 실제보다 작아져,
+  // 클라이언트가 한도를 넘긴 문서를 커밋하고 이후 저장이 계속 413으로 거부된다.
+  const messy = documentWith([{
+    ...stroke("messy", 0),
+    at: "2026-07-29T01:00:00.000Z",
+    points: Array.from({ length: 300 }, () => ({ x: 0.12345678901234568, y: 0.98765432109876543, pressure: 0.3333333333333333 })),
+    나쁜속성: "x".repeat(5000),
+    extra: { deep: "y".repeat(5000) },
+  }]);
+  const validated = validateDrawDocument(messy);
+  assert.ok(validated, "고정밀 좌표 문서는 여전히 통과해야 한다");
+  assert.equal(JSON.stringify(validated).includes("나쁜속성"), false, "알 수 없는 속성은 저장되지 않는다");
+  assert.equal(JSON.stringify(validated).includes("extra"), false);
+  assert.equal(validated.ops[0].points[0].x, 0.1235, "좌표는 소수 4자리로 정규화된다");
+  assert.ok(
+    estimateDocumentBytes(validated) >= JSON.stringify(validated).length,
+    `추정 ${estimateDocumentBytes(validated)} < 실제 ${JSON.stringify(validated).length}`,
+  );
+});
+
+test("every document validation accepts is bounded by the estimate", () => {
+  const shapes = [
+    { pointCount: 1, precision: "full" },
+    { pointCount: 250, precision: "full" },
+    { pointCount: 250, precision: "round" },
+    { pointCount: 4000, precision: "full" },
+  ];
+  for (const shape of shapes) {
+    const points = Array.from({ length: shape.pointCount }, (_, index) => shape.precision === "full"
+      ? { x: index / 7919, y: index / 6997, pressure: index / 4001 }
+      : { x: 0.1234, y: 0.5678, pressure: 0.5 });
+    const document = documentWith([{ ...stroke("bounded", 0), points }]);
+    const validated = validateDrawDocument(document);
+    assert.ok(validated, `통과해야 함: ${JSON.stringify(shape)}`);
+    const actual = JSON.stringify(validated).length;
+    assert.ok(estimateDocumentBytes(validated) >= actual, `${JSON.stringify(shape)}: 추정 ${estimateDocumentBytes(validated)} < 실제 ${actual}`);
+  }
+});
+
 test("ids longer than the server limit are rejected instead of silently truncated", () => {
   const tooLong = "a".repeat(81);
   assert.equal(validateDrawDocument(documentWith([{ ...stroke("idcheck", 1), opId: tooLong }])), null);
