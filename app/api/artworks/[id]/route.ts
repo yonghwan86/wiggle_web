@@ -9,9 +9,14 @@ async function ownedArtwork(artworkId: string, studentId: string) {
 }
 
 function decodeImage(dataUrl: unknown, maxBytes: number) {
-  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl ?? ""));
-  if (!match) return null;
-  const binary = atob(match[1]); if (binary.length > maxBytes) return null;
+  if (typeof dataUrl !== "string") return null;
+  // 정규식만으로는 atob가 거부하는 문자열("A", "====")도 통과한다. 그 예외가 밖으로 나가면
+  // 잘못된 입력이 400이 아니라 처리되지 않은 500이 된다.
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/]{4,}={0,2})$/.exec(dataUrl);
+  if (!match || match[1].length % 4 !== 0) return null;
+  let binary: string;
+  try { binary = atob(match[1]); } catch { return null; }
+  if (binary.length > maxBytes) return null;
   const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }

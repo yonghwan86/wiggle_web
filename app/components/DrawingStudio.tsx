@@ -617,8 +617,11 @@ export function DrawingStudio() {
     const createdData = await created.json() as { error?: string; artwork?: { id: string } }; if (!created.ok || !createdData.artwork) { setSaveState(createdData.error ?? "사본을 만들지 못했어요"); return; }
     const response = await studentFetch(`/api/artworks/${createdData.artwork.id}`, { method: "PUT", body: JSON.stringify({ requestId: copyRequestId, expectedRevision: 0, document: draft.document, currentStep: draft.currentStep, thumbnailDataUrl: imageData(canvasRef.current, 256), complete: draft.complete, finalDataUrl: draft.finalDataUrl, reflection: draft.reflection }) });
     if (!response.ok) { const data = await response.json() as { error?: string }; setSaveState(data.error ?? "사본을 저장하지 못했어요"); return; }
-    await deleteQueuedArtworkSave(profile.studentId, draft.save.url, draft.save.requestId);
+    // 서버에 사본이 남은 시점부터는 성공이다. 큐 삭제 실패로 "사본을 만들지 못했어요"를 띄우면
+    // 이미 만들어진 사본과 화면 상태가 어긋나고, 다시 눌러 사본이 하나 더 생긴다.
     conflictDraftRef.current = null; setConflictDraft(null); setConflictRevision(null);
+    try { await deleteQueuedArtworkSave(profile.studentId, draft.save.url, draft.save.requestId); }
+    catch { /* 남은 큐 항목은 다음 flush에서 정리된다 */ }
     location.replace(draft.complete ? "/student/archive" : `/student/draw/${createdData.artwork.id}`);
   }
 

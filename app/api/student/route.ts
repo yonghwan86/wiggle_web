@@ -71,10 +71,12 @@ async function studentPost(request: Request) {
     const entry = cleanText(payload.entry, 80); const classroom = await classroomForEntry(entry);
     if (!classroom) return jsonError("수업 코드를 다시 확인해 주세요.", 404);
     if (!classroom.admissionOpen) return jsonError("선생님이 입장을 열 때까지 기다려 주세요.", 403);
-    // 학급 단위 상한이 명단 존재 여부를 캐내는 409 오라클 반복과 가짜 프로필 누적을 함께 제한한다.
-    if (!(await rateLimit(`student-join-class:${classroom.id}`, CLASSROOM_JOIN_LIMIT, IP_ENTRY_WINDOW_SECONDS))) return jsonError("이 수업의 입장 시도가 많아요. 선생님께 알려 주세요.", 429);
     const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword); const allowDuplicate = payload.allowDuplicate === true;
+    // 형태 검증을 먼저 한다. 잘못된 본문이 아래 상한을 소비하면 공격자가 그 학급 전체의 입장을 막을 수 있다.
     if (nickname.length < 2 || !animal || pictureLength !== 3) return jsonError("별명, 동물, 그림 비밀번호 세 개를 모두 골라 주세요.");
+    // 학급 상한은 IP와 함께 묶는다. 학급 단독 버킷은 한 클라이언트가 학급 전체를 잠그는 통로가 된다.
+    // 이 상한은 명단 존재 여부를 캐내는 409 오라클 반복과 가짜 프로필 누적을 제한한다.
+    if (!(await rateLimit(`student-join-class:${classroom.id}:${requestIp(request)}`, CLASSROOM_JOIN_LIMIT, IP_ENTRY_WINDOW_SECONDS))) return jsonError("이 수업의 입장 시도가 많아요. 선생님께 알려 주세요.", 429);
     const db = bindings().DB;
     if (!allowDuplicate) {
       const existing = await db.prepare(`SELECT 1 FROM student_profiles WHERE classroom_id = ? AND nickname = ? COLLATE NOCASE AND animal = ? AND archived_at IS NULL LIMIT 1`).bind(classroom.id, nickname, animal).first();
@@ -119,9 +121,10 @@ async function studentPost(request: Request) {
   if (action === "recover") {
     if (!(await ipAllowed(request))) return jsonError("복구 시도가 많아요. 선생님께 도움을 요청해 주세요.", 429);
     const personalQrToken = cleanText(payload.personalQrToken, 120); let student: RecoveredStudent | null = null;
+    const qrTarget = personalQrToken ? `qr:${await sha256(personalQrToken)}` : "";
     if (personalQrToken) {
-      if (!(await targetAllowed(`qr:${await sha256(personalQrToken)}`))) return jsonError("복구 시도가 많아요. 선생님께 도움을 요청해 주세요.", 429);
-      student = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM recovery_credentials r JOIN student_profiles s ON s.id = r.student_id JOIN classrooms c ON c.id = s.classroom_id WHERE r.personal_qr_hash = ? AND s.archived_at IS NULL AND c.active = 1`).bind(await sha256(personalQrToken)).first<RecoveredStudent>();
+      if (!(await targetAllowed(qrTarget))) return jsonError("복구 시도가 많아요. 선생님께 도움을 요청해 주세요.", 429);
+      student = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM recovery_credentials r JOIN student_profiles s ON s.id = r.student_id JOIN classrooms c ON c.id = s.classroom_id WHERE r.personal_qr_hash = ? AND s.archived_at IS NULL AND c.active = 1`).bind(qrTarget.slice(3)).first<RecoveredStudent>();
     } else {
       const classCode = cleanText(payload.classCode, 12); const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
       if (pictureLength !== 3 && pictureLength !== 4) return jsonError("그림 비밀번호는 세 개 또는 예전에 만든 네 개를 골라 주세요.");
@@ -139,6 +142,8 @@ async function studentPost(request: Request) {
     if (!student) return jsonError("복구할 학생을 찾지 못했어요.", 404);
     const device = await issueDeviceSession(student.id);
     if (!device) return jsonError("이 학급은 더 이상 이용할 수 없어요. 선생님께 확인해 주세요.", 403);
+    // 성공한 QR 복구도 카운터를 비운다. 그러지 않으면 정상 QR을 15분에 8번 쓴 뒤 막힌다.
+    if (qrTarget) await clearRateLimit(targetKey(qrTarget));
     return noStoreJson({ student: { id: student.id, nickname: student.nickname, animal: student.animal, classroomName: student.classroomName }, deviceToken: device.token, expiresAt: device.expiresAt });
   }
   return jsonError("지원하지 않는 요청이에요.");

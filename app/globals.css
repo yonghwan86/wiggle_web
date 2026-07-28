@@ -231,6 +231,8 @@ code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowr
 .canvas-message,.save-conflict,.teacher-viewing,.voice-speaking { width:max-content; max-width:calc(100vw - max(12px,env(safe-area-inset-left)) - max(12px,env(safe-area-inset-right))); line-height:1.45; white-space:normal; overflow-wrap:break-word; }
 /* 알림 알약은 안내만 하므로 아래 버튼·캔버스의 탭을 가로채면 안 된다. */
 .teacher-viewing,.voice-speaking { pointer-events:none; }
+/* 재시도 버튼은 눌러야 하므로 알림 알약의 pointer-events 차단에서 제외한다. */
+.voice-speaking-retry { pointer-events:auto; min-height:52px; border-radius:15px; cursor:pointer; }
 .save-conflict { flex-wrap:wrap; justify-content:center; }
 .canvas-message,.save-conflict { top:calc(78px + env(safe-area-inset-top)); }
 .teacher-viewing { top:calc(128px + env(safe-area-inset-top)); }

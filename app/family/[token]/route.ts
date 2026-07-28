@@ -14,6 +14,9 @@ function unavailable() {
 }
 
 async function allowed(request: Request, token: string) {
+  // IP 전용 상한을 먼저 건다. 토큰이 섞인 키만 쓰면 앞부분만 바꿔 매번 새 버킷을 만들어
+  // 제한을 우회할 수 있고, rate_limits 행도 무한히 늘어난다.
+  if (!(await rateLimit(`family-exchange-ip:${clientAddress(request)}`, 60, 60))) return false;
   const limiterKey = await sha256(`${clientAddress(request)}:${token.slice(0, 12)}`);
   return rateLimit(`family-exchange:${limiterKey}`, 12, 60);
 }

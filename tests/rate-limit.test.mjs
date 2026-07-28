@@ -68,8 +68,13 @@ test("student entry limits separate shared classroom IP traffic from per-target 
   assert.ok(Number(route.match(/const TARGET_ATTEMPT_LIMIT = (\d+)/)[1]) <= 10);
   assert.match(route, /targetAllowed\(`unlock:\$\{studentId\}`\)/);
   assert.match(route, /targetAllowed\(recoverTarget\)/);
-  assert.match(route, /targetAllowed\(`qr:\$\{await sha256\(personalQrToken\)\}`\)/);
+  assert.match(route, /targetAllowed\(qrTarget\)/);
+  // 성공한 인증은 세 경로 모두 카운터를 비워야 정상 사용자가 잠기지 않는다.
   assert.match(route, /clearRateLimit\(targetKey\(`unlock:\$\{studentId\}`\)\)/);
   assert.match(route, /clearRateLimit\(targetKey\(recoverTarget\)\)/);
-  assert.match(route, /rateLimit\(`student-join-class:\$\{classroom\.id\}`/);
+  assert.match(route, /clearRateLimit\(targetKey\(qrTarget\)\)/);
+  // 학급 상한은 IP와 함께 묶는다. 학급 단독 버킷이면 한 클라이언트가 학급 전체를 잠글 수 있다.
+  assert.match(route, /rateLimit\(`student-join-class:\$\{classroom\.id\}:\$\{requestIp\(request\)\}`/);
+  // 형태 검증이 학급 상한보다 먼저 와야 잘못된 본문이 상한을 소비하지 못한다.
+  assert.ok(route.indexOf("별명, 동물, 그림 비밀번호 세 개를 모두 골라 주세요") < route.indexOf("student-join-class:"));
 });
