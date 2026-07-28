@@ -104,19 +104,23 @@ const WORK_NOUN = String.raw`(?:그림|작품|색깔|색칠)`;
 const EMPHASIS = String.raw`(?:정말|진짜|참|너무|아주|매우)?\s*`;
 // 소유자를 열거하면 이름과 일반 명사("아이의 그림", "민수의 작품")가 계속 빠진다.
 // 앞이 한글이면 지시어가 아니라 앞말의 조사다("학생이 색칠을"의 '이').
-const OWNER = String.raw`(?:[가-힣]{1,10}의|(?<![가-힣])(?:네|니|너|너의|당신의|이|그|저))`;
+// 소유는 "X의 그림"만이 아니라 관형절로도 온다("네가 그린 그림", "민수가 그린 작품").
+const OWNER = String.raw`(?:[가-힣]{1,10}의|[가-힣]{1,10}[가이]\s*그린|그린|(?<![가-힣])(?:네|니|너|너의|당신의|이|그|저))`;
 const EVALUATOR = String.raw`(?:나는|내가|저는|제가|선생님[은이]|우리\s*선생님[은이]?)`;
 const workApprovalPatterns = [
-  // ① 작품 자체를 좋다고 평하는 말: "그림이 참 좋네", "네 그림이 정말 좋아"
-  new RegExp(String.raw`(?:그림|작품|색깔|색칠|색)\s*(?:이|은|도|까지)?\s*${EMPHASIS}좋(?:아(?!하)|네|다|은|군|구나)`, "iu"),
-  // ② 소유자가 붙은 작품 승인: "네 그림을 좋아해", "아이의 그림을 좋아해요"
+  // ① 작품 자체를 좋다고 평하는 말: "그림이 참 좋네", "네 그림의 색이 좋다"
+  //    맨몸의 "색"은 아이의 색 선호("빨간색이 좋아요")라서 작품 문맥이 있을 때만 본다.
+  new RegExp(String.raw`(?:그림|작품)(?:의\s*(?:색깔|색칠|색))?\s*(?:이|은|도|까지)?\s*${EMPHASIS}좋(?:아(?!하)|네|다|은|군|구나)`, "iu"),
+  // ② 소유자가 붙은 작품 승인: "네 그림을 좋아해", "아이의 그림을 좋아해요", "네가 그린 그림을 좋아해요"
   new RegExp(String.raw`${OWNER}\s*${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
-  // ③ 평가자가 자기를 주어로 밝힌 승인: "나는 그림을 좋아해", "선생님은 민수의 작품을 좋아합니다"
-  new RegExp(String.raw`${EVALUATOR}\s*(?:${OWNER}\s*)?${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
   // ④ 주어를 생략한 채 절을 여는 승인: "그림을 좋아해.", "작품을 정말 좋아합니다."
   //    제3자를 주어로 둔 관찰("아이가 그림을 좋아해요")은 절 앞이 아니므로 걸리지 않는다.
   new RegExp(String.raw`^${EMPHASIS}${WORK_NOUN}\s*(?:을|를)\s*${EMPHASIS}${APPROVAL_ENDING}`, "iu"),
 ];
+
+// 평가자가 자기를 주어로 밝히면 어미와 무관하게 승인이다. 의문문으로 감싸도 마찬가지다
+// ("내가 네 그림을 좋아하는 게 느껴지니?"). 그래서 의문절에서도 이 규칙만은 계속 적용한다.
+const evaluatorApprovalPattern = new RegExp(String.raw`${EVALUATOR}\s*(?:${OWNER}\s*)?${WORK_NOUN}\s*(?:을|를|이|은|도)?\s*${EMPHASIS}좋아`, "iu");
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -148,11 +152,12 @@ export function isChildSafeCoachingText(value: string) {
   // 문장이 아니라 절 단위로 본다. 문장 끝이 물음표여도 앞 절은 승인일 수 있다
   // ("네 그림을 좋아해, 무엇을 더 그리고 싶어?").
   const nfkc = value.normalize("NFKC");
-  const declarativeClauses = nfkc.split(/(?<=[.!?])\s*|,\s*/u)
-    .filter((clause) => clause && !/\?\s*$/u.test(clause))
-    .map(normalizeCoachingPolicyText)
-    .filter(Boolean);
+  const clauses = nfkc.split(/(?<=[.!?])\s*|,\s*/u).filter(Boolean);
+  const normalizedClauses = clauses.map((clause) => ({ text: normalizeCoachingPolicyText(clause), question: /\?\s*$/u.test(clause) })).filter((clause) => clause.text);
+  // 선호를 묻는 질문("어떤 색이 좋아?")은 통과시키되, 질문에 감싼 평가자의 승인은 계속 막는다.
+  const declarativeClauses = normalizedClauses.filter((clause) => !clause.question).map((clause) => clause.text);
   if (workApprovalPatterns.some((pattern) => declarativeClauses.some((clause) => pattern.test(clause)))) return false;
+  if (normalizedClauses.some((clause) => evaluatorApprovalPattern.test(clause.text))) return false;
   const normalized = normalizeCoachingPolicyText(nfkc);
   if (/[\p{Script_Extensions=Greek}\p{Script_Extensions=Cyrillic}]/u.test(normalized)) return false;
   if (forbiddenMeaningPatterns.some((pattern) => pattern.test(normalized))) return false;
@@ -184,19 +189,23 @@ export function validateStudentCoaching(value: unknown): StudentCoaching | null 
   const item = record(value); if (!item) return null;
   const question = shortText(item.question, 90); const nextAction = shortText(item.next_action, 90); const growthEvent = shortText(item.growth_event, 120);
   if (!question || !nextAction || !growthEvent || typeof item.uncertain !== "boolean") return null;
-  if ((question.match(/\?/g) ?? []).length !== 1 || !drawingActionPattern.test(nextAction) || !isChildSafeCoachingText(`${question} ${nextAction} ${growthEvent}`)) return null;
+  // 필드를 이어 붙여 한 번에 검사하면 절 시작 규칙이 첫 필드에서만 걸린다.
+  // 뒤쪽 필드에 들어온 승인 문장을 놓치므로 필드마다 따로 본다.
+  // 물음표 개수도 NFKC 뒤에 세야 전각 물음표를 쓴 정상 질문이 거부되지 않는다.
+  if ((question.normalize("NFKC").match(/\?/g) ?? []).length !== 1 || !drawingActionPattern.test(nextAction)) return null;
+  if (![question, nextAction, growthEvent].every(isChildSafeCoachingText)) return null;
   if (!Array.isArray(item.choices) || item.choices.length < 2 || item.choices.length > 4) return null;
   const choices: CoachingChoice[] = [];
   for (const raw of item.choices) {
     const choice = record(raw); if (!choice) return null;
     const emoji = shortText(choice.emoji, 12); const label = shortText(choice.label, 20); const answer = shortText(choice.answer, 50);
-    if (!emoji || !label || !answer || !isChildSafeCoachingText(`${emoji} ${label} ${answer}`)) return null;
+    if (!emoji || !label || !answer || ![emoji, label, answer].every(isChildSafeCoachingText)) return null;
     choices.push({ emoji, label, answer });
   }
   if (new Set(choices.map((choice) => choice.label)).size !== choices.length) return null;
   if (!Array.isArray(item.observed_elements) || item.observed_elements.length > 4) return null;
   const observedElements = item.observed_elements.map((entry) => shortText(entry, 30));
-  if (observedElements.some((entry) => !entry) || !isChildSafeCoachingText(observedElements.join(" "))) return null;
+  if (observedElements.some((entry) => !entry) || !observedElements.every((entry) => isChildSafeCoachingText(entry as string))) return null;
   return { question, choices, nextAction, observedElements: observedElements as string[], uncertain: item.uncertain, growthEvent };
 }
 
@@ -210,7 +219,7 @@ export function validateDrawingGuide(value: unknown): DrawingGuide | null {
     if (!instruction || /[\r\n]/.test(instruction) || (instruction.match(/[.!?]/g) ?? []).length > 1 || typeof step.open_choice !== "boolean") return null;
     if (!isChildSafeCoachingText(instruction) || !["none", "line", "circle", "triangle", "rectangle"].includes(String(guideShape))) return null;
     if (!Array.isArray(step.choices) || step.choices.length > 4) return null;
-    const choices = step.choices.map((entry) => shortText(entry, 24)); if (choices.some((entry) => !entry) || !isChildSafeCoachingText(choices.join(" "))) return null;
+    const choices = step.choices.map((entry) => shortText(entry, 24)); if (choices.some((entry) => !entry) || !choices.every((entry) => isChildSafeCoachingText(entry as string))) return null;
     if (step.open_choice && choices.length < 2) return null;
     if (!step.open_choice && choices.length !== 0) return null;
     steps.push({ instruction, openChoice: step.open_choice, choices: choices as string[], guideShape: guideShape as GuideShape });
@@ -225,7 +234,8 @@ export function validateDrawingGuide(value: unknown): DrawingGuide | null {
 export function validateTeacherDraft(value: unknown): TeacherCoachingDraft | null {
   const item = record(value); if (!item) return null;
   const body = shortText(item.body, 180); const observation = shortText(item.observation, 100); const nextAction = shortText(item.next_action, 80);
-  if (!body || !observation || !nextAction || !drawingActionPattern.test(nextAction) || !isChildSafeCoachingText(`${body} ${observation} ${nextAction}`)) return null;
+  if (!body || !observation || !nextAction || !drawingActionPattern.test(nextAction)) return null;
+  if (![body, observation, nextAction].every(isChildSafeCoachingText)) return null;
   return { body, observation, nextAction };
 }
 

@@ -42,6 +42,13 @@ const praise = [
   "아이의 그림을 좋아해요.",
   "나는 아이의 그림을 좋아해요.",
   "선생님은 민수의 작품을 정말 좋아합니다.",
+  // 소유는 관형절로도 온다.
+  "네가 그린 그림을 좋아해요",
+  "민수가 그린 작품을 좋아합니다",
+  // 의문문으로 감싸도 평가자의 승인은 승인이다.
+  "내가 네 그림을 좋아하는 게 느껴지니?",
+  // 작품 문맥이 있으면 색 평가도 승인이다.
+  "네 그림의 색이 좋다",
   "색을 정말 잘 표현했네!",
   "네 그림이 정말 좋아!",
   "그림이 참 좋네",
@@ -95,6 +102,10 @@ const allowed = [
   "어떤 색이 좋아?",
   "빨강과 파랑 중 어느 색이 좋아?",
   "무슨 색이 좋아?",
+  // 맨몸의 색 선호는 아이가 고른 답이지 작품 평가가 아니다.
+  "빨간색이 좋아요",
+  "아이는 빨간색이 좋아요",
+  "파란색이 좋아",
   "좋아, 이제 다음 선을 그어 보자.",
   "무슨 색을 더 칠하고 싶어?",
   "이 자리에 무엇을 만들까?",
@@ -138,8 +149,21 @@ test("praise reaches neither the child coaching payload nor the teacher draft", 
     ],
   })), null);
 
+  // 필드를 이어 붙여 한 번에 검사하면 절 시작 규칙이 첫 필드에서만 걸린다.
+  assert.equal(validateStudentCoaching(studentPayload({
+    choices: [{ emoji: "🐶", label: "강아지", answer: "그림을 좋아해" }, { emoji: "🌳", label: "나무", answer: "나무를 그렸어요" }],
+  })), null, "뒤쪽 필드의 승인도 막아야 한다");
+  assert.equal(validateStudentCoaching(studentPayload({ growth_event: "그림을 좋아해" })), null);
+  // 전각 물음표를 쓴 정상 질문은 통과해야 한다(안전 검사와 물음표 개수 검사의 기준이 같아야 한다).
+  assert.ok(validateStudentCoaching(studentPayload({ question: "여기 동그란 건 무엇이니？" })), "전각 물음표 질문이 막히면 502가 난다");
+  // 아이가 고른 색 선호는 choice answer로 자주 온다.
+  assert.ok(validateStudentCoaching(studentPayload({
+    choices: [{ emoji: "🔴", label: "빨강", answer: "빨간색이 좋아요" }, { emoji: "🔵", label: "파랑", answer: "파란색이 좋아요" }],
+  })), "색 선호 답이 막히면 502가 난다");
+
   const draft = { body: "다음에는 배경을 하나 더 그려볼까?", observation: "선을 이어 그렸어요.", next_action: "지붕 위에 선을 하나 그려 보게 해 주세요." };
   assert.ok(validateTeacherDraft(draft), "정상 초안은 통과해야 한다");
+  assert.equal(validateTeacherDraft({ ...draft, observation: "그림을 좋아해" }), null, "뒤쪽 필드의 승인도 막아야 한다");
   assert.equal(validateTeacherDraft({ ...draft, body: "그림을 참 잘하는 아이구나." }), null);
   assert.equal(validateTeacherDraft({ ...draft, observation: "정말 잘하고 있어요." }), null);
 });
