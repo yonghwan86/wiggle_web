@@ -26,6 +26,25 @@ test("the byte estimate never under-reports the real serialized size", () => {
   }
 });
 
+test("the estimate holds for the longest ids server validation accepts", () => {
+  // 서버 검증을 통과하는 최대 길이 ID(80자)를 쓴 문서에서도 상한이어야 한다.
+  const longId = (prefix) => (prefix + "x".repeat(80)).slice(0, 80);
+  const ops = Array.from({ length: 400 }, (_, index) => ({
+    ...stroke(`long${index}`, 1),
+    opId: longId(`op${index}_`),
+    clientOpId: longId(`client${index}_`),
+  }));
+  const document = documentWith(ops);
+  assert.ok(validateDrawDocument(document), "최대 길이 ID 문서는 서버 검증을 통과한다");
+  assert.ok(estimateDocumentBytes(document) >= JSON.stringify(document).length, "긴 ID에서도 추정이 실제 이상이어야 한다");
+});
+
+test("ids longer than the server limit are rejected instead of silently truncated", () => {
+  const tooLong = "a".repeat(81);
+  assert.equal(validateDrawDocument(documentWith([{ ...stroke("idcheck", 1), opId: tooLong }])), null);
+  assert.equal(validateDrawDocument(documentWith([{ ...stroke("idcheck", 1), clientOpId: tooLong }])), null);
+});
+
 test("a single stroke estimate stays above its real cost", () => {
   const one = stroke("single", 900);
   assert.ok(estimateStrokeBytes(900) >= JSON.stringify(one).length);

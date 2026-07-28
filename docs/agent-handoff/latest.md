@@ -134,16 +134,26 @@
 | 12 | `DrawingStudio.tsx` | 남은 예산이 op 최소 크기보다 작아도 `canvasFull`이 false여서, 입력은 허용되고 커밋은 거부돼 **문서에 없는 선이 화면·썸네일에만** 남음 | `documentTooLarge`가 한 획 여유까지 요구하도록 하고, `pointerUp`이 `commitStroke` 실패를 받아 문서 상태로 다시 렌더링 후 안내 |
 | 13 | `lib/speech.ts` | 새 버튼이 소유권을 가져간 뒤에도 이전 speaker의 `stop()`과 두 타이머가 소유권 확인 없이 `env.cancel()`을 호출해 **남의 발화를 끊음** | `yieldControl()`로 소유자일 때만 취소하고, 소유권을 잃은 발화는 실패가 아니라 정상 중단으로 정리. 두 경쟁 상황 회귀 테스트 추가 |
 
+### 3차 감사에서 나온 후속 지적 3건 (high 1건 포함)
+
+| # | 파일 | 지적 | 처리 |
+|---|---|---|---|
+| 14 | `DrawingStudio.tsx` **(high)** | `recordCoachingAnswer`·`finishGuide`가 서버 응답을 기다린 뒤 **렌더 시점의 낡은 `documentState`** 로 저장한다. 대기 중 그린 선이 낡은 문서로 덮이고, `save()`가 최신 세대를 캡처해 그 편집까지 저장된 것으로 오인해 이탈 복구에서도 빠진다 | `save()`가 인자를 생략하면 항상 `documentStateRef.current`를 쓰도록 하고, 두 비동기 호출부를 그렇게 바꿈. AI 요청 본문도 같은 ref를 쓰게 통일 |
+| 15 | `lib/drawing-model.ts` | 크기 추정이 op당 고정 220자를 가정해, 검증을 통과하는 **80자 ID 문서에서는 상한이 아니었다**. 또 `slice(0, 80)` 뒤에 정규식을 검사해 81자 이상 ID가 잘린 채 통과 | 추정을 op의 실제 문자열 길이 합으로 바꿔 상한을 보장하고, ID는 원문 전체를 검사. 최대 길이 ID 문서와 81자 ID 거부 테스트 추가 |
+| 16 | `DrawingStudio.tsx` | 일반 저장 실패 경로의 `queueSave()`가 다시 던지면 예외가 `performSave` 밖으로 나가고, `askGrimi`·`requestAiGuide`가 선행 저장을 try 밖에서 기다려 **`grimiLoading`이 영구히 true** 로 잠긴다(그리미를 다시 못 부름) | 큐 저장 실패를 안에서 처리해 항상 false를 반환하게 하고, 두 호출부의 선행 저장을 try/finally 안으로 옮김 |
+
 ## 실행한 검증
 
 ```text
 npm.cmd run typecheck: 통과
 npm.cmd run lint: 통과
-npm.cmd test: 121/121 통과 (신규 25건 포함)
+npm.cmd test: 123/123 통과 (신규 27건 포함)
 npm.cmd run check:browser: 3뷰포트 전 항목 통과 (코칭·접기 실상태 포함)
 git diff --check: 통과
-codex exec 감사: 1차 FAIL 10건 → 수정 → 2차 FAIL 3건 → 수정 → 3차 진행
+codex exec 감사: 1차 FAIL 10건 → 2차 FAIL 3건 → 3차 FAIL 3건(high 1) → 전부 수정 후 4차 진행
 ```
+
+감사를 반복한 값이 컸다. 2·3차 지적 6건 중 4건이 **앞 라운드의 내 수정이 만든 것**이다(세대 캡처 시점, 발화 소유권 취소, 크기 추정 상한, 낡은 문서 저장). 동시성·한도 수정은 한 번에 맞히기 어려우므로, 이 코드를 다시 손대는 사람은 수정 뒤 반드시 재감사를 돌리는 것을 권한다.
 
 ## 실제 브라우저 검증
 

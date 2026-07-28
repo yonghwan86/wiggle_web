@@ -14,19 +14,31 @@ export function roundUnit(value: number) {
 }
 
 // 직렬화 크기의 보수적 상한. 스트로크마다 문서 전체를 JSON.stringify 하면
-// 큰 작품에서 손을 뗄 때마다 1MB를 문자열로 만든다. 실제보다 크게 잡아
-// 서버 한도에 닿기 전에 멈추도록 한다.
-const OP_OVERHEAD_BYTES = 220;
+// 큰 작품에서 손을 뗄 때마다 1MB를 문자열로 만든다. 실제보다 작게 잡으면
+// 클라이언트가 한도를 넘긴 문서를 커밋해 저장이 영구 실패하므로,
+// 고정값이 아니라 op의 실제 문자열 길이를 더해 상한을 보장한다.
+const OP_FIXED_BYTES = 120;
 const POINT_BYTES = 42;
 
-export function estimateDocumentBytes(document: DrawDocument) {
-  let points = 0;
-  for (const op of document.ops) points += op.points?.length ?? 0;
-  return 64 + document.ops.length * OP_OVERHEAD_BYTES + points * POINT_BYTES;
+function opBytes(op: DrawOp) {
+  return OP_FIXED_BYTES
+    + (op.opId?.length ?? 0) + (op.clientOpId?.length ?? 0) + (op.type?.length ?? 0)
+    + (op.at?.length ?? 0) + (op.tool?.length ?? 0) + (op.color?.length ?? 0)
+    + (op.shape?.length ?? 0) + (op.sticker?.length ?? 0)
+    + (op.points?.length ?? 0) * POINT_BYTES;
 }
 
+export function estimateDocumentBytes(document: DrawDocument) {
+  let bytes = 64;
+  for (const op of document.ops) bytes += opBytes(op);
+  return bytes;
+}
+
+// 이 클라이언트가 만드는 스트로크(op_ + 32자 hex, client_ + 32자 hex)의 상한.
+const CLIENT_OP_ID_BYTES = 40 + 40 + 32;
+
 export function estimateStrokeBytes(pointCount: number) {
-  return OP_OVERHEAD_BYTES + pointCount * POINT_BYTES;
+  return OP_FIXED_BYTES + CLIENT_OP_ID_BYTES + pointCount * POINT_BYTES;
 }
 
 type Point = { x: number; y: number; pressure?: number };
@@ -70,7 +82,8 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
   for (const raw of doc.ops) {
     if (!raw || typeof raw !== "object") return null;
     const op = raw as DrawOp;
-    if (!/^[a-zA-Z0-9_-]{8,80}$/.test(String(op.opId ?? "").slice(0, 80)) || !/^[a-zA-Z0-9_-]{8,80}$/.test(String(op.clientOpId ?? "").slice(0, 80)) || seen.has(op.clientOpId)) return null;
+    // slice(0, 80) 뒤에 검사하면 81자 이상 ID가 잘린 채 통과해 크기 상한이 깨진다.
+    if (!/^[a-zA-Z0-9_-]{8,80}$/.test(String(op.opId ?? "")) || !/^[a-zA-Z0-9_-]{8,80}$/.test(String(op.clientOpId ?? "")) || seen.has(op.clientOpId)) return null;
     seen.add(op.clientOpId);
     if (!["stroke", "fill", "shape", "sticker"].includes(op.type) || !Number.isFinite(Date.parse(op.at))) return null;
     if (op.type === "stroke") {

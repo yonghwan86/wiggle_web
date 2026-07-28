@@ -398,13 +398,20 @@ export function DrawingStudio() {
     } catch {
       const queued = { requestId, studentId: profile.studentId, url, body, createdAt, branchId: saveBranchId };
       if (options?.complete) await preserveDraft(queued, "완성한 그림을 기기에 안전하게 보관했어요");
-      else { await queueSave(queued); setSaveState("기기에 안전하게 보관됨"); }
+      // IndexedDB를 못 열면 queueSave도 던진다. 그 예외가 밖으로 나가면 호출부의
+      // 로딩 상태가 영구히 잠긴다(그리미 호출이 다시 안 됨).
+      else {
+        try { await queueSave(queued); setSaveState("기기에 안전하게 보관됨"); }
+        catch { setSaveState("지금은 저장할 수 없어요. 인터넷을 확인해 주세요"); }
+      }
       return false;
     }
   }, [artwork, saveBranchId]);
-  const save = useCallback((nextDocument: DrawDocument, options?: SaveOptions) => {
+  // 문서와 편집 세대를 같은 동기 구간에서 함께 캡처한다. 인자를 생략하면 항상 최신 화면 문서를 쓴다.
+  // 서버 응답을 기다린 뒤 렌더 시점의 documentState를 넘기면 그사이 그린 선이 되돌려진다.
+  const save = useCallback((nextDocument?: DrawDocument, options?: SaveOptions) => {
     const savingEdit = editSeqRef.current;
-    return runSerial(() => performSave(nextDocument, savingEdit, options));
+    return runSerial(() => performSave(nextDocument ?? documentStateRef.current, savingEdit, options));
   }, [performSave, runSerial]);
 
   useEffect(() => {
@@ -609,9 +616,10 @@ export function DrawingStudio() {
     if (!artwork || !canvasRef.current || grimiLoading) return;
     setGrimiOpen(true); setGrimiCollapsed(false); setGrimiLoading(true); setGrimiError(""); setCoaching(null); setAnswer(""); setAnswerLabel(""); setAnswerSaved(false); setAiGuide(null); setGuidePhase("independent");
     window.clearTimeout(saveTimer.current);
-    const saved = await save(documentState); if (!saved) { setGrimiLoading(false); setGrimiError("그림을 먼저 저장한 뒤 다시 불러 줘."); return; }
+    // 선행 저장은 반드시 try 안에서 기다린다. 밖에서 던지면 grimiLoading이 영구히 잠긴다.
     try {
-      const response = await studentFetch("/api/ai/coaching", { method: "POST", body: JSON.stringify({ action: "ask", requestId: coachingRequestId(), artworkId: artwork.id, expectedRevision: revisionRef.current, document: documentState, imageDataUrl: imageData(canvasRef.current, 1024), childChoice }) });
+      const saved = await save(); if (!saved) { setGrimiError("그림을 먼저 저장한 뒤 다시 불러 줘."); return; }
+      const response = await studentFetch("/api/ai/coaching", { method: "POST", body: JSON.stringify({ action: "ask", requestId: coachingRequestId(), artworkId: artwork.id, expectedRevision: revisionRef.current, document: documentStateRef.current, imageDataUrl: imageData(canvasRef.current, 1024), childChoice }) });
       const data = await response.json() as { error?: string; eventId?: string; coaching?: StudentCoaching };
       if (!response.ok || !data.eventId || !data.coaching) throw new Error(data.error ?? "그리미의 답을 받지 못했어요.");
       setCoaching({ ...data.coaching, eventId: data.eventId });
@@ -623,9 +631,9 @@ export function DrawingStudio() {
     if (!artwork || !canvasRef.current || guideTopic.trim().length < 2 || grimiLoading) return;
     setGrimiLoading(true); setGrimiError(""); setCoaching(null); setAnswer(""); setGuidePhase("independent");
     window.clearTimeout(saveTimer.current);
-    const saved = await save(documentState); if (!saved) { setGrimiLoading(false); setGrimiError("그림을 먼저 저장한 뒤 다시 해 줘."); return; }
     try {
-      const response = await studentFetch("/api/ai/coaching", { method: "POST", body: JSON.stringify({ action: "guide", requestId: coachingRequestId(), artworkId: artwork.id, expectedRevision: revisionRef.current, document: documentState, imageDataUrl: imageData(canvasRef.current, 1024), requestedTopic: guideTopic, childChoice }) });
+      const saved = await save(); if (!saved) { setGrimiError("그림을 먼저 저장한 뒤 다시 해 줘."); return; }
+      const response = await studentFetch("/api/ai/coaching", { method: "POST", body: JSON.stringify({ action: "guide", requestId: coachingRequestId(), artworkId: artwork.id, expectedRevision: revisionRef.current, document: documentStateRef.current, imageDataUrl: imageData(canvasRef.current, 1024), requestedTopic: guideTopic, childChoice }) });
       const data = await response.json() as { error?: string; eventId?: string; guide?: AiGuide };
       if (!response.ok || !data.eventId || !data.guide) throw new Error(data.error ?? "가이드를 만들지 못했어요.");
       setAiGuide({ ...data.guide, eventId: data.eventId }); setAiGuideStep(0); setGuidePhase("independent");
@@ -639,7 +647,8 @@ export function DrawingStudio() {
     try {
       const response = await studentFetch("/api/ai/coaching", { method: "POST", body: JSON.stringify({ action: "answer", artworkId: artwork.id, eventId: coaching.eventId, answer, newElements: [answerLabel || answer].filter(Boolean), currentStep: artwork.currentStep, document: documentState, imageDataUrl: imageData(canvasRef.current, 1024) }) });
       const data = await response.json() as { error?: string }; if (!response.ok) throw new Error(data.error ?? "과정을 남기지 못했어요.");
-      setAnswerSaved(true); setChildChoice(answer); void save(documentState);
+      // 서버 응답을 기다리는 동안 아이가 더 그렸을 수 있다. 렌더 시점 문서를 넘기면 그 선이 사라진다.
+      setAnswerSaved(true); setChildChoice(answer); void save(undefined, { currentStep: currentStepRef.current });
     } catch (cause) { setGrimiError(cause instanceof Error ? cause.message : "과정을 남기지 못했어요."); }
     finally { setGrimiLoading(false); }
   }
@@ -671,7 +680,7 @@ export function DrawingStudio() {
         currentStep: aiGuideStep, document: documentState, imageDataUrl: imageData(canvasRef.current, 1024),
       }) });
       const data = await response.json() as { error?: string }; if (!response.ok) throw new Error(data.error ?? "가이드 과정을 남기지 못했어요.");
-      closeGrimiState(); void save(documentState);
+      closeGrimiState(); void save(undefined, { currentStep: currentStepRef.current });
     } catch (cause) { setGrimiError(cause instanceof Error ? cause.message : "가이드 과정을 남기지 못했어요."); }
     finally { setGrimiLoading(false); }
   }
