@@ -18,6 +18,15 @@ const praise = [
   "네 그림을 좋아했다",
   "네 그림을 좋아할 거야",
   "네 그림을 좋아하네",
+  // 지시어가 없어도 작품 승인이다.
+  "그림을 좋아해.",
+  "작품을 정말 좋아합니다.",
+  "그림을 좋아했어요",
+  // 의문형 전처리가 원문을 지우면 그 안에 낀 금지어까지 검사 전에 사라진다.
+  "네 그림을 좋아칭찬?",
+  "네 그림을 좋아최고?",
+  "네 작품을 좋아평가?",
+  "네 그림을 좋아정답?",
   "색을 정말 잘 표현했네!",
   "네 그림이 정말 좋아!",
   "그림이 참 좋네",
@@ -121,6 +130,10 @@ test("tense and politeness variants are judged the same way at both final valida
     "네 그림을 좋아했다",
     "네 그림을 좋아할 거야",
     "네 그림을 좋아하네",
+    "그림을 좋아해.",
+    "작품을 정말 좋아합니다.",
+    "네 그림을 좋아칭찬?",
+    "네 작품을 좋아평가?",
   ];
   for (const text of approvals) {
     assert.equal(validateStudentCoaching(studentPayload({ growth_event: text })), null, `학생 코칭으로 새면 안 됨: ${text}`);
