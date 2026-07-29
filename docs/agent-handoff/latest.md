@@ -269,3 +269,15 @@ codex exec 감사: 초기 10 → 3 → 3(high 1) → 1 → 3 → 1 → PASS, 이
 8. 감사에서 **반박된** 3건이 정말 문제가 아닌지 재확인: ChatGPT Sites 인증 헤더 신뢰(worker가 인바운드 헤더를 지우지 않음), undo/redo의 setState 중첩, FamilyView의 `navigator.share` 호출 시점.
 9. Codex 1차 감사 지적 10건의 수정이 새 결함을 만들지 않았는지 — 특히 `editSeqRef` 세대 비교가 정상 저장을 미저장으로 남기지 않는지, flush 시 미저장 편집 보존 분기가 충돌 초안을 이중 기록하지 않는지, `commitStroke`의 크기 계산이 매 스트로크 `JSON.stringify`로 긴 세션에서 입력 지연을 만들지 않는지.
 10. `잘하-` 차단 확대가 정상 코칭 문구를 과도하게 거부하지 않는지 — 실제 모델 응답 표본으로 거부율 확인.
+
+## 2026-07-29 공동 개발 공유 전 검증
+
+기능 변경 기준 커밋 `2822dae`와 공유 준비용 저장소 설정을 대상으로 다시 검증했다. 개인별 Claude 권한 설정인 `.claude/settings.local.json`은 소스 공유 대상에서 제외했다.
+
+- `npm.cmd run typecheck`: 통과
+- `npm.cmd run lint`: 통과
+- `npm.cmd test`: 빌드 및 129개 테스트 모두 통과
+- `git diff --check`: 통과
+- `npm.cmd run check:browser -- http://localhost:3110`: 실제 headless Chrome에서 `320×568`, `390×844`, `844×390` 전 항목 통과
+
+이 검증은 공동 개발 브랜치를 안전하게 공유하기 위한 확인이다. `main` 병합, Sites 버전 저장 및 공개 배포는 수행하지 않았다. 실기기 iPad Safari·Android Chrome, 실제 아동 사용성, 실제 OpenAI 모델 응답의 거부율 검증은 여전히 남아 있다.
