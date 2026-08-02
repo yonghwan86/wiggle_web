@@ -10,7 +10,10 @@ const executableJavaScript = ts.transpileModule(entrySource, {
 const entryClient = await import(`data:text/javascript;base64,${Buffer.from(executableJavaScript).toString("base64")}`);
 const { classifyEntryError } = entryClient;
 
-const join = await readFile(new URL("../app/components/JoinClient.tsx", import.meta.url), "utf8");
+const join = (await readFile(new URL("../app/components/JoinClient.tsx", import.meta.url), "utf8")).replace(
+  /\r\n/g,
+  "\n",
+);
 
 test("a wrong class code is classified for code-field recovery, wrong pictures for password recovery", () => {
   assert.equal(classifyEntryError({ status: 404, action: "join", hasPersonalQrToken: false }), "code");

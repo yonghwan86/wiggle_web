@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
+const read = async (path) =>
+  (await readFile(new URL(path, import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
 test("Korean text wraps by word while code, passwords, emoji and canvas surfaces stay intact", async () => {
   const css = await read("../app/globals.css");
