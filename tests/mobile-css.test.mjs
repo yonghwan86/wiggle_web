@@ -50,14 +50,27 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(css, /\.save-conflict \{ top:auto; bottom:calc\(72px \+ env\(safe-area-inset-bottom\)\); \}/);
   assert.match(studio, /<span className="tool-icon" aria-hidden="true">✏️<\/span>연필/);
   assert.doesNotMatch(studio, /✒️|>펜<|>펜<\/button>/);
-  assert.match(studio, /className="tool-group" role="group" aria-label="그리기 도구"[\s\S]*aria-pressed=\{tool === "pen"\}[\s\S]*aria-pressed=\{tool === "crayon"\}[\s\S]*aria-pressed=\{tool === "eraser"\}/);
+  // 도구 그룹은 브러시(4)·만들기(2)·고치기(지우개+대칭)로 재편됐다. aria-pressed는 studioTool 기준.
+  assert.match(studio, /className="tool-group brush-group" role="group" aria-label="브러시"[\s\S]*aria-pressed=\{studioTool === "pencil"\}[\s\S]*aria-pressed=\{studioTool === "crayon"\}[\s\S]*aria-pressed=\{studioTool === "marker"\}[\s\S]*aria-pressed=\{studioTool === "watercolor"\}/);
+  assert.match(studio, /className="tool-group make-group" role="group" aria-label="채우기와 도형"/);
+  assert.match(studio, /className="tool-group edit-group" role="group" aria-label="고치기"[\s\S]*aria-pressed=\{studioTool === "eraser"\}/);
   assert.match(studio, /className="width-row" role="group" aria-label="선 굵기"/);
   assert.match(studio, /className="palette" role="group" aria-label="색 고르기"/);
   assert.match(studio, /className="history-row" role="group" aria-label="그리기 기록"[\s\S]*↶ 되돌리기[\s\S]*↷ 다시하기/);
   assert.match(finalMobile, /\.tool-panel \{[^}]*display:grid;[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\);[^}]*overflow:hidden;/);
   assert.match(finalMobile, /\.tool-panel \.tool-group \{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
-  assert.match(finalMobile, /\.tool-panel \.width-row \{[^}]*grid-template-columns:repeat\(3,minmax\(44px,1fr\)\)/);
+  assert.match(finalMobile, /\.tool-panel \.brush-group \{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  // shape-kind-row가 make/edit 사이에 끼어들 때 sparse 구멍이 생기지 않게 dense 백필을 쓴다.
+  assert.match(finalMobile, /\.tool-panel \{[^}]*grid-auto-flow:row dense;/);
+  assert.match(finalMobile, /\.tool-panel \.shape-kind-row \{[^}]*grid-template-columns:repeat\(4,minmax\(44px,1fr\)\)/);
+  // 굵기 5단이 한 줄에 44px 이상으로 들어간다.
+  assert.match(finalMobile, /\.tool-panel \.width-row \{[^}]*grid-template-columns:repeat\(5,minmax\(44px,1fr\)\)/);
   assert.match(finalMobile, /\.tool-panel \.palette \{[^}]*grid-template-columns:repeat\(6,minmax\(44px,1fr\)\)/);
+  // 가로 모드 블록: 지우개 아이콘 붕괴 방지 + 굵기 5버튼 flex 랩 배치.
+  const landscapeStart = css.indexOf("@media (max-width:900px) and (max-height:500px) and (orientation:landscape)");
+  const landscape = css.slice(landscapeStart, css.indexOf("@media", landscapeStart + 10));
+  assert.match(landscape, /\.tool-panel \.edit-group \.eraser-icon \{ width:22px; min-width:22px; \}/);
+  assert.match(landscape, /\.tool-panel \.width-row \{[^}]*display:flex; flex-wrap:wrap; justify-content:center;/);
   assert.match(finalMobile, /\.tool-panel \.history-row \{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.doesNotMatch(finalMobile, /\.tool-panel \{[^}]*overflow-x:auto|\.tool-panel \{[^}]*display:flex/);
   assert.match(finalMobile, /\.canvas-zone \{ container-type:size; \}/);

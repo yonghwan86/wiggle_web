@@ -61,7 +61,23 @@ export function renderDrawOperation(context: CanvasRenderingContext2D, op: DrawO
   if (!op.points?.length) return;
   context.save(); context.lineCap = "round"; context.lineJoin = "round";
   context.globalCompositeOperation = op.tool === "eraser" ? "destination-out" : "source-over";
-  context.strokeStyle = op.tool === "eraser" ? "#000000" : (op.color ?? "#1B3A57"); context.globalAlpha = op.tool === "crayon" ? 0.62 : 1; context.lineWidth = (op.width ?? 8) * size / 1024;
+  context.strokeStyle = op.tool === "eraser" ? "#000000" : (op.color ?? "#1B3A57");
+  // 도구별 질감: 크레용은 반투명, 수채붓은 더 옅고 넓게(겹칠수록 진해짐), 마커는 넓고 불투명.
+  context.globalAlpha = op.tool === "crayon" ? 0.62 : op.tool === "watercolor" ? 0.35 : 1;
+  const baseWidth = (op.width ?? 8) * (op.tool === "marker" ? 1.3 : op.tool === "watercolor" ? 1.6 : 1) * size / 1024;
+  context.lineWidth = baseWidth;
+  // 새 연필(pencil)만 필압으로 굵기가 변한다. 기존 "pen" 획에는 실필압이 이미 기록돼 있어
+  // 배율을 적용하면 저장 당시 이미지와 재생이 어긋나므로, pen은 예전과 동일한 균일 굵기로 남긴다.
+  if (op.tool === "pencil" && op.points.length > 1) {
+    for (let index = 1; index < op.points.length; index += 1) {
+      const start = op.points[index - 1]; const end = op.points[index];
+      const pressure = ((start.pressure ?? 0.5) + (end.pressure ?? 0.5)) / 2;
+      context.lineWidth = baseWidth * Math.max(0.35, Math.min(1.5, 0.5 + pressure));
+      context.beginPath(); context.moveTo(start.x * size, start.y * size); context.lineTo(end.x * size, end.y * size); context.stroke();
+    }
+    context.restore(); return;
+  }
+  if (op.tool === "pencil") context.lineWidth = baseWidth * Math.max(0.35, Math.min(1.5, 0.5 + (op.points[0].pressure ?? 0.5)));
   context.beginPath(); context.moveTo(op.points[0].x * size, op.points[0].y * size);
   for (const point of op.points.slice(1)) context.lineTo(point.x * size, point.y * size);
   if (op.points.length === 1) context.lineTo(op.points[0].x * size + 0.1, op.points[0].y * size + 0.1);

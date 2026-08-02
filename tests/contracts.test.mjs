@@ -26,7 +26,8 @@ test("enforces ownership, hashing, expiry, rate limits and idempotent revisions"
 test("keeps canvas contracts and guide data separate", async () => {
   const [model, studio, lessons, css, catalog] = await Promise.all([read("../lib/drawing-model.ts"), read("../app/components/DrawingStudio.tsx"), read("../lib/lesson-content.ts"), read("../app/globals.css"), import("../lib/lesson-content.ts")]);
   assert.match(model, /DOCUMENT_SIZE = 1024/); assert.match(model, /schemaVersion/); assert.match(model, /rendererVersion/); assert.match(model, /clientOpId/); assert.match(model, /STICKER_ALLOWLIST/);
-  assert.match(studio, />= 2\.5/); assert.match(studio, /guideRef/); assert.match(studio, /imageData\(canvasRef\.current, 256\)/); assert.match(studio, /imageData\(canvasRef\.current, 1024\)/);
+  // 썸네일·완성 PNG는 문서 기반(documentImage), 그리미 전송 이미지는 화면 기반(imageData 1024).
+  assert.match(studio, />= 2\.5/); assert.match(studio, /guideRef/); assert.match(studio, /documentImage\([^)]+, 256\)/); assert.match(studio, /imageData\(canvasRef\.current, 1024\)/);
   assert.match(studio, /strokeStyle = "#087EA8"[\s\S]*globalAlpha = 0\.92[\s\S]*lineWidth = 9[\s\S]*setLineDash\(\[20, 14\]\)/);
   assert.match(studio, /item\.step === lessonStep \+ 1/); assert.doesNotMatch(studio, /item\.step <= lessonStep \+ 1/);
   assert.match(studio, /<canvas ref=\{guideRef\}[\s\S]*<canvas ref=\{canvasRef\}/);
@@ -40,7 +41,8 @@ test("keeps canvas contracts and guide data separate", async () => {
   }
   assert.match(studio, /function guideControls\(\) \{[\s\S]*if \(!lessonGuideAvailable\) return null;[\s\S]*className="guide-demo-button"/);
   assert.match(studio, /step === lesson\.steps\.length - 1\) \{ setReflectionOpen\(true\); return; \}/);
-  assert.match(studio, /step === lesson\.steps\.length - 1 \? "그림 다 그렸어요" : "다음"/);
+  // 고학년 전환에서 마지막 단계 라벨을 "그림 다 그렸어요"→"완성하기"로 중립화했다.
+  assert.match(studio, /step === lesson\.steps\.length - 1 \? "완성하기" : "다음"/);
   assert.ok(catalog.LESSONS.every((lesson) => lesson.steps.filter((step) => step.choices?.length >= 2).length >= 2)); assert.match(lessons, /내 마음대로/);
 });
 

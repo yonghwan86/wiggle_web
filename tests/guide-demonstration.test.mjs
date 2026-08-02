@@ -29,8 +29,11 @@ test("guide demonstrations are replayable, skippable and student scoped", () => 
 test("the demonstration remains outside the child's artwork and timelapse", () => {
   assert.match(studio, /<canvas ref=\{guideRef\}[\s\S]*<canvas ref=\{canvasRef\}/);
   assert.match(css, /\.guide-canvas \{[^}]*pointer-events:none/);
-  assert.match(studio, /imageData\(canvasRef\.current, 256\)/);
+  // 저장 이미지는 문서에서 직접 렌더한다(documentImage) — 가이드 레이어는 물론
+  // 화면 캔버스의 미리보기 픽셀도 저장 이미지에 섞이지 않는다.
+  assert.match(studio, /thumbnailDataUrl: documentImage\(/);
   assert.doesNotMatch(studio, /imageData\(guideRef\.current/);
+  assert.doesNotMatch(studio, /thumbnailDataUrl: imageData\(/);
 });
 
 test("guide controls and notices remain touch friendly on mobile", () => {

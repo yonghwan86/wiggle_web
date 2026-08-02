@@ -16,5 +16,6 @@ test("ships public student and teacher entry surfaces", async () => {
   const [join, teacher, routes] = await Promise.all([read("../app/components/JoinClient.tsx"), read("../app/components/TeacherApp.tsx"), read("../app/components/DrawingStudio.tsx")]);
   assert.match(join, /수업 코드/); assert.match(join, /그림 비밀번호/); assert.match(join, /공유 태블릿/); assert.match(join, /QrCode/);
   assert.match(teacher, /교사 수업 진행실/); assert.match(teacher, /전체|우리 반 모두/); assert.match(teacher, /studentId/);
-  assert.match(routes, /pointerDown/); assert.match(routes, /그냥 그릴래/); assert.match(routes, /다 그렸어요/);
+  // 완성 버튼 문구는 고학년 전환에서 "다 그렸어요"→"완성"으로 중립화했다.
+  assert.match(routes, /pointerDown/); assert.match(routes, /그냥 그릴래/); assert.match(routes, />완성</);
 });

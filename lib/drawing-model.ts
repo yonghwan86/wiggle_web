@@ -2,6 +2,13 @@ export const DRAWING_SCHEMA_VERSION = 1;
 export const RENDERER_VERSION = 1;
 export const DOCUMENT_SIZE = 1024;
 export const STICKER_ALLOWLIST = ["star", "heart", "leaf", "cloud", "sparkle"] as const;
+// 서버 validator와 클라이언트가 같은 목록을 봐야 한다. 클라이언트만 넓히면
+// 새 도구로 그린 문서가 서버에서 거부돼 저장이 영구 실패한다.
+// "pen"은 필압 렌더 도입 전의 기존 획이다. 기존 작품에는 실필압(0.5가 아닌 값)이 이미 기록돼
+// 있으므로, pen에 필압 배율을 적용하면 저장된 썸네일·최종 PNG와 재생 렌더가 어긋난다.
+// 새 연필 획은 "pencil"로 저장해 필압 렌더를 새 획에만 적용한다.
+export const STROKE_TOOLS = ["pen", "pencil", "crayon", "marker", "watercolor", "eraser"] as const;
+export const STROKE_WIDTHS = [3, 8, 16, 30, 48] as const;
 // 서버가 거부하는 한도. 클라이언트가 같은 값을 미리 지켜야 저장이 영구 실패하지 않는다.
 export const MAX_DOCUMENT_OPS = 5000;
 export const MAX_STROKE_POINTS = 12000;
@@ -36,7 +43,9 @@ export function estimateDocumentBytes(document: DrawDocument) {
 }
 
 // 이 클라이언트가 만드는 스트로크(op_ + 32자 hex, client_ + 32자 hex)의 상한.
-const CLIENT_OP_ID_BYTES = 40 + 40 + 32;
+// 여유분 80은 type(6)+at(24)+tool(최장 watercolor 10)+color(7)+미러 접미사를 덮는다 —
+// 여유가 부족하면 estimateStrokeBytes가 실제 기여보다 작아져 상한 보증이 깨진다.
+const CLIENT_OP_ID_BYTES = 40 + 40 + 80;
 
 export function estimateStrokeBytes(pointCount: number) {
   return OP_FIXED_BYTES + CLIENT_OP_ID_BYTES + pointCount * POINT_BYTES;
@@ -44,14 +53,17 @@ export function estimateStrokeBytes(pointCount: number) {
 
 type Point = { x: number; y: number; pressure?: number };
 
+export type StrokeTool = (typeof STROKE_TOOLS)[number];
+export type StrokeWidth = (typeof STROKE_WIDTHS)[number];
+
 export type DrawOp = {
   opId: string;
   clientOpId: string;
   type: "stroke" | "fill" | "shape" | "sticker";
   at: string;
-  tool?: "pen" | "crayon" | "eraser";
+  tool?: StrokeTool;
   color?: string;
-  width?: 8 | 16 | 30;
+  width?: StrokeWidth;
   points?: Point[];
   shape?: "circle" | "triangle" | "rectangle" | "line";
   sticker?: (typeof STICKER_ALLOWLIST)[number];
@@ -97,7 +109,7 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
     // 제어문자가 섞인 날짜도 Date.parse는 통과시킨다. JSON에서 이스케이프되며 길이가 폭증하므로 길이를 먼저 막는다.
     if (!["stroke", "fill", "shape", "sticker"].includes(op.type) || op.at.length > 40 || !Number.isFinite(Date.parse(op.at))) return null;
     if (op.type === "stroke") {
-      if (!op.tool || !["pen", "crayon", "eraser"].includes(op.tool) || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length < 1 || op.points.length > MAX_STROKE_POINTS) return null;
+      if (!op.tool || !STROKE_TOOLS.includes(op.tool) || !STROKE_WIDTHS.includes((op.width ?? 0) as StrokeWidth) || !Array.isArray(op.points) || op.points.length < 1 || op.points.length > MAX_STROKE_POINTS) return null;
       if (op.tool !== "eraser" && !isHexColor(op.color)) return null;
       if (op.points.some(invalidPoint)) return null;
     }
@@ -105,7 +117,7 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
       if (!isHexColor(op.color) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint)) return null;
     }
     if (op.type === "shape") {
-      if (!op.shape || !["circle", "triangle", "rectangle", "line"].includes(op.shape) || !isHexColor(op.color) || ![8, 16, 30].includes(op.width ?? 0) || !Array.isArray(op.points) || op.points.length !== 2 || op.points.some(invalidPoint)) return null;
+      if (!op.shape || !["circle", "triangle", "rectangle", "line"].includes(op.shape) || !isHexColor(op.color) || !STROKE_WIDTHS.includes((op.width ?? 0) as StrokeWidth) || !Array.isArray(op.points) || op.points.length !== 2 || op.points.some(invalidPoint)) return null;
     }
     if (op.type === "sticker" && (!STICKER_ALLOWLIST.includes(op.sticker as (typeof STICKER_ALLOWLIST)[number]) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint))) return null;
   }

@@ -11,7 +11,10 @@ export function TimelapsePlayer({ document, onClose }: { document: DrawDocument;
   const canvasRef = useRef<HTMLCanvasElement>(null); const [frame, setFrame] = useState(document.ops.length); const [playing, setPlaying] = useState(false);
   const renderedFrame = useRef(-1); const renderedOps = useRef<DrawOp[] | null>(null);
   useEffect(() => {
-    const canvas = canvasRef.current; if (!canvas) return; const size = 640;
+    // 재생 래스터는 스튜디오와 같은 1024로 맞춘다. 640이면 픽셀 기반 채우기(floodFill)의
+    // 경계 판정이 스튜디오와 달라져, 얇은 굵기 + 밝은 색 조합에서 채우기가 선을 새어 나갈 수 있다.
+    // 표시 크기는 CSS가 줄인다.
+    const canvas = canvasRef.current; if (!canvas) return; const size = 1024;
     if (canvas.width !== size || canvas.height !== size) { canvas.width = size; canvas.height = size; renderedFrame.current = -1; renderedOps.current = null; }
     const context = canvas.getContext("2d"); if (!context) return;
     const canAdvanceOne = renderedOps.current === document.ops && renderedFrame.current + 1 === frame;

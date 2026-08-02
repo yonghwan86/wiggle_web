@@ -371,6 +371,113 @@ async function main() {
         check(!tools.error, `${viewport.name} 도구 패널 재현`, tools.error);
         if (!tools.error) check(tools.unreachable.length === 0, `${viewport.name} 모든 그리기 도구에 닿을 수 있음`, tools.unreachable);
 
+        // 4.5) 새 도구 실동작: 대칭 쌍·그룹 되돌리기·채우기·도형 2탭을 실제 입력 파이프라인으로 검증.
+        // 합성 PointerEvent는 setPointerCapture가 실패하므로 CDP Input.dispatchMouseEvent(실입력)를 쓴다.
+        const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+        const mouse = async (type, x, y, buttons) => cdp.send("Input.dispatchMouseEvent", { type, x: Math.round(x), y: Math.round(y), button: "left", buttons, clickCount: type === "mouseMoved" ? 0 : 1 }, session);
+        const dragOn = async (from, to) => {
+          await mouse("mousePressed", from.x, from.y, 1);
+          for (let step = 1; step <= 6; step += 1) await mouse("mouseMoved", from.x + (to.x - from.x) * step / 6, from.y + (to.y - from.y) * step / 6, 1);
+          await mouse("mouseReleased", to.x, to.y, 0); await sleep(120);
+        };
+        const tapOn = async (point) => { await mouse("mousePressed", point.x, point.y, 1); await mouse("mouseReleased", point.x, point.y, 0); await sleep(120); };
+        // 도구 버튼 클릭이 화면을 스크롤시키므로, 캔버스 좌표는 입력 직전마다 다시 잰다.
+        const probeCanvas = () => evaluate(cdp, session, `(async () => {
+          const canvas = document.querySelector('.draw-canvas'); if (!canvas) return { error: 'no-canvas' };
+          canvas.scrollIntoView({ block: 'center' });
+          await new Promise((done) => setTimeout(done, 120));
+          const rect = canvas.getBoundingClientRect();
+          return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        })()`);
+        const firstProbe = await probeCanvas();
+        check(!firstProbe.error, `${viewport.name} 새 도구 검증용 도화지 확인`, firstProbe.error);
+        if (!firstProbe.error) {
+          const at = (rect, fx, fy) => ({ x: rect.left + rect.width * fx, y: rect.top + rect.height * fy });
+          const clickPanelButton = (label) => evaluate(cdp, session, `(() => {
+            const target = [...document.querySelectorAll('.tool-panel button')].find((item) => (item.textContent || item.getAttribute('aria-label') || '').includes(${JSON.stringify(label)}));
+            if (!target) return false; target.scrollIntoView({ block: 'center' }); target.click(); return true;
+          })()`);
+          const pixel = (fx, fy) => evaluate(cdp, session, `(() => {
+            const canvas = document.querySelector('.draw-canvas'); const context = canvas.getContext('2d');
+            const data = context.getImageData(Math.round(${fx} * canvas.width), Math.round(${fy} * canvas.height), 1, 1).data;
+            return [data[0], data[1], data[2]];
+          })()`);
+          // 이전 뷰포트에서 저장된 그림이 남아 있으므로 절대색이 아니라 "그리기 전과 달라졌는가"로 판정한다.
+          const differs = (before, after) => Math.abs(before[0] - after[0]) + Math.abs(before[1] - after[1]) + Math.abs(before[2] - after[2]) > 24;
+
+          // 뷰포트마다 다른 줄에 그린다. 같은 좌표를 재사용하면 앞 뷰포트에서 저장된 그림 위에
+          // 같은 색을 다시 그려 "달라졌는가" 판정이 무력해진다.
+          const rowShift = VIEWPORTS.findIndex((item) => item.name === viewport.name) * 0.07;
+          const mirrorY = 0.85 - rowShift;
+
+          // 대칭: 남색을 고르고 왼쪽에 그은 획이 오른쪽 반사 지점에도 나타난다.
+          await evaluate(cdp, session, `(() => { const navy = [...document.querySelectorAll('.palette button')].find((item) => item.getAttribute('aria-label') === '남색'); if (navy) navy.click(); })()`);
+          const mirrorClicked = await clickPanelButton("대칭"); await sleep(150);
+          const beforeLeft = await pixel(0.25, mirrorY); const beforeRight = await pixel(0.75, mirrorY);
+          let rect = await probeCanvas();
+          await dragOn(at(rect, 0.2, mirrorY), at(rect, 0.3, mirrorY)); await sleep(300);
+          const mirrorLeft = await pixel(0.25, mirrorY); const mirrorRight = await pixel(0.75, mirrorY);
+          check(mirrorClicked && differs(beforeLeft, mirrorLeft) && differs(beforeRight, mirrorRight), `${viewport.name} 대칭이 반대쪽에도 그려짐`, { beforeLeft, mirrorLeft, mirrorRight });
+          // 되돌리기 1회로 쌍이 함께 사라져 그리기 전 픽셀로 복귀한다.
+          await clickPanelButton("되돌리기"); await sleep(300);
+          const undoLeft = await pixel(0.25, mirrorY); const undoRight = await pixel(0.75, mirrorY);
+          check(!differs(beforeLeft, undoLeft) && !differs(beforeRight, undoRight), `${viewport.name} 되돌리기 1회로 대칭 쌍이 함께 사라짐`, { beforeLeft, undoLeft, undoRight });
+          await clickPanelButton("대칭"); await sleep(120);
+
+          // 채우기: 뷰포트마다 다른 색을 쓴다. 같은 색이면 앞 뷰포트가 이미 채운 영역에서
+          // floodFill이 조기 반환해도(같은 색 위 채우기) 검사가 헛돌며 통과한다.
+          const fillPlans = [
+            { label: "빨간색", ok: (c) => c[0] > 180 && c[1] < 120 && c[2] < 120 },
+            { label: "노란색", ok: (c) => c[0] > 200 && c[1] > 170 && c[2] < 140 },
+            { label: "초록색", ok: (c) => c[1] > 120 && c[0] < 130 },
+          ];
+          const fillPlan = fillPlans[VIEWPORTS.findIndex((item) => item.name === viewport.name)] ?? fillPlans[0];
+          await clickPanelButton("채우기"); await sleep(120);
+          await evaluate(cdp, session, `(() => { const swatch = [...document.querySelectorAll('.palette button')].find((item) => item.getAttribute('aria-label') === ${JSON.stringify(fillPlan.label)}); if (swatch) swatch.click(); })()`);
+          await sleep(120);
+          const beforeFill = await pixel(0.9, 0.08);
+          rect = await probeCanvas();
+          await tapOn(at(rect, 0.9, 0.08)); await sleep(400);
+          const filled = await pixel(0.9, 0.08);
+          check(differs(beforeFill, filled) && fillPlan.ok(filled), `${viewport.name} 채우기 탭 한 번으로 영역이 채워짐`, { beforeFill, filled, color: fillPlan.label });
+
+          // 도형 2탭: 남색으로 시작점 탭 → 안내 → 끝점 탭으로 네모가 그려진다 (드래그 대안 경로).
+          await clickPanelButton("도형"); await sleep(150);
+          await evaluate(cdp, session, `(() => { const shape = [...document.querySelectorAll('.shape-kind-row button')].find((item) => item.getAttribute('aria-label') === '네모'); if (shape) shape.click(); })()`);
+          await evaluate(cdp, session, `(() => { const navy = [...document.querySelectorAll('.palette button')].find((item) => item.getAttribute('aria-label') === '남색'); if (navy) navy.click(); })()`);
+          await sleep(120);
+          // 세로 변이 뷰포트 간 겹치지 않도록 x도 함께 민다.
+          const shapeLeft = 0.55 + rowShift; const shapeTop = 0.3 + rowShift; const shapeBottom = 0.5 + rowShift; const shapeProbeY = 0.4 + rowShift;
+          const beforeEdge = await pixel(shapeLeft, shapeProbeY);
+          rect = await probeCanvas();
+          await tapOn(at(rect, shapeLeft, shapeTop));
+          const hintShown = await evaluate(cdp, session, `Boolean([...document.querySelectorAll('.canvas-start-hint')].find((item) => item.textContent.includes('끝나는 곳')))`);
+          check(hintShown, `${viewport.name} 도형 시작점 탭 뒤 끝점 안내가 보임`, hintShown);
+          rect = await probeCanvas();
+          await tapOn(at(rect, 0.8 + rowShift, shapeBottom)); await sleep(400);
+          const shapeEdge = await pixel(shapeLeft, shapeProbeY);
+          check(differs(beforeEdge, shapeEdge) && shapeEdge[2] > 40 && shapeEdge[0] < 120, `${viewport.name} 두 번째 탭으로 네모가 그려짐`, { beforeEdge, shapeEdge });
+
+          // 핀치 폴백(펜 없는 기기): 한 손가락으로 긋다 두 번째 손가락이 합류하면
+          // 진행 중 그리기를 버리고 핀치 확대가 실제로 시작돼야 한다.
+          rect = await probeCanvas();
+          const pinchCenter = at(rect, 0.5, 0.5);
+          const touch = (type, points) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points.map((point, index) => ({ x: Math.round(point.x), y: Math.round(point.y), id: index + 1 })) }, session);
+          await touch("touchStart", [{ x: pinchCenter.x - 15, y: pinchCenter.y }]);
+          await touch("touchMove", [{ x: pinchCenter.x - 25, y: pinchCenter.y }]);
+          await touch("touchStart", [{ x: pinchCenter.x - 25, y: pinchCenter.y }, { x: pinchCenter.x + 25, y: pinchCenter.y }]);
+          for (let step = 1; step <= 5; step += 1) await touch("touchMove", [{ x: pinchCenter.x - 25 - step * 14, y: pinchCenter.y }, { x: pinchCenter.x + 25 + step * 14, y: pinchCenter.y }]);
+          await touch("touchEnd", []);
+          await sleep(250);
+          const zoomScale = await evaluate(cdp, session, `(() => { const stack = document.querySelector('.canvas-stack'); const matrix = new DOMMatrix(getComputedStyle(stack).transform); return matrix.a; })()`);
+          check(zoomScale > 1.05, `${viewport.name} 손가락 두 개 핀치로 확대됨`, zoomScale);
+          await evaluate(cdp, session, `(() => { const reset = document.querySelector('.zoom-reset'); if (reset) reset.click(); })()`);
+          await sleep(200);
+
+          // 다음 검증(그리미·소감)을 위해 연필로 되돌린다.
+          await clickPanelButton("연필"); await sleep(120);
+        }
+
         const grimi = await evaluate(cdp, session, `(async () => {
           const wait = (ms) => new Promise((done) => setTimeout(done, ms));
           const open = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('그리미 부르기'));

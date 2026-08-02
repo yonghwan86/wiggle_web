@@ -2,8 +2,10 @@
 
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { DrawDocument, DrawOp, emptyDocument, estimateDocumentBytes, estimateStrokeBytes, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, roundUnit, validateDrawDocument } from "@/lib/drawing-model";
+import { DrawDocument, DrawOp, emptyDocument, estimateDocumentBytes, estimateStrokeBytes, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, roundUnit, STROKE_WIDTHS, StrokeWidth, validateDrawDocument } from "@/lib/drawing-model";
 import { renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
+import { mirrorOp, undoGroupSize } from "@/lib/symmetry";
+import { CanvasView, IDENTITY_VIEW, pinchView } from "@/lib/canvas-view";
 import { lessonBySlug, Lesson } from "@/lib/lesson-content";
 import { activeProfile, clearQueuedArtworkSaves, createSerialTaskQueue, deleteQueuedArtworkSave, flushSaves, queueSave, queuedArtworkDraft, resolveArtworkDraftDisposition, studentFetch } from "@/lib/client-session";
 
@@ -15,7 +17,9 @@ import { VoiceWhisperStatus } from "./VoiceWhisper";
 import { useModalDialog } from "./useModalDialog";
 
 const PALETTE = ["#1B3A57", "#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#8D6E63", "#F06292", "#4DD0E1", "#FFCC80", "#FFFFFF"];
-const COLOR_NAMES: Record<(typeof PALETTE)[number], string> = {
+// 기본 12색과 짝을 이루는 밝은 12색. 흰색 자리는 밝기 짝이 없어 회색을 준다.
+const LIGHT_PALETTE = ["#5B7FA0", "#F8A9A4", "#FFC97E", "#FFF0A6", "#A5D6A7", "#90CAF9", "#CE93D8", "#C4A79F", "#F8BBD0", "#B2EBF2", "#FFE0B2", "#9AA7B1"];
+const COLOR_NAMES: Record<string, string> = {
   "#1B3A57": "남색",
   "#E53935": "빨간색",
   "#FB8C00": "주황색",
@@ -28,7 +32,26 @@ const COLOR_NAMES: Record<(typeof PALETTE)[number], string> = {
   "#4DD0E1": "하늘색",
   "#FFCC80": "살구색",
   "#FFFFFF": "흰색",
+  "#5B7FA0": "밝은 남색",
+  "#F8A9A4": "밝은 빨간색",
+  "#FFC97E": "밝은 주황색",
+  "#FFF0A6": "밝은 노란색",
+  "#A5D6A7": "밝은 초록색",
+  "#90CAF9": "밝은 파란색",
+  "#CE93D8": "밝은 보라색",
+  "#C4A79F": "밝은 갈색",
+  "#F8BBD0": "밝은 분홍색",
+  "#B2EBF2": "밝은 하늘색",
+  "#FFE0B2": "밝은 살구색",
+  "#9AA7B1": "회색",
 };
+const STROKE_WIDTH_LABELS: Record<StrokeWidth, string> = { 3: "아주 얇게", 8: "얇게", 16: "보통", 30: "굵게", 48: "아주 굵게" };
+const SHAPE_KINDS = [
+  { kind: "line", icon: "─", label: "선" },
+  { kind: "circle", icon: "○", label: "동그라미" },
+  { kind: "triangle", icon: "△", label: "세모" },
+  { kind: "rectangle", icon: "□", label: "네모" },
+] as const;
 const QUICK_DRAW_TOPICS = [
   { emoji: "🚀", label: "우주" },
   { emoji: "🐶", label: "강아지" },
@@ -47,8 +70,12 @@ const FAVORITE_REASON_CHOICES = [
   { emoji: "💡", label: "내 생각", value: "내 생각을 그림에 넣어서" },
   { emoji: "💪", label: "해냈어", value: "어려워도 끝까지 그려서" },
 ];
-type Tool = "pen" | "crayon" | "eraser";
-type StrokeWidth = 8 | 16 | 30;
+// "pencil"이 새 연필 획(필압 렌더 적용). "pen"은 이 UI가 더 만들지 않는 기존 획 값이다.
+type BrushTool = "pencil" | "crayon" | "marker" | "watercolor";
+type Tool = BrushTool | "eraser";
+type StrokeMeta = { tool: Tool; color: string; width: StrokeWidth };
+type StudioTool = Tool | "fill" | "shape";
+type ShapeKind = "line" | "circle" | "triangle" | "rectangle";
 type GuidePhase = "independent" | "demo" | "practice";
 type TracePoint = { x: number; y: number };
 type GuideTrace = TracePoint[];
@@ -201,6 +228,15 @@ function imageData(canvas: HTMLCanvasElement, size: 256 | 1024) {
   return output.toDataURL("image/png");
 }
 
+// 저장 이미지는 화면 픽셀이 아니라 저장하려는 문서에서 직접 렌더한다. 화면 캔버스에는
+// 그리는 중 미리보기 같은 문서 밖 픽셀이 있을 수 있고, 그게 썸네일·완성 PNG에 섞이면 안 된다.
+// (그리미에 보내는 이미지는 "아이가 지금 보는 화면"이어야 하므로 imageData를 그대로 쓴다.)
+function documentImage(documentValue: DrawDocument, size: 256 | 1024) {
+  const output = document.createElement("canvas");
+  renderDocument(output, documentValue, size);
+  return output.toDataURL("image/png");
+}
+
 // 서버 한도에 부딪히면 그 작품은 이후 모든 저장이 실패해 조용히 유실된다.
 // 여유분을 두고 미리 멈춰서 아이가 완성으로 안내받게 한다.
 const STROKE_POINT_SPLIT = MAX_STROKE_POINTS - 500;
@@ -223,8 +259,16 @@ export function DrawingStudio() {
   const requestedLesson = useMemo(() => lessonBySlug(search.get("lesson") ?? ""), [search]);
   const [artwork, setArtwork] = useState<ArtworkPayload | null>(null); const [documentState, setDocumentState] = useState<DrawDocument>(emptyDocument());
   const lesson = useMemo(() => params.id === "new" ? requestedLesson : lessonBySlug(artwork?.lessonSlug), [artwork?.lessonSlug, params.id, requestedLesson]);
-  const [tool, setTool] = useState<Tool>("pen"); const [color, setColor] = useState(PALETTE[0]); const [width, setWidth] = useState<StrokeWidth>(16);
-  const [redo, setRedo] = useState<DrawOp[]>([]); const [guidePhase, setGuidePhase] = useState<GuidePhase>("independent"); const [guideDemoRun, setGuideDemoRun] = useState(0); const [guidePracticeTried, setGuidePracticeTried] = useState(false); const [saveState, setSaveState] = useState("불러오는 중"); const [editVersion, setEditVersion] = useState(0);
+  const [studioTool, setStudioTool] = useState<StudioTool>("pencil"); const [color, setColor] = useState(PALETTE[0]);
+  // 그리기 굵기와 지우개 굵기를 따로 기억한다. 하나로 합치면 지우개를 한 번 쓸 때마다
+  // 아이가 고른 그리기 굵기가 말없이 리셋된다.
+  const [drawWidth, setDrawWidth] = useState<StrokeWidth>(16); const [eraserWidth, setEraserWidth] = useState<StrokeWidth>(30);
+  const [paletteShade, setPaletteShade] = useState<"base" | "light">("base");
+  const [shapeKind, setShapeKind] = useState<ShapeKind>("line"); const [shapeStartPoint, setShapeStartPoint] = useState<{ x: number; y: number } | null>(null);
+  const [mirror, setMirror] = useState(false);
+  const [view, setView] = useState<CanvasView>(IDENTITY_VIEW);
+  const [penMode, setPenMode] = useState(false);
+  const [redo, setRedo] = useState<DrawOp[][]>([]); const [guidePhase, setGuidePhase] = useState<GuidePhase>("independent"); const [guideDemoRun, setGuideDemoRun] = useState(0); const [guidePracticeTried, setGuidePracticeTried] = useState(false); const [saveState, setSaveState] = useState("불러오는 중"); const [editVersion, setEditVersion] = useState(0);
   const [reflectionOpen, setReflectionOpen] = useState(false); const [favoritePart, setFavoritePart] = useState(""); const [favoriteReason, setFavoriteReason] = useState(""); const [message, setMessage] = useState("");
   const [teacherViewing, setTeacherViewing] = useState(false); const [conflictRevision, setConflictRevision] = useState<number | null>(null); const [conflictDraft, setConflictDraft] = useState<QueuedArtworkDraft | null>(null);
   const [grimiOpen, setGrimiOpen] = useState(false); const [grimiLoading, setGrimiLoading] = useState(false); const [grimiError, setGrimiError] = useState("");
@@ -236,7 +280,20 @@ export function DrawingStudio() {
   const [timelapseOpen, setTimelapseOpen] = useState(false);
   const [runSerial] = useState(createSerialTaskQueue);
   const [saveBranchId] = useState(() => `branch_${crypto.randomUUID().replaceAll("-", "")}`);
-  const canvasRef = useRef<HTMLCanvasElement>(null); const guideRef = useRef<HTMLCanvasElement>(null); const guideAnimationRef = useRef<number | null>(null); const activePoints = useRef(new Map<number, Array<{ x: number; y: number; pressure: number }>>()); const revisionRef = useRef(0); const initialized = useRef(false); const saveTimer = useRef<number | undefined>(undefined); const conflictDraftRef = useRef<QueuedArtworkDraft | null>(null); const completingRef = useRef(false); const documentStateRef = useRef(documentState); const currentStepRef = useRef(0); const loadingKeyRef = useRef<string | null>(null); const hydratedKeyRef = useRef<string | null>(null); const pendingSinceRef = useRef(0); const unsavedRef = useRef(false); const editSeqRef = useRef(0); const artworkRef = useRef<ArtworkPayload | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null); const guideRef = useRef<HTMLCanvasElement>(null); const guideAnimationRef = useRef<number | null>(null); const activePoints = useRef(new Map<number, Array<{ x: number; y: number; pressure: number }>>());
+  const wrapRef = useRef<HTMLDivElement>(null); const viewRef = useRef<CanvasView>(IDENTITY_VIEW); const penModeRef = useRef(false); const lastBrushRef = useRef<BrushTool>("pencil");
+  const shapeStartRef = useRef<{ x: number; y: number } | null>(null); const shapeDragRef = useRef<{ pointerId: number; origin: { x: number; y: number }; moved: boolean } | null>(null); const shapeSnapshotRef = useRef<ImageData | null>(null);
+  const gestureTouches = useRef(new Map<number, { x: number; y: number }>()); const gestureStartRef = useRef<{ at: number; moved: boolean } | null>(null); const lastTwoFingerTapRef = useRef(0);
+  // 그리기에 참여 중인 포인터의 마지막 화면 좌표. 두 번째 손가락이 오면 첫 손가락을
+  // 이 좌표로 핀치 제스처에 승격시켜야 자연스러운 두 손가락 확대가 성립한다.
+  const lastClientRef = useRef(new Map<number, { x: number; y: number }>());
+  // 획 시작 시점의 도구·색·굵기. 획 도중 다른 손이 도구 버튼을 눌러도 커밋은 시작 시점 기준이다.
+  const strokeMetaRef = useRef(new Map<number, StrokeMeta>());
+  // 채우기는 눌렀을 때가 아니라 뗐을 때 커밋한다. 손바닥 다접촉이 각각 fill이 되는 사고 방지.
+  const pendingFillRef = useRef<{ pointerId: number; point: { x: number; y: number } } | null>(null);
+  // 반투명 브러시(크레용·수채)의 라이브 미리보기용 스냅숏. 세그먼트를 겹쳐 그리면
+  // 이음마다 알파가 중첩돼 커밋 결과보다 훨씬 진해 보이므로, 매 이동마다 복원 후 전체를 한 번에 그린다.
+  const strokeSnapshotRef = useRef<ImageData | null>(null); const revisionRef = useRef(0); const initialized = useRef(false); const saveTimer = useRef<number | undefined>(undefined); const conflictDraftRef = useRef<QueuedArtworkDraft | null>(null); const completingRef = useRef(false); const documentStateRef = useRef(documentState); const currentStepRef = useRef(0); const loadingKeyRef = useRef<string | null>(null); const hydratedKeyRef = useRef<string | null>(null); const pendingSinceRef = useRef(0); const unsavedRef = useRef(false); const editSeqRef = useRef(0); const artworkRef = useRef<ArtworkPayload | null>(null);
 
   const createOrLoad = useCallback(async () => {
     const loadKey = params.id === "new" ? `new:${search.toString()}` : params.id;
@@ -352,6 +409,8 @@ export function DrawingStudio() {
     };
   }, [currentGuideTraces, guideDemoRun, guidePhase, markCurrentGuideSeen]);
   useEffect(() => { const poll = async () => { try { const response = await studentFetch("/api/student"); const data = await response.json() as { messages?: Array<{ body: string }>; teacherViewing?: boolean }; setMessage(data.messages?.at(-1)?.body ?? ""); setTeacherViewing(Boolean(data.teacherViewing)); } catch {} }; void poll(); const timer = window.setInterval(poll, 5000); return () => clearInterval(timer); }, []);
+  // 이 기기에서 펜을 한 번이라도 쓰면 펜 모드를 기억한다. 수업 중 첫 터치부터 손바닥이 안전해진다.
+  useEffect(() => { try { if (localStorage.getItem("wiggle:pen-mode") === "1") { penModeRef.current = true; setPenMode(true); } } catch {} }, []);
 
   // savingEdit은 save() 호출 시점에 캡처해 넘긴다. 직렬 큐에서 실제 실행될 때 읽으면
   // 대기 중에 생긴 새 편집의 세대를 잡아, 그 편집까지 저장된 것으로 오인한다.
@@ -370,7 +429,7 @@ export function DrawingStudio() {
     if (existingDraft) {
       if (options?.complete) {
         const requestId = mutationId(); const previousTime = Date.parse(existingDraft.save.createdAt); const createdAt = new Date(Math.max(Date.now(), Number.isFinite(previousTime) ? previousTime + 1 : 0)).toISOString();
-        const upgradedBody = JSON.stringify({ ...(JSON.parse(existingDraft.save.body) as Record<string, unknown>), requestId, document: documentStateRef.current, currentStep: currentStepRef.current, thumbnailDataUrl: imageData(canvasRef.current, 256), complete: true, finalDataUrl: imageData(canvasRef.current, 1024), reflection: options.reflection });
+        const upgradedBody = JSON.stringify({ ...(JSON.parse(existingDraft.save.body) as Record<string, unknown>), requestId, document: documentStateRef.current, currentStep: currentStepRef.current, thumbnailDataUrl: documentImage(documentStateRef.current, 256), complete: true, finalDataUrl: documentImage(documentStateRef.current, 1024), reflection: options.reflection });
         await preserveDraft({ requestId, studentId: profile.studentId, url: existingDraft.save.url, body: upgradedBody, createdAt, branchId: saveBranchId, conflict: true, conflictRevision: existingDraft.save.conflictRevision }, "완성한 그림과 소감을 기기에 안전하게 보관했어요");
       } else {
         setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요");
@@ -378,13 +437,13 @@ export function DrawingStudio() {
       return false;
     }
     const requestId = mutationId(); const url = `/api/artworks/${artwork.id}`; const createdAt = new Date().toISOString();
-    const body = JSON.stringify({ requestId, expectedRevision: revisionRef.current, document: nextDocument, currentStep: options?.currentStep ?? artwork.currentStep, thumbnailDataUrl: imageData(canvasRef.current, 256), complete: options?.complete ?? false, finalDataUrl: options?.complete ? imageData(canvasRef.current, 1024) : undefined, reflection: options?.reflection });
+    const body = JSON.stringify({ requestId, expectedRevision: revisionRef.current, document: nextDocument, currentStep: options?.currentStep ?? artwork.currentStep, thumbnailDataUrl: documentImage(nextDocument, 256), complete: options?.complete ?? false, finalDataUrl: options?.complete ? documentImage(nextDocument, 1024) : undefined, reflection: options?.reflection });
     setSaveState(navigator.onLine ? "저장 중…" : "기기에 보관 중");
     try {
       const response = await studentFetch(url, { method: "PUT", body }); const data = await response.json() as { error?: string; serverRevision?: number; revision?: number };
       if (response.status === 409) {
         const serverRevision = typeof data.serverRevision === "number" ? data.serverRevision : revisionRef.current;
-        const conflictBody = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), document: documentStateRef.current, currentStep: currentStepRef.current, thumbnailDataUrl: imageData(canvasRef.current, 256), finalDataUrl: options?.complete ? imageData(canvasRef.current, 1024) : undefined });
+        const conflictBody = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), document: documentStateRef.current, currentStep: currentStepRef.current, thumbnailDataUrl: documentImage(documentStateRef.current, 256), finalDataUrl: options?.complete ? documentImage(documentStateRef.current, 1024) : undefined });
         await preserveDraft({ requestId, studentId: profile.studentId, url, body: conflictBody, createdAt, branchId: saveBranchId, conflict: true, conflictRevision: serverRevision }, "다른 저장과 겹쳤어요"); return false;
       }
       if (response.status >= 400 && response.status < 500) {
@@ -505,93 +564,319 @@ export function DrawingStudio() {
   }, [artworkId, flushCurrentArtwork]);
 
   function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) { const rect = event.currentTarget.getBoundingClientRect(); return { x: roundUnit(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))), y: roundUnit(Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))), pressure: roundUnit(event.pressure || 0.5) }; }
-  function chooseTool(nextTool: Tool) {
-    setTool(nextTool);
-    setWidth(nextTool === "eraser" ? 30 : 16);
+  const width = studioTool === "eraser" ? eraserWidth : drawWidth;
+  function clearShapeStart() { shapeStartRef.current = null; setShapeStartPoint(null); }
+  function chooseStudioTool(next: StudioTool) {
+    setStudioTool(next);
+    if (next === "pencil" || next === "crayon" || next === "marker" || next === "watercolor") lastBrushRef.current = next;
+    if (next !== "shape") clearShapeStart();
   }
+  function chooseWidth(value: StrokeWidth) { if (studioTool === "eraser") setEraserWidth(value); else setDrawWidth(value); }
+  function enablePenMode() {
+    if (penModeRef.current) return;
+    penModeRef.current = true; setPenMode(true);
+    try { localStorage.setItem("wiggle:pen-mode", "1"); } catch {}
+  }
+  // 공유 기기에서 펜을 잃어버려도 손가락으로 그릴 수 있어야 한다. 펜이 다시 닿으면
+  // pointerDown에서 자동으로 재활성화되므로 해제해도 손바닥 안전은 유지된다.
+  function disablePenMode() {
+    penModeRef.current = false; setPenMode(false);
+    try { localStorage.removeItem("wiggle:pen-mode"); } catch {}
+  }
+  function resetViewToFit() { viewRef.current = IDENTITY_VIEW; setView(IDENTITY_VIEW); }
+  function newOperationId() { return crypto.randomUUID().replaceAll("-", ""); }
   // 한 스트로크만으로도 서버 한도(직렬화 1.25MB, ops 5000)를 넘길 수 있다.
   // 넘길 만큼 길면 들어갈 수 있는 데까지만 남기고 그리기를 멈춘다.
-  function fitStrokePoints(points: Array<{ x: number; y: number; pressure: number }>) {
-    const budget = DOCUMENT_BYTES_WARN - estimateDocumentBytes(documentStateRef.current);
+  // 대칭이 켜져 있으면 같은 획이 두 벌 저장되므로 예산을 벌 수로 나눈다.
+  function fitStrokePoints(points: Array<{ x: number; y: number; pressure: number }>, copies: number) {
+    const budget = Math.floor((DOCUMENT_BYTES_WARN - estimateDocumentBytes(documentStateRef.current)) / copies);
     if (budget <= 0 || estimateStrokeBytes(0) >= budget) return [];
     if (estimateStrokeBytes(points.length) <= budget) return points;
     const allowed = Math.floor((budget - estimateStrokeBytes(0)) / (estimateStrokeBytes(1) - estimateStrokeBytes(0)));
     return points.slice(0, Math.max(0, allowed));
   }
-  function commitStroke(points: Array<{ x: number; y: number; pressure: number }>) {
-    if (documentStateRef.current.ops.length >= OPS_WARN_THRESHOLD) return false;
-    const fitted = fitStrokePoints(points);
-    if (!fitted.length) return false;
-    const operationId = crypto.randomUUID().replaceAll("-", "");
-    const op: DrawOp = { opId: `op_${operationId}`, clientOpId: `client_${operationId}`, type: "stroke", at: new Date().toISOString(), tool, color: tool === "eraser" ? undefined : color, width, points: fitted };
+  // 함께 커밋된 묶음(대칭 쌍)은 한 번의 편집이다. 되돌리기도 lib/symmetry의 쌍 규칙으로 함께 지워진다.
+  function commitOps(ops: DrawOp[]) {
+    if (documentStateRef.current.ops.length + ops.length > OPS_WARN_THRESHOLD) return false;
     markEdited();
-    documentStateRef.current = { ...documentStateRef.current, ops: [...documentStateRef.current.ops, op] };
+    documentStateRef.current = { ...documentStateRef.current, ops: [...documentStateRef.current.ops, ...ops] };
     setDocumentState(documentStateRef.current); setRedo([]); setEditVersion((value) => value + 1);
+    return true;
+  }
+  // meta는 획이 시작된 시점의 도구·색·굵기다. 커밋 시점의 state를 읽으면
+  // 획 도중 다른 손이 도구 버튼을 눌렀을 때 획이 통째로 폐기되거나 잘못된 도구로 커밋된다.
+  function commitStroke(points: Array<{ x: number; y: number; pressure: number }>, meta: StrokeMeta) {
+    const fitted = fitStrokePoints(points, mirror ? 2 : 1);
+    if (!fitted.length) return false;
+    const operationId = newOperationId();
+    const op: DrawOp = { opId: `op_${operationId}`, clientOpId: `client_${operationId}`, type: "stroke", at: new Date().toISOString(), tool: meta.tool, color: meta.tool === "eraser" ? undefined : meta.color, width: meta.width, points: fitted };
+    if (!commitOps(mirror ? [op, mirrorOp(op)] : [op])) return false;
     return fitted.length === points.length;
+  }
+  function commitFill(point: { x: number; y: number }) {
+    const operationId = newOperationId();
+    const op: DrawOp = { opId: `op_${operationId}`, clientOpId: `client_${operationId}`, type: "fill", at: new Date().toISOString(), color, points: [{ x: point.x, y: point.y }] };
+    commitOps(mirror ? [op, mirrorOp(op)] : [op]);
+  }
+  function commitShape(start: { x: number; y: number }, end: { x: number; y: number }) {
+    // 점 하나 크기의 도형은 실수 탭이다. 커밋하지 않아야 2탭 흐름에서 시작점을 다시 찍을 수 있다.
+    if (Math.hypot(end.x - start.x, end.y - start.y) < 0.012) return false;
+    const operationId = newOperationId();
+    const op: DrawOp = { opId: `op_${operationId}`, clientOpId: `client_${operationId}`, type: "shape", at: new Date().toISOString(), shape: shapeKind, color, width: drawWidth, points: [{ x: start.x, y: start.y }, { x: end.x, y: end.y }] };
+    return commitOps(mirror ? [op, mirrorOp(op)] : [op]);
+  }
+  function previewShape(canvas: HTMLCanvasElement, start: { x: number; y: number }, end: { x: number; y: number }) {
+    const context = canvas.getContext("2d"); if (!context) return;
+    if (shapeSnapshotRef.current) context.putImageData(shapeSnapshotRef.current, 0, 0);
+    const preview: DrawOp = { opId: "preview_op", clientOpId: "preview_client", type: "shape", at: "2000-01-01T00:00:00.000Z", shape: shapeKind, color, width: drawWidth, points: [start, end] };
+    renderDrawOperation(context, preview, canvas.width);
+    if (mirror) renderDrawOperation(context, mirrorOp(preview), canvas.width);
+  }
+  function startGestureTouch(event: ReactPointerEvent<HTMLCanvasElement>) {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    gestureTouches.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (gestureTouches.current.size === 2) gestureStartRef.current = { at: performance.now(), moved: false };
+  }
+  // 그리기 참여 중인 포인터가 있는가 (스트로크·도형 드래그·채우기 대기).
+  function engagedByOther(pointerId: number) {
+    if (activePoints.current.size > 0 && !activePoints.current.has(pointerId)) return true;
+    if (shapeDragRef.current && shapeDragRef.current.pointerId !== pointerId) return true;
+    if (pendingFillRef.current && pendingFillRef.current.pointerId !== pointerId) return true;
+    return false;
+  }
+  // 두 번째 손가락이 오면 진행 중이던 그리기를 폐기하고, 기존 손가락을 마지막 좌표로
+  // 핀치 제스처에 승격시킨다. 승격 없이 버리면 gestureTouches가 1개뿐이라 핀치가 영영 시작되지 않는다.
+  function promoteEngagedToGesture(canvas: HTMLCanvasElement) {
+    const engaged = new Set<number>([...activePoints.current.keys()]);
+    if (shapeDragRef.current) engaged.add(shapeDragRef.current.pointerId);
+    if (pendingFillRef.current) engaged.add(pendingFillRef.current.pointerId);
+    for (const pointerId of engaged) {
+      const last = lastClientRef.current.get(pointerId);
+      if (last) gestureTouches.current.set(pointerId, last);
+      else if (canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+    }
+    activePoints.current.clear(); strokeMetaRef.current.clear(); strokeSnapshotRef.current = null;
+    shapeDragRef.current = null; shapeSnapshotRef.current = null; pendingFillRef.current = null;
+    renderDocument(canvas, documentStateRef.current);
   }
   function endStroke(event: ReactPointerEvent<HTMLCanvasElement>) {
     activePoints.current.delete(event.pointerId);
+    strokeMetaRef.current.delete(event.pointerId); lastClientRef.current.delete(event.pointerId); strokeSnapshotRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     renderDocument(event.currentTarget, documentStateRef.current);
   }
   function pointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType === "pen") enablePenMode();
+    // 펜 모드: 손 터치는 절대 그리지 않는다(손바닥 안전). 손가락은 확대·이동 제스처 전용이다.
+    // 펜이 없는 기기: 첫 손가락은 그리고, 그리는 중 두 번째 손가락이 오면
+    // 진행 중이던 그리기를 폐기하고 두 손가락 모두 핀치 제스처로 전환한다.
+    if (event.pointerType === "touch") {
+      if (penModeRef.current) { startGestureTouch(event); return; }
+      if (engagedByOther(event.pointerId)) {
+        promoteEngagedToGesture(event.currentTarget); startGestureTouch(event); return;
+      }
+      if (gestureTouches.current.size > 0) { startGestureTouch(event); return; }
+    }
     if (conflictDraftRef.current) { setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return; }
-    if (canvasFull) { setSaveState("종이가 가득 찼어요. ‘다 그렸어요’를 눌러 완성해요"); return; }
+    if (canvasFull) { setSaveState("종이가 가득 찼어요. ‘완성’을 눌러 완성해요"); return; }
     // 한 번에 한 포인터만 그린다. 그렇지 않으면 태블릿에 얹은 손바닥 접촉이 각각 별도의 선이 된다.
     if (event.pointerType === "mouse" && event.button !== 0) return;
-    if (activePoints.current.size > 0 && !activePoints.current.has(event.pointerId)) return;
+    if (engagedByOther(event.pointerId)) return;
     if (guidePhase === "demo") stopGuideDemoForPractice();
     event.preventDefault();
     const first = canvasPoint(event);
+    lastClientRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (studioTool === "fill") {
+      // 커밋은 뗐을 때. 눌렀을 때 커밋하면 손바닥의 접촉 하나하나가 fill이 된다.
+      event.currentTarget.setPointerCapture(event.pointerId);
+      pendingFillRef.current = { pointerId: event.pointerId, point: { x: first.x, y: first.y } };
+      return;
+    }
+    if (studioTool === "shape") {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      shapeDragRef.current = { pointerId: event.pointerId, origin: first, moved: false };
+      const context = event.currentTarget.getContext("2d");
+      shapeSnapshotRef.current = context ? context.getImageData(0, 0, event.currentTarget.width, event.currentTarget.height) : null;
+      if (shapeStartRef.current) previewShape(event.currentTarget, shapeStartRef.current, first);
+      return;
+    }
+    const meta: StrokeMeta = { tool: studioTool, color, width };
+    strokeMetaRef.current.set(event.pointerId, meta);
     event.currentTarget.setPointerCapture(event.pointerId); activePoints.current.set(event.pointerId, [first]);
-    renderLiveStroke(event.currentTarget, tool, color, width, [first]);
+    // 반투명 브러시는 미리보기를 스냅숏 복원 방식으로 그린다 (세그먼트 알파 중첩 방지).
+    if (meta.tool === "crayon" || meta.tool === "watercolor") {
+      const context = event.currentTarget.getContext("2d");
+      strokeSnapshotRef.current = context ? context.getImageData(0, 0, event.currentTarget.width, event.currentTarget.height) : null;
+    } else strokeSnapshotRef.current = null;
+    renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, [first]);
+    if (mirror) renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, [{ ...first, x: 1 - first.x }]);
   }
   function pointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (gestureTouches.current.has(event.pointerId)) {
+      const previous = gestureTouches.current.get(event.pointerId)!;
+      const current = { x: event.clientX, y: event.clientY };
+      if (gestureTouches.current.size >= 2) {
+        const other = [...gestureTouches.current.entries()].find(([id]) => id !== event.pointerId);
+        const wrap = wrapRef.current;
+        if (other && wrap) {
+          const rect = wrap.getBoundingClientRect();
+          const local = (touch: { x: number; y: number }) => ({ x: touch.x - rect.left, y: touch.y - rect.top });
+          const next = pinchView(viewRef.current, [local(previous), local(other[1])], [local(current), local(other[1])], rect.width);
+          viewRef.current = next; setView(next);
+        }
+        if (gestureStartRef.current && Math.hypot(current.x - previous.x, current.y - previous.y) > 6) gestureStartRef.current.moved = true;
+      }
+      gestureTouches.current.set(event.pointerId, current);
+      event.preventDefault(); return;
+    }
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    lastClientRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pendingFillRef.current?.pointerId === event.pointerId) { event.preventDefault(); return; }
+    const drag = shapeDragRef.current;
+    if (drag && drag.pointerId === event.pointerId) {
+      event.preventDefault();
+      const next = canvasPoint(event);
+      if (!drag.moved && Math.hypot((next.x - drag.origin.x) * 1024, (next.y - drag.origin.y) * 1024) >= 10) drag.moved = true;
+      const origin = shapeStartRef.current ?? drag.origin;
+      if (drag.moved || shapeStartRef.current) previewShape(event.currentTarget, origin, next);
+      return;
+    }
     const points = activePoints.current.get(event.pointerId); if (!points) return;
+    const meta = strokeMetaRef.current.get(event.pointerId); if (!meta) return;
     const next = canvasPoint(event); const last = points.at(-1);
     if (last && Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= 2.5) {
       event.preventDefault(); points.push(next);
-      renderLiveStroke(event.currentTarget, tool, color, width, [last, next]);
+      if (strokeSnapshotRef.current) {
+        // 반투명 브러시: 스냅숏 복원 후 누적 획 전체를 한 번에 그려 커밋 결과와 같은 알파로 보인다.
+        const context = event.currentTarget.getContext("2d");
+        if (context) context.putImageData(strokeSnapshotRef.current, 0, 0);
+        renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, points);
+        if (mirror) renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, points.map((point) => ({ ...point, x: 1 - point.x })));
+      } else {
+        renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, [last, next]);
+        if (mirror) renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, [{ ...last, x: 1 - last.x }, { ...next, x: 1 - next.x }]);
+      }
       // 손을 떼지 않고 계속 문지르면 한 스트로크가 서버 한도를 넘는다. 화면은 그대로 두고
       // 안쪽에서만 끊어 이어 붙인다. 한도에 닿으면 그 자리에서 입력을 끝낸다.
       if (points.length >= STROKE_POINT_SPLIT) {
-        const wholeStrokeFit = commitStroke(points.slice());
-        if (!wholeStrokeFit) { endStroke(event); return; }
+        // 획 도중 저장 충돌이 세워졌으면 문서를 더 편집하지 않는다 (충돌 초안 편집 금지 불변).
+        if (conflictDraftRef.current) { endStroke(event); setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return; }
+        const wholeStrokeFit = commitStroke(points.slice(), meta);
+        if (!wholeStrokeFit) { endStroke(event); setSaveState("종이가 가득 찼어요. ‘완성’을 눌러 완성해요"); return; }
         activePoints.current.set(event.pointerId, [next]);
+        if (strokeSnapshotRef.current) {
+          // 분할 커밋 뒤에는 방금 커밋된 획이 포함된 문서로 스냅숏을 새로 뜬다.
+          renderDocument(event.currentTarget, documentStateRef.current);
+          const context = event.currentTarget.getContext("2d");
+          strokeSnapshotRef.current = context ? context.getImageData(0, 0, event.currentTarget.width, event.currentTarget.height) : null;
+        }
       }
     }
   }
+  function releaseGesturePointer(event: ReactPointerEvent<HTMLCanvasElement>) {
+    gestureTouches.current.delete(event.pointerId); lastClientRef.current.delete(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
   function pointerUp(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (gestureTouches.current.has(event.pointerId)) {
+      gestureTouches.current.delete(event.pointerId);
+      const started = gestureStartRef.current;
+      if (started && gestureTouches.current.size <= 1) {
+        // 두 손가락 짧은 탭 두 번 = 화면 맞춤. (스케치북 강좌와 같은 제스처)
+        if (!started.moved && performance.now() - started.at < 320) {
+          const now = performance.now();
+          if (now - lastTwoFingerTapRef.current < 500) { resetViewToFit(); lastTwoFingerTapRef.current = 0; }
+          else lastTwoFingerTapRef.current = now;
+        }
+        gestureStartRef.current = null;
+      }
+      lastClientRef.current.delete(event.pointerId);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      return;
+    }
+    const pendingFill = pendingFillRef.current;
+    if (pendingFill && pendingFill.pointerId === event.pointerId) {
+      pendingFillRef.current = null; lastClientRef.current.delete(event.pointerId);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      if (conflictDraftRef.current) { setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return; }
+      event.preventDefault();
+      commitFill(pendingFill.point);
+      return;
+    }
+    const drag = shapeDragRef.current;
+    if (drag && drag.pointerId === event.pointerId) {
+      shapeDragRef.current = null; shapeSnapshotRef.current = null; lastClientRef.current.delete(event.pointerId);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      if (conflictDraftRef.current) { renderDocument(event.currentTarget, documentStateRef.current); setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return; }
+      event.preventDefault();
+      const end = canvasPoint(event);
+      const pending = shapeStartRef.current;
+      if (pending) {
+        // 2탭 경로의 두 번째 탭. 실패(너무 작음·한도)면 미리보기만 걷어낸다.
+        clearShapeStart();
+        if (!commitShape(pending, end)) renderDocument(event.currentTarget, documentStateRef.current);
+      } else if (drag.moved) {
+        if (!commitShape(drag.origin, end)) renderDocument(event.currentTarget, documentStateRef.current);
+      } else {
+        // 움직이지 않은 탭 = 2탭 경로의 시작점 찍기. 표식은 캔버스 픽셀이 아니라 DOM 점으로 —
+        // 픽셀에 그리면 문서에 없는 초록 점이 썸네일·완성 PNG·AI 전송 이미지에 섞인다.
+        shapeStartRef.current = drag.origin; setShapeStartPoint(drag.origin);
+      }
+      return;
+    }
     const points = activePoints.current.get(event.pointerId);
+    const meta = strokeMetaRef.current.get(event.pointerId);
     if (conflictDraftRef.current) {
       // 미리보기로 그려 둔 픽셀을 지우지 않으면 문서에 없는 선이 썸네일에 섞인다.
       endStroke(event);
       setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요"); return;
     }
-    if (!points?.length) return; event.preventDefault();
-    activePoints.current.delete(event.pointerId);
+    if (!points?.length || !meta) return; event.preventDefault();
+    activePoints.current.delete(event.pointerId); strokeMetaRef.current.delete(event.pointerId); strokeSnapshotRef.current = null; lastClientRef.current.delete(event.pointerId);
     // 한도에 막혀 커밋되지 않으면 미리보기 픽셀을 문서 상태로 되돌린다.
-    if (!commitStroke(points)) {
+    if (!commitStroke(points, meta)) {
       endStroke(event);
-      setSaveState("종이가 가득 찼어요. ‘다 그렸어요’를 눌러 완성해요");
+      setSaveState("종이가 가득 찼어요. ‘완성’을 눌러 완성해요");
       return;
     }
-    if ((guidePhase === "practice" || guidePhase === "demo") && lessonGuideAvailable && tool !== "eraser") setGuidePracticeTried(true);
+    if ((guidePhase === "practice" || guidePhase === "demo") && lessonGuideAvailable && meta.tool !== "eraser") setGuidePracticeTried(true);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+  // 취소는 폐기다. pointerUp으로 흘리면 취소 이벤트의 (0,0) 좌표로 도형이 커밋되는 사고가 난다.
+  // 단 스트로크는 이벤트 좌표가 아니라 누적 점으로 커밋하므로, 그려 둔 만큼 살리는 기존 동작을 유지한다.
+  function pointerCancel(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (gestureTouches.current.has(event.pointerId)) { gestureStartRef.current = null; releaseGesturePointer(event); return; }
+    if (pendingFillRef.current?.pointerId === event.pointerId) {
+      pendingFillRef.current = null; lastClientRef.current.delete(event.pointerId);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      return;
+    }
+    if (shapeDragRef.current?.pointerId === event.pointerId) {
+      shapeDragRef.current = null; shapeSnapshotRef.current = null; lastClientRef.current.delete(event.pointerId);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      renderDocument(event.currentTarget, documentStateRef.current);
+      return;
+    }
+    pointerUp(event);
   }
   function undo() {
     if (conflictDraftRef.current) return;
-    const op = documentStateRef.current.ops.at(-1); if (!op) return;
+    // 대기 중인 도형 시작점은 지운다. 문서가 바뀐 뒤 보이지 않는 옛 시작점에서 도형이 커밋되는 사고 방지.
+    clearShapeStart();
+    // 대칭 쌍은 한 번의 되돌리기로 함께 지워진다. 반쪽만 지우면 아이가 이해할 수 없는 상태가 된다.
+    const groupSize = undoGroupSize(documentStateRef.current.ops); if (!groupSize) return;
+    const group = documentStateRef.current.ops.slice(-groupSize);
     markEdited();
-    setDocumentState((current) => ({ ...current, ops: current.ops.slice(0, -1) }));
-    setRedo((items) => [...items, op]); setEditVersion((value) => value + 1);
+    setDocumentState((current) => ({ ...current, ops: current.ops.slice(0, -groupSize) }));
+    setRedo((items) => [...items, group]); setEditVersion((value) => value + 1);
   }
   function redoLast() {
     if (conflictDraftRef.current) return;
-    const op = redo.at(-1); if (!op) return;
+    clearShapeStart();
+    const group = redo.at(-1); if (!group) return;
     markEdited();
-    setDocumentState((current) => ({ ...current, ops: [...current.ops, op] }));
+    setDocumentState((current) => ({ ...current, ops: [...current.ops, ...group] }));
     setRedo((items) => items.slice(0, -1)); setEditVersion((value) => value + 1);
   }
   async function complete() {
@@ -615,7 +900,7 @@ export function DrawingStudio() {
     const copyRequestId = stableKey.length >= 8 ? `copy_${stableKey}` : mutationId();
     const created = await studentFetch("/api/artworks", { method: "POST", body: JSON.stringify({ clientArtworkId, learningMode: artwork.learningMode, lessonSlug: artwork.lessonSlug, title: `${artwork.title} 사본`, topic: artwork.topic, intent: artwork.intent }) });
     const createdData = await created.json() as { error?: string; artwork?: { id: string } }; if (!created.ok || !createdData.artwork) { setSaveState(createdData.error ?? "사본을 만들지 못했어요"); return; }
-    const response = await studentFetch(`/api/artworks/${createdData.artwork.id}`, { method: "PUT", body: JSON.stringify({ requestId: copyRequestId, expectedRevision: 0, document: draft.document, currentStep: draft.currentStep, thumbnailDataUrl: imageData(canvasRef.current, 256), complete: draft.complete, finalDataUrl: draft.finalDataUrl, reflection: draft.reflection }) });
+    const response = await studentFetch(`/api/artworks/${createdData.artwork.id}`, { method: "PUT", body: JSON.stringify({ requestId: copyRequestId, expectedRevision: 0, document: draft.document, currentStep: draft.currentStep, thumbnailDataUrl: documentImage(draft.document, 256), complete: draft.complete, finalDataUrl: draft.finalDataUrl, reflection: draft.reflection }) });
     if (!response.ok) { const data = await response.json() as { error?: string }; setSaveState(data.error ?? "사본을 저장하지 못했어요"); return; }
     // 충돌 상태는 화면을 떠날 때까지 유지한다. 여기서 먼저 풀면 이동이 끝나기 전에
     // 도화지가 다시 편집 가능해지고, 그 자동 저장이 복구된 충돌 문서를 원본 작품에
@@ -731,8 +1016,8 @@ export function DrawingStudio() {
     : guidePhase === "practice"
       ? guidePracticeTried ? "한 번 따라 했어! 이제 점선 없이도 해볼까?" : "이제 네 차례야. 초록 점에서 시작해 봐."
       : "";
-  const nextStepLabel = lesson ? step === lesson.steps.length - 1 ? "그림 다 그렸어요" : "다음" : "다음";
-  return <main className="studio"><header className="studio-header"><a className="icon-button" href="/student" aria-label="그림 나가기">←</a><Logo compact /><div className="artwork-name"><b>{artwork.title}</b><small>{saveState}</small></div>{lesson && !aiGuide && <span className="step-count">{step + 1}/{lesson.steps.length}</span>}<button className="button ghost compact" onClick={() => setTimelapseOpen(true)}>과정 보기</button><button className="button grimi-button compact" disabled={grimiLoading || Boolean(conflictDraft)} onClick={askGrimi}>✨ 그리미 부르기</button><button className="button primary compact" disabled={Boolean(conflictDraft)} onClick={() => setReflectionOpen(true)}>다 그렸어요</button></header>
+  const nextStepLabel = lesson ? step === lesson.steps.length - 1 ? "완성하기" : "다음" : "다음";
+  return <main className="studio"><header className="studio-header"><a className="icon-button" href="/student" aria-label="그림 나가기">←</a><Logo compact /><div className="artwork-name"><b>{artwork.title}</b><small>{saveState}</small></div>{lesson && !aiGuide && <span className="step-count">{step + 1}/{lesson.steps.length}</span>}<button className="button ghost compact" onClick={() => setTimelapseOpen(true)}>과정 보기</button><button className="button grimi-button compact" disabled={grimiLoading || Boolean(conflictDraft)} onClick={askGrimi}>✨ 그리미 부르기</button><button className="button primary compact" disabled={Boolean(conflictDraft)} onClick={() => setReflectionOpen(true)}>완성</button></header>
     {conflictDraft && <div className="save-conflict" role="alert"><b>{conflictDraft.save.conflict ? "다른 기기 저장과 겹쳤어요." : "아직 서버에 보내지 못한 그림이 있어요."}</b><span>{conflictDraft.save.conflict ? "이 작품의 충돌 초안을 복구했어요." : "인터넷이 연결되면 다시 저장해요."} 지금은 편집을 멈추고 새 사본으로도 보관할 수 있어요.{conflictRevision !== null ? ` (서버 버전 ${conflictRevision})` : ""}</span>{!conflictDraft.save.conflict && <button onClick={flushCurrentArtwork}>다시 저장</button>}<button onClick={saveAsCopy}>새 사본으로 저장</button></div>}
     {teacherViewing && <div className="teacher-viewing" role="status">선생님이 지금 내 그림을 보고 있어요.</div>}
     <VoiceWhisperStatus />
@@ -745,8 +1030,8 @@ export function DrawingStudio() {
         {!aiGuide && !grimiLoading && <div className="guide-request"><label>그리고 싶은 게 있어?<div className="quick-topic-row">{QUICK_DRAW_TOPICS.map((topic) => <button type="button" aria-pressed={guideTopic === topic.label} onClick={() => setGuideTopic(topic.label)} key={topic.label}><span>{topic.emoji}</span>{topic.label}</button>)}</div><input maxLength={60} value={guideTopic} onChange={(event) => setGuideTopic(event.target.value)} placeholder="예: 우주 자전거" /></label><button className="button secondary full child-primary-action" disabled={guideTopic.trim().length < 2} onClick={requestAiGuide}><span aria-hidden="true">🪄</span>단계 가이드 만들기</button></div>}
         </div>}{!grimiCollapsed && <button className="text-button free-exit" onClick={dismissGrimi}>그냥 내 마음대로 그릴래</button>}
       </aside> : lesson && <aside className="step-panel"><div className="reference-tile"><span>{lesson.emoji}</span><small>{lesson.topic} {lesson.mode === "observe" ? "관찰하기" : "그려 보기"}</small></div><p className="eyebrow">지금 할 일</p><div className="spoken-prompt lesson-spoken-prompt"><h2>{lesson.steps[step].instruction}</h2><SpeakButton text={`${lesson.steps[step].instruction}${lesson.steps[step].choices?.length ? ` 고를 수 있어요. ${lesson.steps[step].choices.join(", ")}` : ""}`} compact /></div>{lesson.steps[step].choices?.length && <div className="choice-chips">{lesson.steps[step].choices.map((choice) => <button aria-pressed={childChoice === choice} onClick={() => setChildChoice(choice)} key={choice}>{choice}</button>)}</div>}{guideControls()}<div className="step-actions"><button disabled={Boolean(conflictDraft) || step === 0} onClick={() => changeLessonStep(-1)}>⬅️ 이전</button><button disabled={Boolean(conflictDraft)} onClick={() => { if (step === lesson.steps.length - 1) { setReflectionOpen(true); return; } changeLessonStep(1); }}><span aria-hidden="true">{step === lesson.steps.length - 1 ? "⭐" : "➡️"}</span>{nextStepLabel}</button></div><button className="text-button" onClick={chooseIndependentDrawing}>🎨 그냥 그릴래</button></aside>}
-      <section className="canvas-zone"><div className="canvas-wrap">{guideNotice && <div className="guide-notice" role="status" aria-live="polite">{guidePhase === "demo" ? "✏️" : "🟢"} {guideNotice}</div>}{!lesson && !aiGuide && !documentState.ops.length && <div className="canvas-start-hint" role="status">✏️ 연필로 하얀 종이에 그어 봐!</div>}{canvasFull && <div className="canvas-full-hint" role="alert"><span aria-hidden="true">🌟</span> 종이가 가득 찼어! ‘다 그렸어요’를 눌러 완성하자.<SpeakButton text="종이가 가득 찼어요. 위에 있는 다 그렸어요를 눌러 작품을 완성해요." compact /></div>}<canvas ref={guideRef} className={guidePhase !== "independent" && lessonGuideAvailable ? "guide-canvas" : "guide-canvas hidden"} aria-hidden="true" /><canvas ref={canvasRef} className="draw-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} aria-disabled={Boolean(conflictDraft)} aria-label="그림 그리는 도화지" /></div></section>
-      <aside className="tool-panel" aria-label="그리기 도구 모음"><p className="tool-section-label tools-label">무엇으로 그릴까?</p><div className="tool-group" role="group" aria-label="그리기 도구"><button type="button" aria-pressed={tool === "pen"} onClick={() => chooseTool("pen")}><span className="tool-icon" aria-hidden="true">✏️</span>연필</button><button type="button" aria-pressed={tool === "crayon"} onClick={() => chooseTool("crayon")}><span className="tool-icon" aria-hidden="true">🖍️</span>크레용</button><button type="button" aria-pressed={tool === "eraser"} onClick={() => chooseTool("eraser")}><span className="tool-icon eraser-icon" aria-hidden="true"><i /><i /></span>지우개</button></div><p className="tool-section-label width-label">얼마나 굵게?</p><div className="width-row" role="group" aria-label="선 굵기">{([8, 16, 30] as const).map((value) => { const label = value === 8 ? "얇게" : value === 16 ? "보통" : "굵게"; return <button type="button" aria-label={label} aria-pressed={width === value} onClick={() => setWidth(value)} key={value}><i aria-hidden="true" style={{ width: Math.max(8, value * .72), height: Math.max(8, value * .72) }} /><small>{label}</small></button>; })}</div><p className="tool-section-label color-label">무슨 색?</p><div className="palette" role="group" aria-label="색 고르기">{PALETTE.map((value) => <button type="button" aria-label={COLOR_NAMES[value]} title={COLOR_NAMES[value]} aria-pressed={color === value} onClick={() => { setColor(value); if (tool === "eraser") chooseTool("pen"); }} key={value} style={{ background: value }} />)}</div><div className="history-row" role="group" aria-label="그리기 기록"><button type="button" onClick={undo} disabled={Boolean(conflictDraft) || !documentState.ops.length}>↶ 되돌리기</button><button type="button" onClick={redoLast} disabled={Boolean(conflictDraft) || !redo.length}>↷ 다시하기</button></div></aside></div>
+      <section className="canvas-zone"><div className="canvas-wrap" ref={wrapRef}>{guideNotice && <div className="guide-notice" role="status" aria-live="polite">{guidePhase === "demo" ? "✏️" : "🟢"} {guideNotice}</div>}{!lesson && !aiGuide && !documentState.ops.length && !shapeStartPoint && <div className="canvas-start-hint" role="status">✏️ 하얀 종이에 그어 봐!</div>}{shapeStartPoint && <div className="canvas-start-hint" role="status">🟢 끝나는 곳을 콕 눌러 줘!</div>}{canvasFull && <div className="canvas-full-hint" role="alert"><span aria-hidden="true">🌟</span> 종이가 가득 찼어! ‘완성’을 눌러 완성하자.<SpeakButton text="종이가 가득 찼어요. 위에 있는 완성을 눌러 작품을 완성해요." compact /></div>}<div className="canvas-stack" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}><canvas ref={guideRef} className={guidePhase !== "independent" && lessonGuideAvailable ? "guide-canvas" : "guide-canvas hidden"} aria-hidden="true" />{mirror && <div className="mirror-axis" aria-hidden="true" />}{shapeStartPoint && <div className="shape-start-dot" aria-hidden="true" style={{ left: `${shapeStartPoint.x * 100}%`, top: `${shapeStartPoint.y * 100}%` }} />}<canvas ref={canvasRef} className="draw-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} aria-disabled={Boolean(conflictDraft)} aria-label="그림 그리는 도화지" /></div>{view.scale > 1.01 && <button type="button" className="zoom-reset" onClick={resetViewToFit}>🔍 {Math.round(view.scale * 100)}% · 화면 맞춤</button>}</div></section>
+      <aside className="tool-panel" aria-label="그리기 도구 모음"><p className="tool-section-label tools-label">도구</p><div className="tool-group brush-group" role="group" aria-label="브러시"><button type="button" aria-pressed={studioTool === "pencil"} onClick={() => chooseStudioTool("pencil")}><span className="tool-icon" aria-hidden="true">✏️</span>연필</button><button type="button" aria-pressed={studioTool === "crayon"} onClick={() => chooseStudioTool("crayon")}><span className="tool-icon" aria-hidden="true">🖍️</span>크레용</button><button type="button" aria-pressed={studioTool === "marker"} onClick={() => chooseStudioTool("marker")}><span className="tool-icon" aria-hidden="true">🖊️</span>마커</button><button type="button" aria-pressed={studioTool === "watercolor"} onClick={() => chooseStudioTool("watercolor")}><span className="tool-icon" aria-hidden="true">🖌️</span>수채붓</button></div><div className="tool-group make-group" role="group" aria-label="채우기와 도형"><button type="button" aria-pressed={studioTool === "fill"} onClick={() => chooseStudioTool("fill")}><span className="tool-icon" aria-hidden="true">🪣</span>채우기</button><button type="button" aria-pressed={studioTool === "shape"} onClick={() => chooseStudioTool("shape")}><span className="tool-icon" aria-hidden="true">⬠</span>도형</button></div>{studioTool === "shape" && <div className="shape-kind-row" role="group" aria-label="도형 고르기">{SHAPE_KINDS.map((item) => <button type="button" aria-label={item.label} title={item.label} aria-pressed={shapeKind === item.kind} onClick={() => { setShapeKind(item.kind); clearShapeStart(); }} key={item.kind}>{item.icon}</button>)}</div>}<div className="tool-group edit-group" role="group" aria-label="고치기"><button type="button" aria-pressed={studioTool === "eraser"} onClick={() => chooseStudioTool("eraser")}><span className="tool-icon eraser-icon" aria-hidden="true"><i /><i /></span>지우개</button><button type="button" aria-pressed={mirror} onClick={() => setMirror((value) => !value)}><span className="tool-icon" aria-hidden="true">🦋</span>대칭</button></div><p className="tool-section-label width-label">굵기</p><div className="width-row" role="group" aria-label="선 굵기">{STROKE_WIDTHS.map((value) => <button type="button" aria-label={STROKE_WIDTH_LABELS[value]} title={STROKE_WIDTH_LABELS[value]} aria-pressed={width === value} onClick={() => chooseWidth(value)} key={value}><i aria-hidden="true" style={{ width: Math.max(6, Math.min(34, value * .72)), height: Math.max(6, Math.min(34, value * .72)) }} /><small>{STROKE_WIDTH_LABELS[value]}</small></button>)}</div><p className="tool-section-label color-label">색</p><div className="palette-shade" role="group" aria-label="색 밝기"><button type="button" aria-pressed={paletteShade === "base"} onClick={() => setPaletteShade("base")}>기본</button><button type="button" aria-pressed={paletteShade === "light"} onClick={() => setPaletteShade("light")}>밝게</button></div><div className="palette" role="group" aria-label="색 고르기">{(paletteShade === "base" ? PALETTE : LIGHT_PALETTE).map((value) => <button type="button" aria-label={COLOR_NAMES[value]} title={COLOR_NAMES[value]} aria-pressed={color === value} onClick={() => { setColor(value); if (studioTool === "eraser") chooseStudioTool(lastBrushRef.current); }} key={value} style={{ background: value }} />)}</div>{penMode && <button type="button" className="pen-mode-note" onClick={disablePenMode}>✍️ 펜으로 그려요 · 손가락으로 그리려면 눌러요</button>}<div className="history-row" role="group" aria-label="그리기 기록"><button type="button" onClick={undo} disabled={Boolean(conflictDraft) || !documentState.ops.length}>↶ 되돌리기</button><button type="button" onClick={redoLast} disabled={Boolean(conflictDraft) || !redo.length}>↷ 다시하기</button></div></aside></div>
     {timelapseOpen && <TimelapsePlayer document={documentState} onClose={() => setTimelapseOpen(false)} />}
     {reflectionOpen && <div className="modal-backdrop" ref={reflectionDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="reflection-title"><section className="reflection-modal"><button className="modal-close" onClick={() => setReflectionOpen(false)} aria-label="닫기">×</button><span className="modal-emoji">🌟</span><div className="reflection-title-row"><h2 id="reflection-title">내 그림을 소개해 줘!</h2><SpeakButton text="제일 마음에 드는 곳과 그 이유를 그림으로 골라요." /></div><div className="reflection-question"><p>마음에 드는 곳은?</p><div className="reflection-choice-grid">{FAVORITE_PART_CHOICES.map((choice) => <button type="button" aria-pressed={favoritePart === choice.value} onClick={() => setFavoritePart(choice.value)} key={choice.value}><span>{choice.emoji}</span>{choice.label}</button>)}</div></div><div className="reflection-question"><p>왜 마음에 들어?</p><div className="reflection-choice-grid">{FAVORITE_REASON_CHOICES.map((choice) => <button type="button" aria-pressed={favoriteReason === choice.value} onClick={() => setFavoriteReason(choice.value)} key={choice.value}><span>{choice.emoji}</span>{choice.label}</button>)}</div></div><details className="reflection-write-more"><summary>⌨️ 직접 글로 쓰고 싶어요</summary><label htmlFor="favorite-part">마음에 드는 곳<input id="favorite-part" maxLength={80} value={favoritePart} onChange={(event) => setFavoritePart(event.target.value)} placeholder="예: 무지개 꼬리" /></label><label htmlFor="favorite-reason">마음에 드는 이유<textarea id="favorite-reason" maxLength={180} value={favoriteReason} onChange={(event) => setFavoriteReason(event.target.value)} placeholder="예: 내가 고른 색이 좋아서" /></label></details><div className="modal-actions"><button className="button secondary" onClick={() => setReflectionOpen(false)}>🎨 더 그릴래</button><button className="button primary child-primary-action" disabled={!favoritePart || !favoriteReason} onClick={complete}><span aria-hidden="true">⭐</span>작품 완성</button></div></section></div>}
   </main>;
