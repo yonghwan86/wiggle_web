@@ -4,10 +4,10 @@
   "project": "wiggle_web",
   "branch": "claude/field-test-fixes",
   "baseCommit": "17676fe917edc6f532983e8597d6c7005eb45eb9",
-  "candidateCommit": "1d8a98caad4f32a93cd6a1c7d193954c00ad185e",
+  "candidateCommit": "a14d3231b06c23aae2e417e25fd26edf5a45bb3e",
   "report": "docs/agent-handoff/latest.md",
-  "task": "Field-test fixes: cat lesson, teacher message, brush contrast",
-  "summary": "고양이 레슨 몸 단계 추가, 선생님 메시지 닫기, 마커·수채붓 질감 구분을 수정했다",
+  "task": "Field-test fixes + QR single-screen entry",
+  "summary": "고양이 레슨 몸 단계, 메시지 닫기, 브러시 구분에 더해 QR 입장을 3학년 기본 단일 화면으로 전환했다",
   "releaseGate": "codex_go_only",
-  "generatedAt": "2026-08-02T14:00:50.118Z"
+  "generatedAt": "2026-08-02T15:08:27.190Z"
 }
