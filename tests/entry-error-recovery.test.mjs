@@ -59,15 +59,15 @@ test("a wrong class code highlights the code field and offers calling the teache
   assert.match(join, /손을 들고 선생님을 불러요\./);
 });
 
-test("qr entry skips the class-code field and walks nickname, animal then password", () => {
-  assert.match(join, /qrFlow && mode === "join"/);
-  assert.match(join, /qrStep === 0 \? "내 별명을 골라요" : qrStep === 1 \? "내 동물을 골라요" : "그림 비밀번호를 만들어요"/);
-  assert.match(join, /qr-step-dots/);
-  assert.match(join, /🎲<\/span>다른 별명 골라줘/);
-  // QR 단계 화면에는 수업 코드 입력 칸이 없어야 한다.
-  const qrBlock = join.slice(join.indexOf('if (qrFlow && mode === "join")'), join.indexOf("return (\n"));
-  assert.ok(qrBlock.length > 100);
-  assert.doesNotMatch(qrBlock, /수업 코드<\/span>/);
+test("qr entry uses the single form and only skips the class-code field", () => {
+  // 3단계 스테퍼는 저학년 밴드용으로 코드만 보존하고 꺼 둔다 — 3학년은 한 화면이 빠르다.
+  assert.match(join, /const QR_STEPPER_ENABLED: boolean = false/);
+  assert.match(join, /QR_STEPPER_ENABLED && qrFlow && mode === "join"/);
+  // QR 입장(단일 폼)에서는 수업 코드 칸이 숨고 번호가 별명부터 매겨진다.
+  assert.match(join, /const hideCodeField = qrFlow && mode === "join"/);
+  assert.match(join, /\{!hideCodeField && <label><span>1️⃣ 수업 코드<\/span>/);
+  assert.match(join, /\{hideCodeField \? "1️⃣" : "2️⃣"\} 그림 별명/);
+  assert.match(join, /\{hideCodeField \? "2️⃣" : "3️⃣"\} 내 동물/);
 });
 
 test("animal buttons carry Korean names for assistive tech", () => {

@@ -221,17 +221,21 @@ async function main() {
         // 2) QR 입장 단계 화면
         await navigate(cdp, session, `${BASE}/join/${seeded.classCode}`);
         await evaluate(cdp, session, MEASURE_HELPERS);
-        const qrStep = await evaluate(cdp, session, `(() => ({
+        const qrEntry = await evaluate(cdp, session, `(() => ({
           hasCodeInput: Boolean([...document.querySelectorAll('label span')].find((item) => item.textContent.includes('수업 코드'))),
           heading: document.querySelector('h1')?.textContent ?? '',
           dots: document.querySelectorAll('.qr-step-dots span').length,
+          hasNickname: Boolean([...document.querySelectorAll('label span')].find((item) => item.textContent.includes('그림 별명'))),
+          animals: document.querySelectorAll('.chip-row .emoji-chip').length,
+          passwordChips: document.querySelectorAll('.picture-chip').length,
           overflow: window.__wiggle.horizontalOverflow().overflow,
           small: window.__wiggle.smallTargets(44),
         }))()`);
-        check(!qrStep.hasCodeInput, `${viewport.name} QR 입장이 수업 코드 입력을 건너뜀`, qrStep.heading);
-        check(qrStep.dots === 3, `${viewport.name} QR 입장이 3단계로 안내됨`, qrStep.dots);
-        check(qrStep.overflow <= 0, `${viewport.name} QR 입장 가로 스크롤 없음`, qrStep.overflow);
-        check(qrStep.small.length === 0, `${viewport.name} QR 입장 터치 목표 44px 이상`, qrStep.small);
+        check(!qrEntry.hasCodeInput, `${viewport.name} QR 입장이 수업 코드 입력을 건너뜀`, qrEntry.heading);
+        // 3학년 기본: 스테퍼 없이 별명·동물·비밀번호가 한 화면에 다 보인다.
+        check(qrEntry.dots === 0 && qrEntry.hasNickname && qrEntry.animals >= 6 && qrEntry.passwordChips >= 8, `${viewport.name} QR 입장이 한 화면 폼으로 열림`, qrEntry);
+        check(qrEntry.overflow <= 0, `${viewport.name} QR 입장 가로 스크롤 없음`, qrEntry.overflow);
+        check(qrEntry.small.length === 0, `${viewport.name} QR 입장 터치 목표 44px 이상`, qrEntry.small);
 
         // 3) 공유 태블릿 잠금 해제: 틀린 그림 비밀번호 복구
         await installSession(cdp, session, seeded);
