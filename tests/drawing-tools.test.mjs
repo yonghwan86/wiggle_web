@@ -105,6 +105,21 @@ test("pen mode keeps touch from drawing, is reversible, and two fingers zoom", (
   assert.match(css, /\.canvas-stack \{ position:absolute; inset:0; transform-origin:0 0; \}/);
 });
 
+test("teacher message banner can be dismissed and stays dismissed for the same message", () => {
+  // 고정 오버레이 배너에 닫기가 없으면 밑의 버튼(따라 그리기 선택지 등)이 영영 가려진다.
+  assert.match(studio, /className="canvas-message-close"/);
+  assert.match(studio, /teacherMessage\.id !== dismissedMessageId/);
+  assert.match(studio, /wiggle:dismissed-teacher-message/);
+  assert.match(css, /\.canvas-message-close \{ width:44px; min-width:44px; height:44px;/);
+});
+
+test("marker and watercolor render distinctly from pencil", () => {
+  // 마커는 가장 넓고 불투명, 수채붓은 옅고 넓게 + 번짐 패스. (기존 크레용·pen 값은 불변)
+  assert.match(renderer, /op\.tool === "marker" \? 1\.6 : op\.tool === "watercolor" \? 2 : 1/);
+  assert.match(renderer, /op\.tool === "crayon" \? 0\.62 : op\.tool === "watercolor" \? 0\.3 : 1/);
+  assert.match(renderer, /if \(op\.tool === "watercolor"\) \{[\s\S]{0,300}globalAlpha = 0\.12/);
+});
+
 test("pointer cancel discards shapes and pending fills instead of committing them", () => {
   assert.match(studio, /onPointerCancel=\{pointerCancel\}/);
   assert.match(studio, /function pointerCancel[\s\S]*shapeDragRef\.current\?\.pointerId === event\.pointerId/);

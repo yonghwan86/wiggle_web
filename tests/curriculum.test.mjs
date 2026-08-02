@@ -20,6 +20,17 @@ test("curriculum contains exactly ten ordered lessons in each recommended stage"
   assert.ok(LESSONS.some((lesson) => lesson.slug === "calm-capybara"));
 });
 
+test("guided animal lessons build a complete body before the tail", () => {
+  // 얼굴에서 꼬리로 건너뛰면 몸 없는 동물이 된다 — 몸 단계가 꼬리 단계보다 먼저 있어야 한다.
+  for (const slug of ["friendly-dog", "curious-cat", "happy-dinosaur"]) {
+    const lesson = LESSONS.find((item) => item.slug === slug);
+    const bodyIndex = lesson.steps.findIndex((step) => step.instruction.includes("몸"));
+    const tailIndex = lesson.steps.findIndex((step) => step.instruction.includes("꼬리"));
+    assert.ok(bodyIndex >= 0, `${slug}: 몸 단계가 있어야 한다`);
+    assert.ok(tailIndex < 0 || bodyIndex < tailIndex, `${slug}: 몸 단계가 꼬리보다 먼저여야 한다`);
+  }
+});
+
 test("every lesson has short bounded steps, child choices, a data guide and a free final step", () => {
   for (const lesson of LESSONS) {
     assert.ok(lesson.steps.length >= 6 && lesson.steps.length <= 15, lesson.slug);

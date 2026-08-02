@@ -269,7 +269,11 @@ export function DrawingStudio() {
   const [view, setView] = useState<CanvasView>(IDENTITY_VIEW);
   const [penMode, setPenMode] = useState(false);
   const [redo, setRedo] = useState<DrawOp[][]>([]); const [guidePhase, setGuidePhase] = useState<GuidePhase>("independent"); const [guideDemoRun, setGuideDemoRun] = useState(0); const [guidePracticeTried, setGuidePracticeTried] = useState(false); const [saveState, setSaveState] = useState("불러오는 중"); const [editVersion, setEditVersion] = useState(0);
-  const [reflectionOpen, setReflectionOpen] = useState(false); const [favoritePart, setFavoritePart] = useState(""); const [favoriteReason, setFavoriteReason] = useState(""); const [message, setMessage] = useState("");
+  const [reflectionOpen, setReflectionOpen] = useState(false); const [favoritePart, setFavoritePart] = useState(""); const [favoriteReason, setFavoriteReason] = useState("");
+  // 선생님 말씀 배너는 고정 오버레이라 닫을 수 없으면 밑의 버튼을 영영 가린다.
+  // 닫은 메시지 id를 기억하고, 새 메시지가 오면 다시 보여 준다.
+  const [teacherMessage, setTeacherMessage] = useState<{ id: string; body: string } | null>(null);
+  const [dismissedMessageId, setDismissedMessageId] = useState(() => { try { return sessionStorage.getItem("wiggle:dismissed-teacher-message") ?? ""; } catch { return ""; } });
   const [teacherViewing, setTeacherViewing] = useState(false); const [conflictRevision, setConflictRevision] = useState<number | null>(null); const [conflictDraft, setConflictDraft] = useState<QueuedArtworkDraft | null>(null);
   const [grimiOpen, setGrimiOpen] = useState(false); const [grimiLoading, setGrimiLoading] = useState(false); const [grimiError, setGrimiError] = useState("");
   // 그리미가 "선을 하나 더 그어 보자"고 하면 아이는 그려야 한다. 시트를 닫으면 코칭이 사라지므로,
@@ -408,7 +412,14 @@ export function DrawingStudio() {
       guideAnimationRef.current = null;
     };
   }, [currentGuideTraces, guideDemoRun, guidePhase, markCurrentGuideSeen]);
-  useEffect(() => { const poll = async () => { try { const response = await studentFetch("/api/student"); const data = await response.json() as { messages?: Array<{ body: string }>; teacherViewing?: boolean }; setMessage(data.messages?.at(-1)?.body ?? ""); setTeacherViewing(Boolean(data.teacherViewing)); } catch {} }; void poll(); const timer = window.setInterval(poll, 5000); return () => clearInterval(timer); }, []);
+  useEffect(() => { const poll = async () => { try { const response = await studentFetch("/api/student"); const data = await response.json() as { messages?: Array<{ id?: string | number; body: string }>; teacherViewing?: boolean }; const latest = data.messages?.at(-1); setTeacherMessage(latest ? { id: String(latest.id ?? latest.body), body: latest.body } : null); setTeacherViewing(Boolean(data.teacherViewing)); } catch {} }; void poll(); const timer = window.setInterval(poll, 5000); return () => clearInterval(timer); }, []);
+  const dismissTeacherMessage = useCallback(() => {
+    setDismissedMessageId((current) => {
+      const next = teacherMessage?.id ?? current;
+      try { sessionStorage.setItem("wiggle:dismissed-teacher-message", next); } catch {}
+      return next;
+    });
+  }, [teacherMessage?.id]);
   // 이 기기에서 펜을 한 번이라도 쓰면 펜 모드를 기억한다. 수업 중 첫 터치부터 손바닥이 안전해진다.
   useEffect(() => { try { if (localStorage.getItem("wiggle:pen-mode") === "1") { penModeRef.current = true; setPenMode(true); } } catch {} }, []);
 
@@ -1021,7 +1032,7 @@ export function DrawingStudio() {
     {conflictDraft && <div className="save-conflict" role="alert"><b>{conflictDraft.save.conflict ? "다른 기기 저장과 겹쳤어요." : "아직 서버에 보내지 못한 그림이 있어요."}</b><span>{conflictDraft.save.conflict ? "이 작품의 충돌 초안을 복구했어요." : "인터넷이 연결되면 다시 저장해요."} 지금은 편집을 멈추고 새 사본으로도 보관할 수 있어요.{conflictRevision !== null ? ` (서버 버전 ${conflictRevision})` : ""}</span>{!conflictDraft.save.conflict && <button onClick={flushCurrentArtwork}>다시 저장</button>}<button onClick={saveAsCopy}>새 사본으로 저장</button></div>}
     {teacherViewing && <div className="teacher-viewing" role="status">선생님이 지금 내 그림을 보고 있어요.</div>}
     <VoiceWhisperStatus />
-    {message && <div className="canvas-message"><b>👩‍🏫 선생님</b> {message}<SpeakButton text={`선생님이 말했어요. ${message}`} compact /></div>}
+    {teacherMessage && teacherMessage.id !== dismissedMessageId && <div className="canvas-message"><b>👩‍🏫 선생님</b> {teacherMessage.body}<SpeakButton text={`선생님이 말했어요. ${teacherMessage.body}`} compact /><button type="button" className="canvas-message-close" onClick={dismissTeacherMessage} aria-label="선생님 말씀 닫기">×</button></div>}
     <div className={`studio-body ${grimiOpen || lesson ? "" : "without-step-panel"}${grimiOpen ? " grimi-open" : ""}${grimiOpen && grimiCollapsed ? " grimi-collapsed" : ""}`}>{grimiOpen ? <aside className={`grimi-panel${grimiCollapsed ? " collapsed" : ""}`} aria-live="polite"><div className="grimi-head"><div><span>✨</span><b>그리미</b></div>{coaching && !grimiLoading && <button className="grimi-collapse" onClick={() => setGrimiCollapsed((value) => !value)}>{grimiCollapsed ? "✨ 그리미 다시 보기" : "✏️ 그리러 가기"}</button>}<button onClick={dismissGrimi} aria-label="그리미 닫기">×</button></div>{grimiCollapsed && coaching ? <div className="grimi-peek"><small>이제 그려 볼 일</small><div className="spoken-prompt"><b>{coaching.nextAction}</b><SpeakButton text={coaching.nextAction} compact /></div><button className="button primary full child-primary-action" disabled={grimiLoading || answerSaved || !answer} onClick={recordCoachingAnswer}><span aria-hidden="true">✅</span>{answerSaved ? "과정에 남겼어요" : "그렸어요"}</button></div> : <div className="grimi-scroll">
         {grimiLoading && <div className="grimi-thinking"><span>●</span><span>●</span><span>●</span><p>그림을 보고 있어요…</p></div>}
         {grimiError && <p className="error-box">{grimiError}</p>}

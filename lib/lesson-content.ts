@@ -137,12 +137,14 @@ export const LESSONS: Lesson[] = [
   },
   {
     slug: "curious-cat", stage: 2, order: 2, mode: "guided", title: "궁금한 고양이", topic: "고양이", emoji: "🐱", description: "세모 귀와 긴 수염을 차례로 그어요.", finalFree: true,
+    // 얼굴에서 꼬리로 건너뛰면 몸 없는 고양이가 된다. 몸·다리 단계를 거쳐야 완성된 고양이가 나온다.
     steps: [
       { instruction: "동그란 얼굴을 그어요." }, { instruction: "세모 귀 두 개를 올려요." },
       { instruction: "눈 표정을 골라요.", choices: ["동그란 눈", "웃는 눈"] }, { instruction: "코와 수염을 그어요." },
+      { instruction: "얼굴 아래로 몸과 다리를 이어요." },
       { instruction: "꼬리 방향을 골라요.", choices: ["위로", "옆으로"] }, { instruction: "내 마음대로 고양이 장난감을 더해요." },
     ],
-    guide: [ellipse(1, .5, .34, .2), line(2, [.34, .2], [.34, .06], [.45, .16]), line(2, [.55, .16], [.66, .06], [.66, .2]), curve(5, [.62, .68], [.9, .56], [.9, .86], [.72, .82])],
+    guide: [ellipse(1, .5, .34, .2), line(2, [.34, .2], [.34, .06], [.45, .16]), line(2, [.55, .16], [.66, .06], [.66, .2]), ellipse(5, .5, .68, .17, .2), curve(6, [.66, .7], [.9, .58], [.9, .88], [.74, .84])],
   },
   {
     slug: "bouncy-rabbit", stage: 2, order: 3, mode: "guided", title: "깡충 토끼", topic: "토끼", emoji: "🐰", description: "긴 귀와 동그란 몸을 이어 그어요.", finalFree: true,
