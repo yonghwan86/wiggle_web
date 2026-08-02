@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "status": "ready_for_codex",
   "project": "wiggle_web",
-  "branch": "claude/drawing-tools-upgrade",
-  "baseCommit": "4f1dc2f44fb5ff0e2eec5eaac6e868aa51a790d7",
-  "candidateCommit": "f55e798e0ac50fed5577ea68e26986448a28e05b",
+  "branch": "claude/field-test-fixes",
+  "baseCommit": "17676fe917edc6f532983e8597d6c7005eb45eb9",
+  "candidateCommit": "1d8a98caad4f32a93cd6a1c7d193954c00ad185e",
   "report": "docs/agent-handoff/latest.md",
-  "task": "Drawing tools upgrade for grade-3 tablets",
-  "summary": "브러시 4종·굵기 5단·24색·채우기·도형·대칭·펜 모드·핀치 확대를 구현하고 검토 확정 결함 29건을 수정했다",
+  "task": "Field-test fixes: cat lesson, teacher message, brush contrast",
+  "summary": "고양이 레슨 몸 단계 추가, 선생님 메시지 닫기, 마커·수채붓 질감 구분을 수정했다",
   "releaseGate": "codex_go_only",
-  "generatedAt": "2026-08-02T13:07:41.343Z"
+  "generatedAt": "2026-08-02T14:00:50.118Z"
 }
