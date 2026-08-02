@@ -76,15 +76,19 @@ test("lesson slug and observe mode persist through schema, runtime upgrades and 
 });
 
 test("student and teacher surfaces expose four unlocked stages and round-trip grouped activities", async () => {
-  const [home, picker, observe, teacher, teacherRoute, teacherMutations, studentRoute] = await Promise.all([
-    read("../app/components/StudentHome.tsx"), read("../app/components/LessonPicker.tsx"), read("../app/student/observe/page.tsx"), read("../app/components/TeacherApp.tsx"), read("../app/api/teacher/route.ts"), read("../lib/teacher-classroom-mutations.ts"), read("../app/api/student/route.ts"),
+  const [home, chooser, picker, observe, teacher, teacherRoute, teacherMutations, studentRoute] = await Promise.all([
+    read("../app/components/StudentHome.tsx"), read("../app/components/ActivityChooser.tsx"), read("../app/components/LessonPicker.tsx"), read("../app/student/observe/page.tsx"), read("../app/components/TeacherApp.tsx"), read("../app/api/teacher/route.ts"), read("../lib/teacher-classroom-mutations.ts"), read("../app/api/student/route.ts"),
   ]);
-  assert.match(home, /CURRICULUM_STAGES\.map/);
-  assert.match(home, /잠금 없음/);
-  assert.match(home, /바로 자유롭게 그리기/);
-  assert.match(home, /오늘 선생님 추천/);
+  assert.match(chooser, /CURRICULUM_STAGES\.map/);
+  assert.match(chooser, /언제든 시작/);
+  assert.match(chooser, /stage\.path/);
+  assert.doesNotMatch(home, /바로 자유롭게 그리기/);
+  assert.match(home, /선생님이 선택한 오늘 활동/);
   assert.match(home, /teacherActivityPath/);
-  assert.match(home, /artworkActivityLabel\(artwork\)/);
+  const primaryMenu = home.slice(home.indexOf("student-primary-menu"), home.indexOf("</nav>", home.indexOf("student-primary-menu")));
+  assert.ok(primaryMenu.indexOf("<h2>이어 그리기</h2>") < primaryMenu.indexOf("<h2>내 그림</h2>"));
+  assert.ok(primaryMenu.indexOf("<h2>내 그림</h2>") < primaryMenu.indexOf("<h2>활동 고르기</h2>"));
+  assert.match(teacher, /진행 중인 그림[\s\S]*학생 그림[\s\S]*활동 고르기/);
   assert.match(picker, /LESSONS\.filter\(\(lesson\) => lesson\.mode === mode\)/);
   assert.match(observe, /mode="observe"/);
   assert.match(teacher, /<optgroup label=\{`\$\{stage\.stage\}단계/);

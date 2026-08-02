@@ -34,8 +34,10 @@ test("mobile forms, actions and overlays honor iPhone zoom, touch and safe-area 
 
 test("mobile studio and teacher layouts finish in two rows without horizontal text overflow", async () => {
   const [css, studio, teacher] = await Promise.all([read("../app/globals.css"), read("../app/components/DrawingStudio.tsx"), read("../app/components/TeacherApp.tsx")]);
-  // 그리미 바텀시트 규칙이 "@media (max-width:720px), ..." 조합 질의를 쓰므로 단독 720px 블록만 고른다.
-  const finalMobile = css.slice(css.lastIndexOf("@media (max-width:720px) {\n"), css.lastIndexOf("@media (max-width:460px) and (orientation:portrait)"));
+  // 첫 720px 블록은 레거시, 두 번째가 최종 모바일 도구 배치다. 뒤에 학생 홈 전용
+  // 720px 블록도 있으므로 고유한 entry-shell 시작점을 기준으로 자른다.
+  const finalMobileStart = css.indexOf("@media (max-width:720px) {\n  .entry-shell");
+  const finalMobile = css.slice(finalMobileStart, css.indexOf("@media (max-width:460px) and (orientation:portrait)", finalMobileStart));
   assert.ok(css.lastIndexOf("grid-template-rows:calc(60px + env(safe-area-inset-top)) minmax(0,1fr)") > css.lastIndexOf("grid-template-rows:60px 1fr 92px"));
   assert.match(css, /\.canvas-message,\.save-conflict,\.teacher-viewing,\.voice-speaking \{[^}]*max-width:calc\(100vw - max\(12px,env\(safe-area-inset-left\)\) - max\(12px,env\(safe-area-inset-right\)\)\);[^}]*overflow-wrap:break-word;/);
   assert.match(css, /\.artwork-name b,\.artwork-name small \{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; \}/);
@@ -84,6 +86,11 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(css, /\.step-panel \.choice-chips button \{[^}]*min-height:44px;/);
   assert.match(css, /\.step-panel \.step-actions \{ display:grid; grid-column:1\/-1;[^}]*overflow:visible;/);
   assert.match(teacher, /className="modal-close" aria-label="학생 그림 미리보기 닫기" onClick=\{closePreview\}/);
+  const ipadStart = css.indexOf("@media (min-width:721px) and (max-width:1024px) and (orientation:portrait)");
+  const ipad = css.slice(ipadStart, css.indexOf("@media (max-width:720px)", ipadStart));
+  assert.match(ipad, /\.studio-body,\.studio-body\.without-step-panel \{[^}]*grid-template-rows:auto minmax\(380px,1fr\) auto/);
+  assert.match(ipad, /\.tool-panel \{[^}]*grid-template-columns:repeat\(12,minmax\(0,1fr\)\)/);
+  assert.match(ipad, /\.tool-panel \.palette \{[^}]*grid-template-columns:repeat\(12,minmax\(44px,1fr\)\)/);
 });
 
 test("desktop teacher controls use a compact two-row layout without changing smaller breakpoints", async () => {

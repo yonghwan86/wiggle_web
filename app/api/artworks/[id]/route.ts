@@ -67,8 +67,11 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   const nonce = randomToken(10);
   const thumbnailKey = thumbnail ? `students/${student.id}/artworks/${artworkId}/objects/r${newRevision}-${requestId}-${nonce}-thumb.png` : null;
   const finalKey = finalImage ? `students/${student.id}/artworks/${artworkId}/objects/r${newRevision}-${requestId}-${nonce}-final.png` : null;
-  if (thumbnail && thumbnailKey) await bindings().ARTWORKS.put(thumbnailKey, thumbnail, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=60" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "candidate", kind: "thumbnail" } });
-  if (finalImage && finalKey) await bindings().ARTWORKS.put(finalKey, finalImage, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=300" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "candidate", kind: "final" } });
+  // 같은 키를 candidate → committed로 두 번 put하면 이미지 인코딩 크기만큼 R2 업로드를
+  // 매 저장마다 두 번 기다린다. 객체는 DB가 그 키를 가리키기 전에는 외부에서 발견할 수 없으므로
+  // 한 번만 쓰고, DB 커밋 실패 시 아래 보상 삭제로 회수한다.
+  if (thumbnail && thumbnailKey) await bindings().ARTWORKS.put(thumbnailKey, thumbnail, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=60" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "thumbnail" } });
+  if (finalImage && finalKey) await bindings().ARTWORKS.put(finalKey, finalImage, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=300" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "final" } });
 
   const db = bindings().DB; const versionId = id("version");
   const statements = [
@@ -98,10 +101,6 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     return noStoreJson({ error: current?.status === "complete" ? "완성한 작품은 바꿀 수 없어요." : "다른 저장이 먼저 반영됐어요.", code: current?.status === "complete" ? "ARTWORK_COMPLETE" : "REVISION_CONFLICT", serverRevision: current?.revision }, { status: 409 });
   }
 
-  const committedWrites: Promise<unknown>[] = [];
-  if (thumbnail && thumbnailKey) committedWrites.push(bindings().ARTWORKS.put(thumbnailKey, thumbnail, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=60" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "thumbnail" } }));
-  if (finalImage && finalKey) committedWrites.push(bindings().ARTWORKS.put(finalKey, finalImage, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=300" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "final" } }));
-  await Promise.allSettled(committedWrites);
   await removeCandidates([thumbnailKey && artwork.thumbnailKey !== thumbnailKey ? artwork.thumbnailKey : null, finalKey && artwork.finalImageKey !== finalKey ? artwork.finalImageKey : null]);
   return noStoreJson({ ok: true, revision: newRevision, status: complete ? "complete" : artwork.status });
 }

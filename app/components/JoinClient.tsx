@@ -8,8 +8,8 @@ import { Logo } from "./Logo";
 import { QrCode } from "./QrCode";
 import { SpeakButton } from "./SpeakButton";
 
-const ANIMALS = ["🐰", "🐻", "🦊", "🐯", "🐼", "🐶"];
-const ANIMAL_NAMES: Record<string, string> = { "🐰": "토끼", "🐻": "곰", "🦊": "여우", "🐯": "호랑이", "🐼": "판다", "🐶": "강아지" };
+const ANIMALS = ["🐰", "🐻", "🦊", "🐯", "🐼", "🐶", "🐱", "🐨", "🦁", "🐸"];
+const ANIMAL_NAMES: Record<string, string> = { "🐰": "토끼", "🐻": "곰", "🦊": "여우", "🐯": "호랑이", "🐼": "판다", "🐶": "강아지", "🐱": "고양이", "🐨": "코알라", "🦁": "사자", "🐸": "개구리" };
 const PICTURES = [
   { value: "⭐", picture: "⭐", name: "별" },
   { value: "🍎", picture: "🍎", name: "사과" },
@@ -19,6 +19,8 @@ const PICTURES = [
   { value: "🌙", picture: "🌙", name: "달" },
   { value: "꽃", picture: "🌸", name: "꽃" },
   { value: "집", picture: "🏠", name: "집" },
+  { value: "로켓", picture: "🚀", name: "로켓" },
+  { value: "풍선", picture: "🎈", name: "풍선" },
 ] as const;
 const NICKNAME_IDEAS: Record<string, string[]> = {
   "🐰": ["토끼 화가", "깡총 별"],
@@ -27,6 +29,10 @@ const NICKNAME_IDEAS: Record<string, string[]> = {
   "🐯": ["씩씩 호랑이", "줄무늬 별"],
   "🐼": ["판다 화가", "대나무 별"],
   "🐶": ["멍멍 화가", "꼬리별"],
+  "🐱": ["고양이 화가", "수염별"],
+  "🐨": ["코알라 화가", "나무별"],
+  "🦁": ["사자 화가", "햇살별"],
+  "🐸": ["개굴 화가", "연못별"],
 };
 
 type Mode = "profiles" | "unlock" | "join" | "recover" | "done";
@@ -47,11 +53,7 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   const [legacyPassword, setLegacyPassword] = useState(false);
   const [legacyOffer, setLegacyOffer] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState(false);
-  const [qrStep, setQrStep] = useState(0);
   const qrFlow = Boolean(initialEntry) && !recoveryToken;
-  // 3단계 스테퍼는 글을 못 읽는 저학년용 경로다. 1차 타깃(3학년)은 한 화면이 빠르므로
-  // 꺼 둔다 — 저학년 밴드를 도입할 때 다시 켠다. 코드는 삭제하지 않는다.
-  const QR_STEPPER_ENABLED: boolean = false;
   // QR로 들어왔으면 수업 코드는 QR이 대신하므로 코드 칸을 숨기고 번호를 별명부터 매긴다.
   const hideCodeField = qrFlow && mode === "join";
 
@@ -77,7 +79,6 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
 
   useEffect(() => {
     if (!initialEntry || recoveryToken) return;
-    setQrStep(0);
     setNickname((current) => {
       if (current) return current;
       const ideas = Object.values(NICKNAME_IDEAS).flat();
@@ -143,7 +144,7 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
       ? `그림 비밀번호를 만들어요. 같은 그림을 여러 번 골라도 돼요. 순서대로 ${countWord}를 골라요.`
       : `내 그림 비밀번호를 눌러요. 만들 때 골랐던 그림 ${countWord}를 순서대로 눌러요.`;
     const chipsFull = pictures.length >= targetLength;
-    return <fieldset className="picture-password-picker"><legend>{creating ? "그림 비밀번호 만들기" : "내 그림 비밀번호"} <small>{pictures.length}/{targetLength}</small></legend><div className="picture-password-help"><p className="helper">{creating ? `같은 그림도 괜찮아요. 순서대로 ${targetLength}개 골라요.` : "만들 때 고른 순서 그대로 눌러요."}</p><SpeakButton text={instruction} compact /></div><div className="password-slots" aria-hidden="true">{Array.from({ length: targetLength }, (_, index) => <span className={pictures[index] ? "filled" : ""} key={index}>{pictures[index] ? pictureFor(pictures[index]) : "?"}</span>)}</div><div className="chip-row picture-row" role="group" aria-label={`그림 비밀번호 고르기. 현재 ${pictures.length}/${targetLength}개를 골랐어요. 같은 그림을 여러 번 고를 수 있어요.`}>{PICTURES.map((item) => <button type="button" className="picture-chip" aria-label={chipsFull ? `${item.name} 그림. 이미 ${targetLength}개를 다 골랐어요. 바꾸려면 다시 골라요를 눌러요.` : `${item.name} 그림 추가. 현재 ${pictures.length}/${targetLength}개 선택. 같은 그림도 다시 고를 수 있어요.`} key={item.value} onClick={() => appendPicture(item.value)}>{item.picture}</button>)}</div><div className="password-actions"><button type="button" className={`reset-pictures-button${errorKind === "password" ? " attention" : ""}`} disabled={!pictures.length} aria-label={`고른 그림 ${targetLength}칸 모두 지우고 다시 고르기`} onClick={resetPictures}><span aria-hidden="true">🔄</span> 다시 골라요</button><button type="button" className="small-button" disabled={!pictures.length} aria-label={`마지막 그림 한 칸 지우기. 현재 ${pictures.length}개 선택.`} onClick={removeLastPicture}>↩️ 한 칸 지우기</button></div>{pictures.length > 0 && <div className="password-preview" aria-live="polite" aria-label={`고른 그림 ${pictures.length}개: ${pictures.map(pictureFor).join(", ")}`}>{pictures.map(pictureFor).join(" → ")}</div>}</fieldset>;
+    return <fieldset className="picture-password-picker"><legend>{creating ? "그림 비밀번호 만들기" : "내 그림 비밀번호"} <small>{pictures.length}/{targetLength}</small></legend><div className="picture-password-help"><p className="helper">{creating ? `같은 그림도 괜찮아요. 순서대로 ${targetLength}개 골라요.` : "만들 때 고른 순서 그대로 눌러요."}</p><SpeakButton text={instruction} compact /></div><div className="password-slots" aria-label={`고른 그림 ${pictures.length}개`}>{Array.from({ length: targetLength }, (_, index) => <span className={pictures[index] ? "filled" : ""} key={index}>{pictures[index] ? pictureFor(pictures[index]) : "?"}</span>)}</div><div className="picture-choice-grid" role="group" aria-label={`그림 비밀번호 고르기. 현재 ${pictures.length}/${targetLength}개를 골랐어요. 같은 그림을 여러 번 고를 수 있어요.`}>{PICTURES.map((item) => <button type="button" className="picture-chip" aria-label={chipsFull ? `${item.name} 그림. 이미 ${targetLength}개를 다 골랐어요. 바꾸려면 다시 골라요를 눌러요.` : `${item.name} 그림 추가. 현재 ${pictures.length}/${targetLength}개 선택. 같은 그림도 다시 고를 수 있어요.`} key={item.value} onClick={() => appendPicture(item.value)}>{item.picture}</button>)}</div><div className="password-actions"><button type="button" className={`reset-pictures-button${errorKind === "password" ? " attention" : ""}`} disabled={!pictures.length} aria-label={`고른 그림 ${targetLength}칸 모두 지우고 다시 고르기`} onClick={resetPictures}><span aria-hidden="true">🔄</span> 다시 골라요</button><button type="button" className="small-button" disabled={!pictures.length} aria-label={`마지막 그림 한 칸 지우기. 현재 ${pictures.length}개 선택.`} onClick={removeLastPicture}>↩️ 한 칸 지우기</button></div></fieldset>;
   }
 
   function switchToRecover() {
@@ -212,27 +213,7 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
     return <main className="entry-shell"><div className="entry-top"><Logo /></div><section className="entry-card"><div className="success-mark">✓</div><h1>내 그림 카드가 생겼어요!</h1><p>다른 기기에서 이어 그릴 때 쓰는 비공개 QR이에요. 선생님과 함께 안전하게 보관해요.</p><div className="personal-card"><QrCode value={recoveryUrl} label={`${nickname} 개인 복구 QR`} /><span>{animal}</span><b>{nickname}</b><small>개인 복구 카드</small><code>{recoveryUrl.slice(-16)}</code></div><button className="button secondary full" onClick={() => navigator.clipboard?.writeText(recoveryUrl)}>복구 주소 복사</button><button className="button primary full" onClick={() => { setPersonalQrToken(""); location.replace("/student"); }}>그림 시작하기</button></section></main>;
   }
 
-  if (QR_STEPPER_ENABLED && qrFlow && mode === "join") {
-    const stepTitle = qrStep === 0 ? "내 별명을 골라요" : qrStep === 1 ? "내 동물을 골라요" : "그림 비밀번호를 만들어요";
-    const stepSpeech = qrStep === 0
-      ? "반가워! 내 별명을 골라요. 주사위를 누르면 다른 별명이 나와요. 마음에 들면 다음을 눌러요."
-      : qrStep === 1
-        ? "내 동물을 골라요. 내 동물은 내 그림 카드가 돼요. 고르고 다음을 눌러요."
-        : "그림 비밀번호를 만들어요. 그림 세 개를 순서대로 골라요. 다 고르면 수업 들어가기를 눌러요.";
-    return <main className="entry-shell"><div className="entry-top"><Logo /><span>QR 입장</span></div><section className="entry-card">
-      <div className="entry-title-row"><div><p className="eyebrow">수업에 들어가요</p><h1>{stepTitle}</h1></div><SpeakButton text={stepSpeech} /></div>
-      <div className="qr-step-dots" role="img" aria-label={`3단계 중 ${qrStep + 1}단계`}>{["🎲", "🐾", "⭐"].map((icon, index) => <span className={index === qrStep ? "active" : index < qrStep ? "done" : ""} key={icon} aria-hidden="true">{index < qrStep ? "✓" : icon}</span>)}</div>
-      {qrStep === 0 && <div className="qr-step"><div className="qr-nickname-preview" aria-live="polite"><span aria-hidden="true">{animal}</span><b>{nickname || "별명을 골라요"}</b></div><button type="button" className="button secondary full qr-dice-button" onClick={suggestNickname}><span aria-hidden="true">🎲</span>다른 별명 골라줘</button><details className="reflection-write-more"><summary>⌨️ 직접 쓸래요</summary><label>내 별명<input maxLength={16} value={nickname} onChange={(event) => { setNickname(event.target.value); setDuplicateWarning(false); clearEntryError(); }} placeholder="예: 토끼 화가" /></label></details></div>}
-      {qrStep === 1 && <fieldset><legend>내 동물</legend><div className="chip-row qr-animal-row">{ANIMALS.map((value) => <button type="button" aria-pressed={animal === value} aria-label={`${ANIMAL_NAMES[value]} 고르기`} className={animal === value ? "emoji-chip selected" : "emoji-chip"} key={value} onClick={() => { setAnimal(value); setDuplicateWarning(false); clearEntryError(); }}>{value}</button>)}</div></fieldset>}
-      {qrStep === 2 && <>{picturePasswordPicker()}{duplicateWarningNotice()}{errorNotice()}</>}
-      <div className="qr-step-nav">{qrStep > 0 && <button type="button" className="small-button" onClick={() => { clearEntryError(); setQrStep(qrStep - 1); }} aria-label="이전 단계로">← 이전</button>}{qrStep < 2
-        ? <button type="button" className="button primary full child-primary-action" disabled={qrStep === 0 && nickname.trim().length < 2} onClick={() => { clearEntryError(); setQrStep(qrStep + 1); }}><span aria-hidden="true">▶️</span>다음</button>
-        : <button type="button" className="button primary full child-primary-action" disabled={busy || duplicateWarning || pictures.length !== targetLength} onClick={() => void submit()}><span aria-hidden="true">▶️</span>{busy ? "찾는 중…" : "수업 들어가기"}</button>}</div>
-      <button className="text-button" onClick={switchToRecover}>🔎 전에 그리던 그림이 있어요</button>
-    </section></main>;
-  }
-
   return (
-    <main className="entry-shell"><div className="entry-top"><Logo />{qrFlow ? <span>QR 입장</span> : <a href="/teacher">교사 입장</a>}</div><section className="entry-card"><div className="entry-title-row"><div><p className="eyebrow">{mode === "join" ? "수업에 들어가요" : "내 그림을 찾아요"}</p><h1>{mode === "join" ? "반가워, 꼬마 화가!" : "다시 만나서 반가워!"}</h1></div><SpeakButton text={mode === "join" ? (hideCodeField ? "반가워! 별명과 동물을 고르고, 그림 비밀번호를 순서대로 골라요." : "선생님과 함께 수업 코드, 동물, 그림 비밀번호를 골라요.") : "내 수업 코드, 동물, 그림 비밀번호를 골라서 그림을 찾아요."} /></div>{mode === "join" && profiles.length > 0 && <button className="saved-profile-notice" type="button" onClick={() => resetPassword("profiles")}>🐾 이 기기에 저장된 내 동물 고르기</button>}{recoveryToken ? <p className="helper">개인 카드로 안전하게 찾는 중이에요.</p> : <>{!hideCodeField && <label><span>1️⃣ 수업 코드</span><input className={errorKind === "code" ? "input-error" : ""} inputMode="numeric" maxLength={12} value={entry} onChange={(event) => { setEntry(event.target.value.replace(/\s/g, "")); setDuplicateWarning(false); clearEntryError(); }} placeholder="예: 2841" /></label>}<label><span>{hideCodeField ? "1️⃣" : "2️⃣"} 그림 별명</span><div className="nickname-row"><input maxLength={16} value={nickname} onChange={(event) => { setNickname(event.target.value); setDuplicateWarning(false); clearEntryError(); }} placeholder="예: 토끼 화가" /><button type="button" onClick={suggestNickname}>🎲 별명 골라줘</button></div></label><fieldset><legend>{hideCodeField ? "2️⃣" : "3️⃣"} 내 동물</legend><div className="chip-row">{ANIMALS.map((value) => <button type="button" aria-pressed={animal === value} aria-label={`${ANIMAL_NAMES[value]} 고르기`} className={animal === value ? "emoji-chip selected" : "emoji-chip"} key={value} onClick={() => { setAnimal(value); setDuplicateWarning(false); clearEntryError(); }}>{value}</button>)}</div></fieldset>{picturePasswordPicker()}</>}{duplicateWarningNotice()}{errorNotice()}{legacyPasswordAction()}<button className="button primary full child-primary-action" disabled={busy || duplicateWarning || (!recoveryToken && (!entry || !nickname || pictures.length !== targetLength))} onClick={() => void submit()}><span aria-hidden="true">▶️</span>{busy ? "찾는 중…" : mode === "join" ? "수업 들어가기" : "내 그림 찾기"}</button>{!recoveryToken && <button className="text-button" onClick={() => { if (qrFlow && mode !== "join") setEntry(initialEntry); if (mode === "join") { switchToRecover(); return; } resetPassword("join"); }}>{mode === "join" ? "🔎 전에 그리던 그림이 있어요" : "➕ 처음 왔어요"}</button>}</section></main>
+    <main className="entry-shell"><div className="entry-top"><Logo />{qrFlow ? <span>QR 입장</span> : <a href="/teacher">교사 입장</a>}</div><section className="entry-card"><div className="entry-title-row"><div><p className="eyebrow">{mode === "join" ? "수업에 들어가요" : "내 그림을 찾아요"}</p><h1>{mode === "join" ? "반가워, 꼬마 화가!" : "다시 만나서 반가워!"}</h1></div><SpeakButton text={mode === "join" ? (hideCodeField ? "반가워! 별명과 동물을 고르고, 그림 비밀번호를 순서대로 골라요." : "선생님과 함께 수업 코드, 동물, 그림 비밀번호를 골라요.") : "내 수업 코드, 동물, 그림 비밀번호를 골라서 그림을 찾아요."} /></div>{mode === "join" && profiles.length > 0 && <button className="saved-profile-notice" type="button" onClick={() => resetPassword("profiles")}>🐾 이 기기에 저장된 내 동물 고르기</button>}{recoveryToken ? <p className="helper">개인 카드로 안전하게 찾는 중이에요.</p> : <>{!hideCodeField && <label><span>1️⃣ 수업 코드</span><input className={errorKind === "code" ? "input-error" : ""} inputMode="numeric" maxLength={12} value={entry} onChange={(event) => { setEntry(event.target.value.replace(/\s/g, "")); setDuplicateWarning(false); clearEntryError(); }} placeholder="예: 2841" /></label>}<label><span>{hideCodeField ? "1️⃣" : "2️⃣"} 그림 별명</span><div className="nickname-row"><input maxLength={16} value={nickname} onChange={(event) => { setNickname(event.target.value); setDuplicateWarning(false); clearEntryError(); }} placeholder="예: 토끼 화가" /><button type="button" onClick={suggestNickname}>🎲 별명 골라줘</button></div></label><fieldset><legend>{hideCodeField ? "2️⃣" : "3️⃣"} 내 동물</legend><div className="animal-choice-grid">{ANIMALS.map((value) => <button type="button" aria-pressed={animal === value} aria-label={`${ANIMAL_NAMES[value]} 고르기`} className={animal === value ? "emoji-chip selected" : "emoji-chip"} key={value} onClick={() => { setAnimal(value); setDuplicateWarning(false); clearEntryError(); }}>{value}</button>)}</div></fieldset>{picturePasswordPicker()}</>}{duplicateWarningNotice()}{errorNotice()}{legacyPasswordAction()}<button className="button primary full child-primary-action" disabled={busy || duplicateWarning || (!recoveryToken && (!entry || !nickname || pictures.length !== targetLength))} onClick={() => void submit()}><span aria-hidden="true">▶️</span>{busy ? "찾는 중…" : mode === "join" ? "수업 들어가기" : "내 그림 찾기"}</button>{!recoveryToken && <button className="text-button" onClick={() => { if (qrFlow && mode !== "join") setEntry(initialEntry); if (mode === "join") { switchToRecover(); return; } resetPassword("join"); }}>{mode === "join" ? "🔎 전에 그리던 그림이 있어요" : "➕ 처음 왔어요"}</button>}</section></main>
   );
 }

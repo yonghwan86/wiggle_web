@@ -60,9 +60,8 @@ test("a wrong class code highlights the code field and offers calling the teache
 });
 
 test("qr entry uses the single form and only skips the class-code field", () => {
-  // 3단계 스테퍼는 저학년 밴드용으로 코드만 보존하고 꺼 둔다 — 3학년은 한 화면이 빠르다.
-  assert.match(join, /const QR_STEPPER_ENABLED: boolean = false/);
-  assert.match(join, /QR_STEPPER_ENABLED && qrFlow && mode === "join"/);
+  // 별도 스테퍼를 남겨 두면 유지보수 중 실수로 다시 켜질 수 있다. 입장은 항상 한 화면이다.
+  assert.doesNotMatch(join, /QR_STEPPER_ENABLED|qrStep|step-progress/);
   // QR 입장(단일 폼)에서는 수업 코드 칸이 숨고 번호가 별명부터 매겨진다.
   assert.match(join, /const hideCodeField = qrFlow && mode === "join"/);
   assert.match(join, /\{!hideCodeField && <label><span>1️⃣ 수업 코드<\/span>/);

@@ -60,3 +60,15 @@ test("student entry keeps legacy server compatibility while hiding it from the d
   assert.doesNotMatch(join, /aria-pressed=\{pictures/);
   assert.match(css, /\.legacy-password-action \{[^}]*min-height:44px;[^}]*max-width:100%;[^}]*white-space:normal;[^}]*overflow-wrap:break-word;/);
 });
+
+test("entry offers ten animals and ten password pictures in compact five-column grids", async () => {
+  const [join, css] = await Promise.all([read("../app/components/JoinClient.tsx"), read("../app/globals.css")]);
+  const animals = join.match(/const ANIMALS = \[(.*?)\];/s)?.[1] ?? "";
+  const pictures = join.match(/const PICTURES = \[(.*?)\] as const;/s)?.[1] ?? "";
+  assert.equal((animals.match(/"[^\"]+"/g) ?? []).length, 10);
+  assert.equal((pictures.match(/\{ value:/g) ?? []).length, 10);
+  assert.match(join, /className="animal-choice-grid"/);
+  assert.match(join, /className="picture-choice-grid"/);
+  assert.doesNotMatch(join, /password-preview|qrStep|QR_STEPPER/);
+  assert.match(css, /\.animal-choice-grid,\.picture-choice-grid \{ display:grid; grid-template-columns:repeat\(5,minmax\(48px,1fr\)\)/);
+});

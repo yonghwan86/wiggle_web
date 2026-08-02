@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
+const IPAD_MODE = process.argv.includes("--ipad");
 const CHROME_CANDIDATES = [
   `${process.env.ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe`,
   `${process.env["ProgramFiles(x86)"]}\\Google\\Chrome\\Application\\chrome.exe`,
@@ -15,7 +16,10 @@ const CHROME_CANDIDATES = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 ];
 
-const VIEWPORTS = [
+const VIEWPORTS = IPAD_MODE ? [
+  { name: "iPad-768x1024", width: 768, height: 1024 },
+  { name: "iPad-820x1180", width: 820, height: 1180 },
+] : [
   { name: "320x568", width: 320, height: 568 },
   { name: "390x844", width: 390, height: 844 },
   { name: "844x390", width: 844, height: 390 },
@@ -226,14 +230,17 @@ async function main() {
           heading: document.querySelector('h1')?.textContent ?? '',
           dots: document.querySelectorAll('.qr-step-dots span').length,
           hasNickname: Boolean([...document.querySelectorAll('label span')].find((item) => item.textContent.includes('그림 별명'))),
-          animals: document.querySelectorAll('.chip-row .emoji-chip').length,
+          animals: document.querySelectorAll('.animal-choice-grid .emoji-chip').length,
           passwordChips: document.querySelectorAll('.picture-chip').length,
+          cardBottom: Math.round(document.querySelector('.entry-card')?.getBoundingClientRect().bottom ?? 0),
+          viewportHeight: innerHeight,
           overflow: window.__wiggle.horizontalOverflow().overflow,
           small: window.__wiggle.smallTargets(44),
         }))()`);
         check(!qrEntry.hasCodeInput, `${viewport.name} QR 입장이 수업 코드 입력을 건너뜀`, qrEntry.heading);
-        // 3학년 기본: 스테퍼 없이 별명·동물·비밀번호가 한 화면에 다 보인다.
-        check(qrEntry.dots === 0 && qrEntry.hasNickname && qrEntry.animals >= 6 && qrEntry.passwordChips >= 8, `${viewport.name} QR 입장이 한 화면 폼으로 열림`, qrEntry);
+        // 스테퍼 없이 별명·동물 10개·비밀번호 그림 10개가 한 화면 폼에 함께 있다.
+        check(qrEntry.dots === 0 && qrEntry.hasNickname && qrEntry.animals === 10 && qrEntry.passwordChips === 10, `${viewport.name} QR 입장이 한 화면 폼으로 열림`, qrEntry);
+        if (IPAD_MODE) check(qrEntry.cardBottom <= qrEntry.viewportHeight, `${viewport.name} QR 입장 내용이 첫 화면 안에 있음`, qrEntry);
         check(qrEntry.overflow <= 0, `${viewport.name} QR 입장 가로 스크롤 없음`, qrEntry.overflow);
         check(qrEntry.small.length === 0, `${viewport.name} QR 입장 터치 목표 44px 이상`, qrEntry.small);
 
@@ -643,3 +650,6 @@ async function main() {
 }
 
 await main();
+// Windows에서 종료 중인 헤드리스 Chrome의 DevTools WebSocket이 드물게 이벤트 루프를
+// 붙잡는 경우가 있다. 검증과 finally 정리가 끝났으면 결과 코드로 즉시 종료한다.
+process.exit(process.exitCode ?? 0);

@@ -11,7 +11,7 @@ const [studio, css, renderer] = await Promise.all([
 test("draw width and eraser width are remembered separately", () => {
   // 지우개를 한 번 썼다고 아이가 고른 그리기 굵기가 리셋되면 안 된다.
   assert.match(studio, /const \[drawWidth, setDrawWidth\] = useState<StrokeWidth>\(16\)/);
-  assert.match(studio, /const \[eraserWidth, setEraserWidth\] = useState<StrokeWidth>\(30\)/);
+  assert.match(studio, /const \[eraserWidth, setEraserWidth\] = useState<StrokeWidth>\(48\)/);
   assert.match(studio, /const width = studioTool === "eraser" \? eraserWidth : drawWidth/);
   assert.match(studio, /if \(studioTool === "eraser"\) setEraserWidth\(value\); else setDrawWidth\(value\)/);
 });
@@ -135,4 +135,21 @@ test("an empty free canvas tells a first-time child what to do", () => {
   assert.match(css, /\.studio-body\.without-step-panel \{ grid-template-columns:minmax\(0,1fr\) 180px; \}/);
   assert.match(css, /@media \(max-width:720px\)[\s\S]*\.studio-body\.without-step-panel \{ display:flex; \}/);
   assert.match(css, /@media \(max-width:900px\) and \(max-height:500px\) and \(orientation:landscape\)[\s\S]*\.studio-body\.without-step-panel \{ grid-template-columns:minmax\(0,1fr\) 200px; \}/);
+});
+
+test("lesson choices visibly select, persist and can be chosen again after navigation", () => {
+  assert.match(studio, /function chooseChildChoice\(choice: string\)/);
+  assert.match(studio, /localStorage\.setItem\(`wiggle:lesson-choice:v1:\$\{artwork\.id\}:\$\{artwork\.currentStep\}`/);
+  assert.match(studio, /localStorage\.getItem\(key\)/);
+  assert.match(studio, /aria-pressed=\{childChoice === choice\}/);
+  assert.match(css, /\.choice-chips button\[aria-pressed=true\],\.grimi-chips button\[aria-pressed=true\]/);
+});
+
+test("lesson guides use a pencil demo before dotted practice without leaving the canvas", () => {
+  assert.match(studio, /type GuidePhase = "independent" \| "demo" \| "practice"/);
+  assert.match(studio, /function drawPencil\(/);
+  assert.match(studio, /✏️ 먼저 보여줘/);
+  assert.match(studio, /이제 네 차례야\. 초록 점에서 시작해 봐\./);
+  assert.match(studio, /점선만 보기/);
+  assert.match(studio, /className=\{guidePhase !== "independent" && lessonGuideAvailable \? "guide-canvas" : "guide-canvas hidden"\}/);
 });

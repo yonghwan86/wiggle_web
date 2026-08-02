@@ -221,8 +221,9 @@ test("drawing studio wires hydration, online flush, conflict pause and local-dra
   assert.match(studio, /editVersion === 0 \|\| conflictDraft \|\| completingRef\.current/);
   assert.match(studio, /window\.addEventListener\("online", flushCurrentArtwork\)/);
   assert.match(studio, /flushSaves\(profile\.studentId, url\)/);
-  assert.match(studio, /resolveArtworkDraftDisposition\(flushed\.remaining, artworkUrl, flushed\.completedUrls\.includes\(artworkUrl\)\)/);
-  assert.match(studio, /resolveArtworkDraftDisposition\(flushed\.remaining, artworkUrl, data\.artwork\.status === "complete"\)/);
+  assert.match(studio, /await queuedArtworkSaves\(profile\.studentId, artworkUrl\)/);
+  assert.match(studio, /resolveArtworkDraftDisposition\(localSaves, artworkUrl, data\.artwork\.status === "complete"\)/);
+  assert.match(studio, /if \(artworkUrl && !loadDraft\) void flushSaves\(profile\.studentId, artworkUrl\)/);
   assert.match(studio, /resolveArtworkDraftDisposition\(flushed\.remaining, url, flushed\.completedUrls\.includes\(url\)\)/);
   assert.match(studio, /disposition\.action === "archive"[\s\S]*location\.replace\("\/student\/archive"\)/);
   assert.match(studio, /loadingKeyRef\.current === loadKey \|\| hydratedKeyRef\.current === loadKey/);
@@ -246,5 +247,6 @@ test("drawing studio wires hydration, online flush, conflict pause and local-dra
   assert.match(session, /incoming\.conflict \|\| !item\.conflict/);
   assert.match(session, /save\.branchId \? `branch:\$\{save\.branchId\}` : `legacy:\$\{save\.requestId\}`/);
   assert.match(session, /selectFlushCandidates\(scoped\)/);
+  assert.match(session, /export async function queuedArtworkSaves\(studentId: string, url: string\)/);
   assert.match(session, /data\.status === "complete" \|\| queuedArtworkDraft\(save\)\?\.complete/);
 });

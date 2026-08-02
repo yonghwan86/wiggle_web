@@ -31,7 +31,9 @@ test("artwork CAS, idempotency, completion and R2 keys are race safe", async () 
   assert.match(migration, /PRIMARY KEY\(`artwork_id`, `student_id`, `request_id`\)/); assert.match(migration, /`last_mutation_id` text/);
   assert.match(route, /db\.batch\(statements\)/); assert.match(route, /last_mutation_id = \?/); assert.match(route, /INSERT OR IGNORE INTO artwork_mutations/); assert.match(route, /status <> 'complete'/);
   assert.match(route, /if \(artwork\.status === "complete"\)/); assert.match(route, /!favoritePart \|\| !favoriteReason/);
-  assert.match(route, /requestId.*nonce.*thumb\.png/s); assert.match(route, /state: "candidate"/); assert.match(route, /state: "committed"/); assert.match(route, /removeCandidates/);
+  assert.match(route, /requestId.*nonce.*thumb\.png/s); assert.doesNotMatch(route, /state: "candidate"/); assert.match(route, /state: "committed"/); assert.match(route, /removeCandidates/);
+  assert.equal((route.match(/ARTWORKS\.put\(thumbnailKey/g) ?? []).length, 1);
+  assert.equal((route.match(/ARTWORKS\.put\(finalKey/g) ?? []).length, 1);
   assert.match(runtime, /PRIMARY KEY\(artwork_id, student_id, request_id\)/);
 });
 

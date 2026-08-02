@@ -265,6 +265,12 @@ export async function clearQueuedArtworkSaves(
   db.close();
 }
 
+export async function queuedArtworkSaves(studentId: string, url: string) {
+  const db = await queueDb();
+  try { return scopeQueuedArtworkSaves(await allSaves(db), studentId, url); }
+  finally { db.close(); }
+}
+
 export async function flushSaves(studentId?: string, url?: string): Promise<FlushResult> {
   const profile = activeProfile();
   const scopedStudentId = studentId ?? profile?.studentId;
