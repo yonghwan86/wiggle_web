@@ -1,6 +1,7 @@
 "use client";
 
 import { CURRICULUM_STAGES, LESSONS, LessonMode } from "@/lib/lesson-content";
+import { LessonIllustration } from "./LessonIllustration";
 import { Logo } from "./Logo";
 
 export function LessonPicker({ mode }: { mode: LessonMode }) {
@@ -16,9 +17,8 @@ export function LessonPicker({ mode }: { mode: LessonMode }) {
     <div className="lesson-list">{lessons.map((lesson, index) => {
       const choices = lesson.steps.filter((step) => step.choices?.length).length;
       return <a className="lesson-card" href={`/student/draw/new?lesson=${lesson.slug}`} key={lesson.slug}>
-        <span>{lesson.emoji}</span><div><small>{index + 1}/10</small><h2>{lesson.title}</h2><p>{lesson.description}</p><small>{lesson.steps.length}단계 · 내가 고르는 순간 {choices}번</small></div><b>시작 →</b>
+        <LessonIllustration lesson={lesson} /><div><small>{index + 1}/10</small><h2>{lesson.title}</h2><p>{lesson.description}</p><small>{lesson.steps.length}단계 · 내가 고르는 순간 {choices}번</small></div><b>시작 →</b>
       </a>;
     })}</div>
-    <a className="button secondary" href="/student/draw/new?mode=free">바로 자유롭게 그리기</a>
   </main>;
 }

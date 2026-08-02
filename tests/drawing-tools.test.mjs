@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [studio, css, renderer] = await Promise.all([
+const [studio, css, renderer, messageCenter] = await Promise.all([
   readFile(new URL("../app/components/DrawingStudio.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   readFile(new URL("../lib/draw-renderer.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/components/StudentMessageCenter.tsx", import.meta.url), "utf8"),
 ]);
 
 test("draw width and eraser width are remembered separately", () => {
@@ -105,11 +106,13 @@ test("pen mode keeps touch from drawing, is reversible, and two fingers zoom", (
   assert.match(css, /\.canvas-stack \{ position:absolute; inset:0; transform-origin:0 0; \}/);
 });
 
-test("teacher message banner can be dismissed and stays dismissed for the same message", () => {
-  // 고정 오버레이 배너에 닫기가 없으면 밑의 버튼(따라 그리기 선택지 등)이 영영 가려진다.
-  assert.match(studio, /className="canvas-message-close"/);
-  assert.match(studio, /teacherMessage\.id !== dismissedMessageId/);
-  assert.match(studio, /wiggle:dismissed-teacher-message/);
+test("teacher message banner can be dismissed but every message remains in history", () => {
+  assert.match(studio, /<StudentMessageCenter messages=\{teacherMessages\} floating/);
+  assert.match(messageCenter, /className="canvas-message-close"/);
+  assert.match(messageCenter, /action: "ackTeacherMessage"/);
+  assert.match(messageCenter, /닫아도 여기에서 다시 볼 수 있어요/);
+  assert.match(messageCenter, /\[\.\.\.messages\]\.reverse\(\)\.map/);
+  assert.doesNotMatch(messageCenter, /sessionStorage/);
   assert.match(css, /\.canvas-message-close \{ width:44px; min-width:44px; height:44px;/);
 });
 

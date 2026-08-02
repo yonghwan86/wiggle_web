@@ -3,13 +3,14 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [speak, speech, join, home, studio, css] = await Promise.all([
+const [speak, speech, join, home, studio, css, messageCenter] = await Promise.all([
   read("../app/components/SpeakButton.tsx"),
   read("../lib/speech.ts"),
   read("../app/components/JoinClient.tsx"),
   read("../app/components/StudentHome.tsx"),
   read("../app/components/DrawingStudio.tsx"),
   read("../app/globals.css"),
+  read("../app/components/StudentMessageCenter.tsx"),
 ]);
 
 test("important child prompts can be heard on demand without automatic classroom audio", () => {
@@ -22,7 +23,7 @@ test("important child prompts can be heard on demand without automatic classroom
   assert.match(speak, /같이 읽기/);
   assert.match(speak, /선생님과 같이 읽어요/);
   assert.match(home, /SpeakButton text="오늘은 무엇을 그릴까\? 선생님이 고른 활동부터 시작해 봐요\."/);
-  assert.match(home, /선생님이 말했어요/);
+  assert.match(messageCenter, /선생님이 말했어요/);
   assert.match(studio, /SpeakButton text=\{`\$\{lesson\.steps\[step\]\.instruction\}/);
   assert.match(studio, /SpeakButton text=\{`\$\{coaching\.question\}/);
   assert.match(studio, /SpeakButton text=\{coaching\.nextAction\}/);
@@ -44,7 +45,7 @@ test("drawing, navigation and reflection retain familiar visual actions when tex
   assert.match(home, /<span aria-hidden="true">✏️<\/span>[\s\S]*<h2>이어 그리기<\/h2>/);
   assert.match(home, /<span aria-hidden="true">🖼️<\/span>[\s\S]*<h2>내 그림<\/h2>/);
   assert.match(home, /<span aria-hidden="true">🎨<\/span>[\s\S]*<h2>활동 고르기<\/h2>/);
-  assert.match(home, /<span aria-hidden="true">▶️<\/span>\{teacherDone \? "한 번 더 그리기" : "활동 시작"\}/);
+  assert.match(home, /<span aria-hidden="true">▶️<\/span>\{teacherDone \? "한 번 더 그리기" : teacherArtwork \? "이어 그리기" : "그림 시작하기"\}/);
   assert.match(studio, /⬅️ 이전/);
   assert.match(studio, /"➡️ 다음"/);
   assert.match(studio, /QUICK_DRAW_TOPICS/);

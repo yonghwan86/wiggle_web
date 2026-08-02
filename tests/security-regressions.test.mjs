@@ -41,7 +41,10 @@ test("duplicate recovery, logout and protected response regressions stay fixed",
   const [student, teacher, security] = await Promise.all([read("../app/api/student/route.ts"), read("../app/api/teacher/route.ts"), read("../lib/security.ts")]);
   assert.match(student, /\.all<RecoveredStudent>/); assert.match(student, /Promise\.all\(candidates\.results\.map/); assert.match(student, /matches\.length > 1/);
   assert.match(teacher, /revokeTeacherSession/); assert.match(security, /DELETE FROM teacher_sessions/); assert.match(security, /cache-control", "no-store/);
-  assert.match(student, /ORDER BY m\.created_at DESC, m\.id DESC LIMIT 50/); assert.match(student, /ORDER BY createdAt ASC, id ASC/); assert.match(student, /INSERT OR IGNORE INTO message_receipts/);
+  assert.match(student, /ORDER BY m\.created_at DESC, m\.id DESC LIMIT 50/); assert.match(student, /ORDER BY createdAt ASC, id ASC/);
+  assert.match(student, /LEFT JOIN message_receipts r ON r\.message_id = m\.id AND r\.student_id = \?/);
+  assert.doesNotMatch(student, /if \(messages\.results\.length\).*message_receipts/);
+  assert.match(student, /action === "ackTeacherMessage"/); assert.match(student, /INSERT OR IGNORE INTO message_receipts/);
 });
 
 test("P1 operational safeguards are wired", async () => {

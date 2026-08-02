@@ -43,6 +43,26 @@ test("every lesson has short bounded steps, child choices, a data guide and a fr
   }
 });
 
+test("every guided and observation drawing has a visible guide for every drawing step", () => {
+  for (const lesson of LESSONS.filter((item) => item.stage >= 2)) {
+    const guidedSteps = new Set(lesson.guide.map((mark) => mark.step));
+    for (let step = 1; step < lesson.steps.length; step += 1) assert.ok(guidedSteps.has(step), `${lesson.slug}: ${step}단계 guide가 필요하다`);
+    assert.ok(lesson.guide.length >= 8, `${lesson.slug}: 전체 대상이 보일 만큼 충분한 선이 필요하다`);
+    assert.ok(!guidedSteps.has(lesson.steps.length), `${lesson.slug}: 마지막 자유 창작에는 정답 점선이 없어야 한다`);
+  }
+});
+
+test("the child sees a full service-made reference drawing instead of only an emoji", async () => {
+  const [illustration, studio, picker] = await Promise.all([
+    read("../app/components/LessonIllustration.tsx"), read("../app/components/DrawingStudio.tsx"), read("../app/components/LessonPicker.tsx"),
+  ]);
+  assert.match(illustration, /for \(const mark of lesson\.guide\)/);
+  assert.match(illustration, /aria-label=\{`\$\{lesson\.title\} 전체 참고 그림`\}/);
+  assert.match(studio, /<LessonIllustration lesson=\{lesson\} currentStep=\{step\}/);
+  assert.match(picker, /<LessonIllustration lesson=\{lesson\}/);
+  assert.doesNotMatch(picker, /바로 자유롭게 그리기/);
+});
+
 test("teacher activity keys cover thirty lessons and free creation while mapping legacy labels", () => {
   assert.equal(ACTIVITY_KEYS.size, 31);
   assert.equal(DEFAULT_ACTIVITY_KEY, `lesson:${LESSONS[0].slug}`);

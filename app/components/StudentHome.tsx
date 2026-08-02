@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { activeProfile, deactivateProfile, flushSaves, studentFetch } from "@/lib/client-session";
-import { LESSONS, lessonBySlug } from "@/lib/lesson-content";
+import { lessonBySlug } from "@/lib/lesson-content";
+import { LessonIllustration } from "./LessonIllustration";
 import { Logo } from "./Logo";
 import { SpeakButton } from "./SpeakButton";
+import { StudentMessageCenter, StudentTeacherMessage } from "./StudentMessageCenter";
 
-type HomeArtwork = { id: string; title: string; learningMode: string; lessonSlug: string | null; status: string; updatedAt: string };
-type HomeData = { student: { id: string; nickname: string; animal: string; classroomName: string }; artworks: HomeArtwork[]; messages: Array<{ id: string; body: string; audience: string; createdAt: string }>; currentActivityKey: string; currentActivityLabel: string };
+type HomeArtwork = { id: string; title: string; learningMode: string; lessonSlug: string | null; status: string; currentStep: number; updatedAt: string };
+type HomeData = { student: { id: string; nickname: string; animal: string; classroomName: string }; artworks: HomeArtwork[]; messages: StudentTeacherMessage[]; currentActivityKey: string; currentActivityLabel: string };
 
 export function StudentHome() {
   const [data, setData] = useState<HomeData | null>(null);
@@ -60,12 +62,13 @@ export function StudentHome() {
 
   if (!data) return <main className="app-shell"><header className="app-header"><Logo /></header><div className="loading-card" role="status">{error || "내 그림을 찾고 있어요…"}</div></main>;
 
-  const newestMessage = data.messages.at(-1);
-  const completed = new Set(data.artworks.filter((artwork) => artwork.status === "complete" && artwork.lessonSlug).map((artwork) => artwork.lessonSlug));
   const teacherLesson = data.currentActivityKey.startsWith("lesson:") ? lessonBySlug(data.currentActivityKey.slice(7)) : undefined;
-  const teacherActivityPath = teacherLesson ? `/student/draw/new?lesson=${teacherLesson.slug}` : "/student/draw/new?mode=free";
-  const teacherDone = teacherLesson ? completed.has(teacherLesson.slug) : data.artworks.some((artwork) => artwork.learningMode === "free" && artwork.status === "complete");
-  const totalProgress = Math.round((completed.size / Math.max(1, LESSONS.length)) * 100);
+  const teacherArtwork = data.artworks.find((artwork) => teacherLesson ? artwork.lessonSlug === teacherLesson.slug : artwork.learningMode === "free");
+  const teacherDone = teacherArtwork?.status === "complete";
+  const teacherActivityPath = teacherArtwork && !teacherDone ? `/student/draw/${teacherArtwork.id}` : teacherLesson ? `/student/draw/new?lesson=${teacherLesson.slug}` : "/student/draw/new?mode=free";
+  const teacherStepTotal = teacherLesson?.steps.length ?? 1;
+  const teacherStep = teacherDone ? teacherStepTotal : teacherArtwork ? Math.min(teacherStepTotal, teacherArtwork.currentStep + 1) : 0;
+  const teacherProgress = Math.round((teacherStep / teacherStepTotal) * 100);
 
   async function leaveClass() {
     if (leaving) return;
@@ -78,13 +81,11 @@ export function StudentHome() {
     <header className="app-header student-home-header">
       <Logo />
       <div className="student-identity"><span aria-hidden="true">{data.student.animal}</span><div><b>{data.student.nickname}</b><small>{data.student.classroomName}</small></div></div>
-      <div className="student-header-actions"><button className="small-button" onClick={() => void leaveClass()} disabled={leaving}>🐾 학생 바꾸기</button><button className="small-button finish-class-button" onClick={() => void leaveClass()} disabled={leaving}>🚪 수업 마치기</button></div>
+      <div className="student-header-actions"><StudentMessageCenter messages={data.messages} floating compact /><button className="small-button" onClick={() => void leaveClass()} disabled={leaving}>🐾 학생 바꾸기</button><button className="small-button finish-class-button" onClick={() => void leaveClass()} disabled={leaving}>🚪 수업 마치기</button></div>
     </header>
     {error && <p className="error-box" role="alert">{error}</p>}
-    {newestMessage && <aside className="teacher-message"><span>👩‍🏫 선생님</span><p>{newestMessage.body}</p><SpeakButton text={`선생님이 말했어요. ${newestMessage.body}`} compact /><small>{newestMessage.audience === "all" ? "우리 반" : "나에게"}</small></aside>}
-
     <section className="student-home-hero">
-      <span className="grimi-home-character" aria-hidden="true">✨</span>
+      <img className="grimi-home-character" src="/brand/grimi-mascot.png" alt="붓과 팔레트를 든 그림 친구 그리미" />
       <div><p className="eyebrow">그리미와 함께</p><h1>오늘은 무엇을 그릴까?</h1><p>선생님이 고른 활동부터 시작해 봐요.</p></div>
       <SpeakButton text="오늘은 무엇을 그릴까? 선생님이 고른 활동부터 시작해 봐요." />
     </section>
@@ -102,9 +103,8 @@ export function StudentHome() {
     </nav>
 
     <section className="teacher-selected-activity">
-      <div className="teacher-activity-icon" aria-hidden="true">{teacherLesson?.emoji ?? "✨"}</div>
-      <div className="teacher-activity-copy"><p className="eyebrow">선생님이 선택한 오늘 활동</p><h2>{data.currentActivityLabel}</h2><p>{teacherLesson?.description ?? "빈 도화지에서 내 생각을 그리고, 필요할 때 그리미를 불러요."}</p><div className="teacher-activity-progress" aria-label={`전체 활동 ${totalProgress}% 진행`}><i style={{ width: `${totalProgress}%` }} /></div><small>{teacherDone ? "오늘 활동을 완성했어요" : "내 속도로 천천히 해도 좋아요"}</small></div>
-      <a className="button primary child-primary-action" href={teacherActivityPath}><span aria-hidden="true">▶️</span>{teacherDone ? "한 번 더 그리기" : "활동 시작"}</a>
+      <div className="teacher-activity-copy"><p className="teacher-activity-pill">⭐ 선생님이 선택한 오늘 활동</p><h2>{data.currentActivityLabel}</h2><p>{teacherLesson?.description ?? "내 생각을 그리고, 필요할 때 그리미를 불러요."}</p><a className="button primary child-primary-action" href={teacherActivityPath}><span aria-hidden="true">▶️</span>{teacherDone ? "한 번 더 그리기" : teacherArtwork ? "이어 그리기" : "그림 시작하기"}</a></div>
+      <div className="teacher-activity-visual">{teacherLesson ? <LessonIllustration lesson={teacherLesson} /> : <img src="/brand/grimi-mascot.png" alt="자유 창작을 안내하는 그리미" />}<span>{teacherStep}/{teacherStepTotal}</span><div className="teacher-activity-progress" aria-label={`오늘 활동 ${teacherProgress}% 진행`}><i style={{ width: `${teacherProgress}%` }} /></div></div>
     </section>
   </main>;
 }
