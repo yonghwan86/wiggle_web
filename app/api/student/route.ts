@@ -117,7 +117,7 @@ async function studentPost(request: Request) {
   if (action === "switchProfile") {
     if (!(await ipAllowed(request))) return jsonError("확인 시도가 많아요. 잠시 기다려 주세요.", 429);
     const studentId = cleanText(payload.studentId, 40); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
-    if (pictureLength !== 3 && pictureLength !== 4) return jsonError("그림 비밀번호는 세 개 또는 예전에 만든 네 개를 골라 주세요.");
+    if (pictureLength !== 3) return jsonError("그림 비밀번호 세 개를 골라 주세요.");
     // 대상 학생 계정 단위 한도가 없으면 그림 비밀번호 512가지를 IP만 바꿔 가며 전수 시도할 수 있다.
     if (!(await targetAllowed(`unlock:${studentId}`))) return jsonError("여러 번 틀렸어요. 선생님께 도움을 요청해 주세요.", 429);
     const candidate = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id JOIN recovery_credentials r ON r.student_id = s.id WHERE s.id = ? AND s.archived_at IS NULL AND c.active = 1`).bind(studentId).first<RecoveredStudent>();
@@ -138,7 +138,7 @@ async function studentPost(request: Request) {
       student = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM recovery_credentials r JOIN student_profiles s ON s.id = r.student_id JOIN classrooms c ON c.id = s.classroom_id WHERE r.personal_qr_hash = ? AND s.archived_at IS NULL AND c.active = 1`).bind(qrTarget.slice(3)).first<RecoveredStudent>();
     } else {
       const classCode = cleanText(payload.classCode, 12); const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
-      if (pictureLength !== 3 && pictureLength !== 4) return jsonError("그림 비밀번호는 세 개 또는 예전에 만든 네 개를 골라 주세요.");
+      if (pictureLength !== 3) return jsonError("그림 비밀번호 세 개를 골라 주세요.");
       const recoverTarget = `recover:${classCode}:${nickname}:${animal}`;
       if (!(await targetAllowed(recoverTarget))) return jsonError("여러 번 틀렸어요. 선생님께 도움을 요청해 주세요.", 429);
       const candidates = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id JOIN recovery_credentials r ON r.student_id = s.id WHERE c.class_code = ? AND s.nickname = ? AND s.animal = ? AND s.archived_at IS NULL AND c.active = 1 ORDER BY s.id`).bind(classCode, nickname, animal).all<RecoveredStudent>();

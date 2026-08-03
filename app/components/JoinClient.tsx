@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { activeProfile, deviceProfiles, DeviceProfile, storeProfile } from "@/lib/client-session";
-import { LEGACY_PICTURE_PASSWORD_LENGTH, NEW_PICTURE_PASSWORD_LENGTH, shouldOfferLegacyPicturePassword } from "@/lib/picture-password";
+import { PICTURE_PASSWORD_LENGTH } from "@/lib/picture-password";
 import { classifyEntryError, EntryErrorKind, readStudentEntryResponse, StudentEntryResponseError } from "@/lib/student-entry-client";
 import { Logo } from "./Logo";
 import { QrCode } from "./QrCode";
@@ -50,15 +50,13 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   const [busy, setBusy] = useState(false);
   const [personalQrToken, setPersonalQrToken] = useState("");
   const [selectedProfile, setSelectedProfile] = useState<DeviceProfile | null>(null);
-  const [legacyPassword, setLegacyPassword] = useState(false);
-  const [legacyOffer, setLegacyOffer] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const qrFlow = Boolean(initialEntry) && !recoveryToken;
   // QR로 들어왔으면 수업 코드는 QR이 대신하므로 코드 칸을 숨기고 번호를 별명부터 매긴다.
   const hideCodeField = qrFlow && mode === "join";
 
   useEffect(() => {
-    setPictures([]); setLegacyPassword(false); setLegacyOffer(false); setDuplicateWarning(false); setError(""); setErrorKind(""); setTeacherCallOpen(false);
+    setPictures([]); setDuplicateWarning(false); setError(""); setErrorKind(""); setTeacherCallOpen(false);
     const stored = deviceProfiles(); setProfiles(stored);
     if (!initialEntry && !recoveryToken && stored.length) setMode("profiles");
     if (activeProfile() && !initialEntry && !recoveryToken) setMode("profiles");
@@ -87,7 +85,7 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   }, [initialEntry, recoveryToken]);
 
   const recoveryUrl = useMemo(() => personalQrToken && typeof location !== "undefined" ? `${location.origin}/join/recover?token=${personalQrToken}` : "", [personalQrToken]);
-  const targetLength = mode === "join" ? NEW_PICTURE_PASSWORD_LENGTH : legacyPassword ? LEGACY_PICTURE_PASSWORD_LENGTH : NEW_PICTURE_PASSWORD_LENGTH;
+  const targetLength = PICTURE_PASSWORD_LENGTH;
 
   function clearEntryError() {
     setError(""); setErrorKind(""); setTeacherCallOpen(false);
@@ -120,18 +118,8 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
     clearEntryError();
   }
 
-  function changePasswordLength(useLegacy: boolean) {
-    setLegacyPassword(useLegacy);
-    setLegacyOffer(false);
-    setDuplicateWarning(false);
-    setPictures([]);
-    clearEntryError();
-  }
-
   function resetPassword(nextMode: Mode) {
     setPictures([]);
-    setLegacyPassword(false);
-    setLegacyOffer(false);
     setDuplicateWarning(false);
     clearEntryError();
     setMode(nextMode);
@@ -139,10 +127,9 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
 
   function picturePasswordPicker() {
     const creating = mode === "join";
-    const countWord = targetLength === 3 ? "세 개" : "네 개";
     const instruction = creating
-      ? `그림 비밀번호를 만들어요. 같은 그림을 여러 번 골라도 돼요. 순서대로 ${countWord}를 골라요.`
-      : `내 그림 비밀번호를 눌러요. 만들 때 골랐던 그림 ${countWord}를 순서대로 눌러요.`;
+      ? "그림 비밀번호를 만들어요. 같은 그림을 여러 번 골라도 돼요. 순서대로 세 개를 골라요."
+      : "내 그림 비밀번호를 눌러요. 만들 때 골랐던 그림 세 개를 순서대로 눌러요.";
     const chipsFull = pictures.length >= targetLength;
     return <fieldset className="picture-password-picker"><legend>{creating ? "그림 비밀번호 만들기" : "내 그림 비밀번호"} <small>{pictures.length}/{targetLength}</small></legend><div className="picture-password-help"><p className="helper">{creating ? `같은 그림도 괜찮아요. 순서대로 ${targetLength}개 골라요.` : "만들 때 고른 순서 그대로 눌러요."}</p><SpeakButton text={instruction} compact /></div><div className="password-slots" aria-label={`고른 그림 ${pictures.length}개`}>{Array.from({ length: targetLength }, (_, index) => <span className={pictures[index] ? "filled" : ""} key={index}>{pictures[index] ? pictureFor(pictures[index]) : "?"}</span>)}</div><div className="picture-choice-grid" role="group" aria-label={`그림 비밀번호 고르기. 현재 ${pictures.length}/${targetLength}개를 골랐어요. 같은 그림을 여러 번 고를 수 있어요.`}>{PICTURES.map((item) => <button type="button" className="picture-chip" aria-label={chipsFull ? `${item.name} 그림. 이미 ${targetLength}개를 다 골랐어요. 바꾸려면 다시 골라요를 눌러요.` : `${item.name} 그림 추가. 현재 ${pictures.length}/${targetLength}개 선택. 같은 그림도 다시 고를 수 있어요.`} key={item.value} onClick={() => appendPicture(item.value)}>{item.picture}</button>)}</div><div className="password-actions"><button type="button" className={`reset-pictures-button${errorKind === "password" ? " attention" : ""}`} disabled={!pictures.length} aria-label={`고른 그림 ${targetLength}칸 모두 지우고 다시 고르기`} onClick={resetPictures}><span aria-hidden="true">🔄</span> 다시 골라요</button><button type="button" className="small-button" disabled={!pictures.length} aria-label={`마지막 그림 한 칸 지우기. 현재 ${pictures.length}개 선택.`} onClick={removeLastPicture}>↩️ 한 칸 지우기</button></div></fieldset>;
   }
@@ -166,13 +153,8 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
     </div>;
   }
 
-  function legacyPasswordAction() {
-    if (recoveryToken || (mode !== "unlock" && mode !== "recover") || (!legacyOffer && !legacyPassword)) return null;
-    return <button type="button" className="text-button legacy-password-action" onClick={() => changePasswordLength(!legacyPassword)}>{legacyPassword ? "비밀번호 세 개로 돌아가기" : "비밀번호가 네 개였나요?"}</button>;
-  }
-
   async function submit(allowDuplicate = false) {
-    clearEntryError(); setLegacyOffer(false); setDuplicateWarning(false); setBusy(true);
+    clearEntryError(); setDuplicateWarning(false); setBusy(true);
     let failureKind: EntryErrorKind = "general";
     try {
 
@@ -182,7 +164,6 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
         : recoveryToken ? { action, personalQrToken: recoveryToken } : { action, classCode: entry, nickname, animal, picturePassword: pictures };
       const response = await fetch("/api/student", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), cache: "no-store" });
       failureKind = classifyEntryError({ status: response.status, action, hasPersonalQrToken: Boolean(recoveryToken) });
-      setLegacyOffer(shouldOfferLegacyPicturePassword({ status: response.status, mode, hasPersonalQrToken: Boolean(recoveryToken), legacyMode: legacyPassword, submittedLength: pictures.length }));
       const data = await readStudentEntryResponse(response);
       if (response.status === 409 && data.code === "PROFILE_EXISTS" && action === "join") {
         setDuplicateWarning(true);
@@ -206,7 +187,7 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   }
 
   if (mode === "unlock" && selectedProfile) {
-    return <main className="entry-shell"><div className="entry-top"><Logo /><span>공유 태블릿</span></div><section className="entry-card"><button className="small-button" onClick={() => resetPassword("profiles")}>← 학생 다시 고르기</button><div className="profile-unlock"><span>{selectedProfile.animal}</span><h1>{selectedProfile.nickname}</h1><p>{selectedProfile.classroomName}</p></div>{picturePasswordPicker()}{errorNotice()}{legacyPasswordAction()}<button className="button primary full child-primary-action" disabled={busy || pictures.length !== targetLength} onClick={() => void submit()}><span aria-hidden="true">▶️</span>{busy ? "확인 중…" : "내 그림 열기"}</button></section></main>;
+    return <main className="entry-shell"><div className="entry-top"><Logo /><span>공유 태블릿</span></div><section className="entry-card"><button className="small-button" onClick={() => resetPassword("profiles")}>← 학생 다시 고르기</button><div className="profile-unlock"><span>{selectedProfile.animal}</span><h1>{selectedProfile.nickname}</h1><p>{selectedProfile.classroomName}</p></div>{picturePasswordPicker()}{errorNotice()}<button className="button primary full child-primary-action" disabled={busy || pictures.length !== targetLength} onClick={() => void submit()}><span aria-hidden="true">▶️</span>{busy ? "확인 중…" : "내 그림 열기"}</button></section></main>;
   }
 
   if (mode === "done") {
@@ -214,6 +195,6 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   }
 
   return (
-    <main className="entry-shell"><div className="entry-top"><Logo />{qrFlow ? <span>QR 입장</span> : <a href="/teacher">교사 입장</a>}</div><section className="entry-card"><div className="entry-title-row"><div><p className="eyebrow">{mode === "join" ? "수업에 들어가요" : "내 그림을 찾아요"}</p><h1>{mode === "join" ? "반가워, 꼬마 화가!" : "다시 만나서 반가워!"}</h1></div><SpeakButton text={mode === "join" ? (hideCodeField ? "반가워! 별명과 동물을 고르고, 그림 비밀번호를 순서대로 골라요." : "선생님과 함께 수업 코드, 동물, 그림 비밀번호를 골라요.") : "내 수업 코드, 동물, 그림 비밀번호를 골라서 그림을 찾아요."} /></div>{mode === "join" && profiles.length > 0 && <button className="saved-profile-notice" type="button" onClick={() => resetPassword("profiles")}>🐾 이 기기에 저장된 내 동물 고르기</button>}{recoveryToken ? <p className="helper">개인 카드로 안전하게 찾는 중이에요.</p> : <>{!hideCodeField && <label><span>1️⃣ 수업 코드</span><input className={errorKind === "code" ? "input-error" : ""} inputMode="numeric" maxLength={12} value={entry} onChange={(event) => { setEntry(event.target.value.replace(/\s/g, "")); setDuplicateWarning(false); clearEntryError(); }} placeholder="예: 2841" /></label>}<label><span>{hideCodeField ? "1️⃣" : "2️⃣"} 그림 별명</span><div className="nickname-row"><input maxLength={16} value={nickname} onChange={(event) => { setNickname(event.target.value); setDuplicateWarning(false); clearEntryError(); }} placeholder="예: 토끼 화가" /><button type="button" onClick={suggestNickname}>🎲 별명 골라줘</button></div></label><fieldset><legend>{hideCodeField ? "2️⃣" : "3️⃣"} 내 동물</legend><div className="animal-choice-grid">{ANIMALS.map((value) => <button type="button" aria-pressed={animal === value} aria-label={`${ANIMAL_NAMES[value]} 고르기`} className={animal === value ? "emoji-chip selected" : "emoji-chip"} key={value} onClick={() => { setAnimal(value); setDuplicateWarning(false); clearEntryError(); }}>{value}</button>)}</div></fieldset>{picturePasswordPicker()}</>}{duplicateWarningNotice()}{errorNotice()}{legacyPasswordAction()}<button className="button primary full child-primary-action" disabled={busy || duplicateWarning || (!recoveryToken && (!entry || !nickname || pictures.length !== targetLength))} onClick={() => void submit()}><span aria-hidden="true">▶️</span>{busy ? "찾는 중…" : mode === "join" ? "수업 들어가기" : "내 그림 찾기"}</button>{!recoveryToken && <button className="text-button" onClick={() => { if (qrFlow && mode !== "join") setEntry(initialEntry); if (mode === "join") { switchToRecover(); return; } resetPassword("join"); }}>{mode === "join" ? "🔎 전에 그리던 그림이 있어요" : "➕ 처음 왔어요"}</button>}</section></main>
+    <main className="entry-shell"><div className="entry-top"><Logo />{qrFlow ? <span>QR 입장</span> : <a href="/teacher">교사 입장</a>}</div><section className="entry-card"><div className="entry-title-row"><div><p className="eyebrow">{mode === "join" ? "수업에 들어가요" : "내 그림을 찾아요"}</p><h1>{mode === "join" ? "반가워, 꼬마 화가!" : "다시 만나서 반가워!"}</h1></div><SpeakButton text={mode === "join" ? (hideCodeField ? "반가워! 별명과 동물을 고르고, 그림 비밀번호를 순서대로 골라요." : "선생님과 함께 수업 코드, 동물, 그림 비밀번호를 골라요.") : "내 수업 코드, 동물, 그림 비밀번호를 골라서 그림을 찾아요."} /></div>{mode === "join" && profiles.length > 0 && <button className="saved-profile-notice" type="button" onClick={() => resetPassword("profiles")}>🐾 이 기기에 저장된 내 동물 고르기</button>}{recoveryToken ? <p className="helper">개인 카드로 안전하게 찾는 중이에요.</p> : <>{!hideCodeField && <label><span>1️⃣ 수업 코드</span><input className={errorKind === "code" ? "input-error" : ""} inputMode="numeric" maxLength={12} value={entry} onChange={(event) => { setEntry(event.target.value.replace(/\s/g, "")); setDuplicateWarning(false); clearEntryError(); }} placeholder="예: 2841" /></label>}<label><span>{hideCodeField ? "1️⃣" : "2️⃣"} 그림 별명</span><div className="nickname-row"><input maxLength={16} value={nickname} onChange={(event) => { setNickname(event.target.value); setDuplicateWarning(false); clearEntryError(); }} placeholder="예: 토끼 화가" /><button type="button" onClick={suggestNickname}>🎲 별명 골라줘</button></div></label><fieldset><legend>{hideCodeField ? "2️⃣" : "3️⃣"} 내 동물</legend><div className="animal-choice-grid">{ANIMALS.map((value) => <button type="button" aria-pressed={animal === value} aria-label={`${ANIMAL_NAMES[value]} 고르기`} className={animal === value ? "emoji-chip selected" : "emoji-chip"} key={value} onClick={() => { setAnimal(value); setDuplicateWarning(false); clearEntryError(); }}>{value}</button>)}</div></fieldset>{picturePasswordPicker()}</>}{duplicateWarningNotice()}{errorNotice()}<button className="button primary full child-primary-action" disabled={busy || duplicateWarning || (!recoveryToken && (!entry || !nickname || pictures.length !== targetLength))} onClick={() => void submit()}><span aria-hidden="true">▶️</span>{busy ? "찾는 중…" : mode === "join" ? "수업 들어가기" : "내 그림 찾기"}</button>{!recoveryToken && <button className="text-button" onClick={() => { if (qrFlow && mode !== "join") setEntry(initialEntry); if (mode === "join") { switchToRecover(); return; } resetPassword("join"); }}>{mode === "join" ? "🔎 전에 그리던 그림이 있어요" : "➕ 처음 왔어요"}</button>}</section></main>
   );
 }
