@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { estimateDocumentBytes, estimateStrokeBytes, STROKE_TOOLS, STROKE_WIDTHS, validateDrawDocument } from "../lib/drawing-model.ts";
+import { estimateDocumentBytes, estimateStrokeBytes, SHAPE_KINDS, STROKE_TOOLS, STROKE_WIDTHS, validateDrawDocument } from "../lib/drawing-model.ts";
 import { isMirrorOf, mirrorOp, undoGroupSize } from "../lib/symmetry.ts";
 import { clampView, IDENTITY_VIEW, pinchView } from "../lib/canvas-view.ts";
 
@@ -33,6 +33,32 @@ test("server validation accepts every shipped tool and width, and only those", (
   const shape = (width) => ({ ...stroke(`sh${width}`, { width }), type: "shape", shape: "circle", tool: undefined, points: [{ x: 0.2, y: 0.2 }, { x: 0.6, y: 0.6 }] });
   assert.ok(validateDrawDocument(documentWith([shape(48)])));
   assert.equal(validateDrawDocument(documentWith([shape(12)])), null);
+});
+
+test("new shape, smoothing and square eraser metadata survive validation without changing legacy strokes", () => {
+  const shape = (kind) => ({
+    ...stroke(`shape-${kind}`, { tool: undefined }),
+    type: "shape",
+    shape: kind,
+    filled: true,
+    points: [{ x: 0.15, y: 0.2 }, { x: 0.75, y: 0.8 }],
+  });
+  for (const kind of SHAPE_KINDS) {
+    const validated = validateDrawDocument(documentWith([shape(kind)]));
+    assert.equal(validated?.ops[0].shape, kind);
+    assert.equal(validated?.ops[0].filled, true);
+  }
+
+  const enhanced = stroke("enhanced", { tool: "eraser", color: undefined, smoothed: false, squareEraser: true });
+  const enhancedValidated = validateDrawDocument(documentWith([enhanced]));
+  assert.equal(enhancedValidated?.ops[0].squareEraser, true);
+  assert.equal(enhancedValidated?.ops[0].smoothed, false);
+
+  const legacy = validateDrawDocument(documentWith([stroke("legacy")]));
+  assert.equal(legacy?.ops[0].smoothed, undefined);
+  assert.equal(legacy?.ops[0].squareEraser, undefined);
+  assert.equal(validateDrawDocument(documentWith([stroke("bad-smoothing", { smoothed: "yes" })])), null);
+  assert.equal(validateDrawDocument(documentWith([shape("hexagon")])), null);
 });
 
 test("mirror ops survive server validation and pair up for undo", () => {

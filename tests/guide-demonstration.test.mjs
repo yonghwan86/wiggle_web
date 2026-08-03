@@ -17,10 +17,10 @@ test("stage-one guides demonstrate the path before dotted practice", () => {
 test("guide demonstrations are replayable, skippable and student scoped", () => {
   assert.match(studio, /wiggle:guide-demo:v1:\$\{profile\.studentId\}:\$\{guideSourceKey\}/);
   assert.match(studio, /"✏️ 다시 보기"/);
-  assert.match(studio, />점선만 보기</);
+  assert.match(studio, />\s*점선만 보기\s*</);
   assert.match(studio, /"이제 혼자 해볼래"/);
   assert.match(studio, /if \(guidePhase === "demo"\) stopGuideDemoForPractice\(\)/);
-  assert.match(studio, /stopGuideDemoForPractice[\s\S]*markCurrentGuideSeen\(\); setGuidePhase\("practice"\)/);
+  assert.match(studio, /stopGuideDemoForPractice[\s\S]*markCurrentGuideSeen\(\);\s*setGuidePhase\("practice"\)/);
   assert.match(studio, /prefers-reduced-motion: reduce/);
   assert.match(studio, /addEventListener\("change", stopForReducedMotion\)/);
   assert.match(studio, /removeEventListener\("change", stopForReducedMotion\)/);
@@ -32,7 +32,7 @@ test("detailed guided steps slow the pencil demo down for young children", () =>
 });
 
 test("the demonstration remains outside the child's artwork and timelapse", () => {
-  assert.match(studio, /<canvas ref=\{guideRef\}[\s\S]*<canvas ref=\{canvasRef\}/);
+  assert.match(studio, /<canvas\s+ref=\{guideRef\}[\s\S]*<canvas\s+ref=\{canvasRef\}/);
   assert.match(css, /\.guide-canvas \{[^}]*pointer-events:none/);
   // 저장 이미지는 문서에서 직접 렌더한다(documentImage) — 가이드 레이어는 물론
   // 화면 캔버스의 미리보기 픽셀도 저장 이미지에 섞이지 않는다.

@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+const compactSource = (text) => text.replace(/\s+/g, " ");
+
 const [studio, css, renderer, messageCenter] = await Promise.all([
-  readFile(new URL("../app/components/DrawingStudio.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../app/components/DrawingStudio.tsx", import.meta.url), "utf8").then(compactSource),
   readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   readFile(new URL("../lib/draw-renderer.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/components/StudentMessageCenter.tsx", import.meta.url), "utf8"),
@@ -29,21 +31,21 @@ test("every studio tool is reachable from the panel", () => {
     assert.match(studio, new RegExp(`onClick=\\{\\(\\) => chooseStudioTool\\("${tool}"\\)\\}`));
   }
   assert.match(studio, /aria-pressed=\{mirror\}/);
-  assert.match(studio, /SHAPE_KINDS\.map/);
+  assert.match(studio, /SHAPE_KINDS\.slice/);
 });
 
 test("new pencil strokes get pressure widths while legacy pen strokes render unchanged", () => {
   // 기존 작품(pen)에는 실필압이 이미 기록돼 있다. pen에 배율을 적용하면 저장 이미지와 어긋난다.
-  assert.match(renderer, /op\.tool === "pencil" && op\.points\.length > 1/);
-  assert.doesNotMatch(renderer, /op\.tool === "pen" && op\.points\.length > 1/);
+  assert.match(renderer, /op\.tool === "pencil" && points\.length > 1/);
+  assert.doesNotMatch(renderer, /op\.tool === "pen" && points\.length > 1/);
   assert.match(studio, /type BrushTool = "pencil" \| "crayon" \| "marker" \| "watercolor"/);
 });
 
 test("all tools have recognizable visual icons and child-readable size labels", () => {
-  assert.match(studio, /aria-label="연필" title="연필"[\s\S]*?<span className="tool-icon" aria-hidden="true">✏️<\/span><span className="tool-name" aria-hidden="true">연필<\/span>/);
-  assert.match(studio, /aria-label="크레용" title="크레용"[\s\S]*?<span className="tool-icon" aria-hidden="true">🖍️<\/span><span className="tool-name" aria-hidden="true">크레용<\/span>/);
-  assert.match(studio, /aria-label="마커" title="마커"[\s\S]*?<span className="tool-icon" aria-hidden="true">🖊️<\/span><span className="tool-name" aria-hidden="true">마커<\/span>/);
-  assert.match(studio, /aria-label="수채붓" title="수채붓"[\s\S]*?<span className="tool-icon" aria-hidden="true">🖌️<\/span><span className="tool-name" aria-hidden="true">수채붓<\/span>/);
+  assert.match(studio, /aria-label="연필" title="연필"[\s\S]*?<span className="tool-icon" aria-hidden="true">\s*✏️\s*<\/span>\s*<span className="tool-name" aria-hidden="true">\s*연필\s*<\/span>/);
+  assert.match(studio, /aria-label="크레용" title="크레용"[\s\S]*?<span className="tool-icon" aria-hidden="true">\s*🖍️\s*<\/span>\s*<span className="tool-name" aria-hidden="true">\s*크레용\s*<\/span>/);
+  assert.match(studio, /aria-label="마커" title="마커"[\s\S]*?<span className="tool-icon" aria-hidden="true">\s*🖊️\s*<\/span>\s*<span className="tool-name" aria-hidden="true">\s*마커\s*<\/span>/);
+  assert.match(studio, /aria-label="수채붓" title="수채붓"[\s\S]*?<span className="tool-icon" aria-hidden="true">\s*🖌️\s*<\/span>\s*<span className="tool-name" aria-hidden="true">\s*수채붓\s*<\/span>/);
   assert.match(studio, /aria-label="지우개" title="지우개"/);
   assert.match(studio, /aria-label="좌우 대칭" title="좌우 대칭"/);
   assert.match(studio, /className="tool-icon eraser-icon"/);
@@ -66,8 +68,8 @@ test("strokes render during pointer input instead of waiting for pointer up", ()
   assert.match(studio, /function renderLiveStroke\(/);
   // 획 도중 다른 손이 도구를 바꿔도 그리던 획은 시작 시점(meta)의 도구·색·굵기를 유지한다.
   assert.match(studio, /function pointerDown[\s\S]*renderLiveStroke\(event\.currentTarget, meta\.tool, meta\.color, meta\.width, \[first\]\)/);
-  assert.match(studio, /function pointerMove[\s\S]*points\.push\(next\);[\s\S]*renderLiveStroke\(event\.currentTarget, meta\.tool, meta\.color, meta\.width, \[last, next\]\)/);
-  assert.ok(studio.indexOf("renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, [last, next])") < studio.indexOf("function pointerUp"));
+  assert.match(studio, /function pointerMove[\s\S]*points\.push\(next\);[\s\S]*const livePoints = points\.slice\(-3\);[\s\S]*renderLiveStroke\(event\.currentTarget, meta\.tool, meta\.color, meta\.width, livePoints\)/);
+  assert.ok(studio.indexOf("renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, livePoints)") < studio.indexOf("function pointerUp"));
   // 반투명 브러시(크레용·수채)는 스냅숏 복원 후 전체를 한 번에 그린다 — 세그먼트 알파 중첩 방지.
   assert.match(studio, /meta\.tool === "crayon" \|\| meta\.tool === "watercolor"/);
   assert.match(studio, /context\.putImageData\(strokeSnapshotRef\.current, 0, 0\)/);
@@ -90,10 +92,10 @@ test("shape tool supports drag and the two-tap fallback without touching canvas 
   assert.match(studio, /className="shape-start-dot"/);
   assert.doesNotMatch(studio, /drawShapeStartDot/);
   // 점 하나 크기의 실수 탭은 도형으로 커밋하지 않는다.
-  assert.match(studio, /Math\.hypot\(end\.x - start\.x, end\.y - start\.y\) < 0\.012/);
+  assert.match(studio, /Math\.hypot\(end\.x - start\.x, end\.y - start\.y\)\s*<\s*0\.012/);
   // 문서가 바뀌면(undo/redo) 대기 중인 시작점을 지운다.
-  assert.match(studio, /function undo\(\)[\s\S]{0,300}clearShapeStart\(\)/);
-  assert.match(studio, /function redoLast\(\)[\s\S]{0,200}clearShapeStart\(\)/);
+  assert.match(studio, /function undo\(\)[\s\S]{0,900}clearShapeStart\(\)/);
+  assert.match(studio, /function redoLast\(\)[\s\S]{0,700}clearShapeStart\(\)/);
 });
 
 test("saved images render from the document, never from live canvas pixels", () => {
@@ -130,6 +132,24 @@ test("marker and watercolor render distinctly from pencil", () => {
   assert.match(renderer, /op\.tool === "marker" \? 1\.6 : op\.tool === "watercolor" \? 2 : 1/);
   assert.match(renderer, /op\.tool === "crayon" \? 0\.62 : op\.tool === "watercolor" \? 0\.3 : 1/);
   assert.match(renderer, /if \(op\.tool === "watercolor"\) \{[\s\S]{0,300}globalAlpha = 0\.12/);
+});
+
+test("eraser footprint matches the square area removed from the document", () => {
+  assert.match(studio, /className="eraser-footprint"/);
+  assert.match(studio, /footprint\.style\.width = `\$\{eraserWidth \/ 10\.24\}%`/);
+  assert.match(renderer, /function eraseWithSquareFootprint/);
+  assert.match(renderer, /globalCompositeOperation = "destination-out"/);
+  assert.match(renderer, /fillRect\(x \* size - half, y \* size - half, footprint, footprint\)/);
+  assert.match(css, /\.eraser-footprint \{[^}]*border:2px solid #1b3a57/);
+});
+
+test("shape tool offers ten child-friendly shapes and outline or filled drawing", () => {
+  for (const shape of ["line", "circle", "triangle", "rectangle", "rounded-rectangle", "star", "heart", "arrow", "curve", "cloud"]) assert.match(studio, new RegExp(`kind: "${shape}"`));
+  assert.match(studio, /moreShapes \? "도형 접기" : "더 많은 도형"/);
+  assert.match(studio, /className="shape-fill-row"/);
+  assert.match(studio, /aria-pressed=\{!shapeFilled\}[\s\S]{0,180}테두리/);
+  assert.match(studio, /aria-pressed=\{shapeFilled\}[\s\S]{0,260}색 채움/);
+  assert.match(renderer, /op\.filled && op\.shape !== "line" && op\.shape !== "curve"/);
 });
 
 test("pointer cancel discards shapes and pending fills instead of committing them", () => {

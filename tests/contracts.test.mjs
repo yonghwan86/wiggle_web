@@ -3,6 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
+const compactSource = (text) => text.replace(/\s+/g, " ");
 
 test("declares D1 and R2 and ships a migration", async () => {
   const files = await readdir(new URL("../drizzle/", import.meta.url)); const migrationName = files.find((name) => name.endsWith(".sql")); assert.ok(migrationName);
@@ -24,13 +25,14 @@ test("enforces ownership, hashing, expiry, rate limits and idempotent revisions"
 });
 
 test("keeps canvas contracts and guide data separate", async () => {
-  const [model, studio, lessons, css, catalog] = await Promise.all([read("../lib/drawing-model.ts"), read("../app/components/DrawingStudio.tsx"), read("../lib/lesson-content.ts"), read("../app/globals.css"), import("../lib/lesson-content.ts")]);
+  const [model, studioRaw, lessons, css, catalog] = await Promise.all([read("../lib/drawing-model.ts"), read("../app/components/DrawingStudio.tsx"), read("../lib/lesson-content.ts"), read("../app/globals.css"), import("../lib/lesson-content.ts")]);
+  const studio = compactSource(studioRaw);
   assert.match(model, /DOCUMENT_SIZE = 1024/); assert.match(model, /schemaVersion/); assert.match(model, /rendererVersion/); assert.match(model, /clientOpId/); assert.match(model, /STICKER_ALLOWLIST/);
   // 썸네일·완성 PNG는 문서 기반(documentImage), 그리미 전송 이미지는 화면 기반(imageData 1024).
   assert.match(studio, />= 2\.5/); assert.match(studio, /guideRef/); assert.match(studio, /documentImage\([^)]+, 256\)/); assert.match(studio, /imageData\(canvasRef\.current, 1024\)/);
   assert.match(studio, /strokeStyle = "#087EA8"[\s\S]*globalAlpha = 0\.92[\s\S]*lineWidth = 9[\s\S]*setLineDash\(\[20, 14\]\)/);
   assert.match(studio, /item\.step === lessonStep \+ 1/); assert.doesNotMatch(studio, /item\.step <= lessonStep \+ 1/);
-  assert.match(studio, /<canvas ref=\{guideRef\}[\s\S]*<canvas ref=\{canvasRef\}/);
+  assert.match(studio, /<canvas\s+ref=\{guideRef\}[\s\S]*<canvas\s+ref=\{canvasRef\}/);
   assert.match(css, /\.draw-canvas \{ z-index:2; touch-action:none; \}\.guide-canvas \{ z-index:3; pointer-events:none; \}/);
   assert.ok(catalog.LESSONS.length >= 5); assert.ok(catalog.LESSONS.every((lesson) => lesson.steps.length >= 6 && lesson.steps.length <= 15));
   for (const mode of ["practice", "guided", "observe"]) {

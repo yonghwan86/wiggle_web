@@ -42,12 +42,71 @@ function drawShape(context: CanvasRenderingContext2D, op: DrawOp, size: number) 
   const start = op.points?.[0]; const end = op.points?.[1]; if (!start || !end || !op.shape) return;
   const left = Math.min(start.x, end.x) * size; const top = Math.min(start.y, end.y) * size;
   const width = Math.abs(end.x - start.x) * size; const height = Math.abs(end.y - start.y) * size;
-  context.save(); context.strokeStyle = op.color ?? "#1B3A57"; context.lineWidth = (op.width ?? 8) * size / 1024; context.lineCap = "round"; context.lineJoin = "round"; context.beginPath();
+  const centerX = left + width / 2; const centerY = top + height / 2;
+  context.save(); context.strokeStyle = op.color ?? "#1B3A57"; context.fillStyle = op.color ?? "#1B3A57"; context.lineWidth = (op.width ?? 8) * size / 1024; context.lineCap = "round"; context.lineJoin = "round"; context.beginPath();
   if (op.shape === "line") { context.moveTo(start.x * size, start.y * size); context.lineTo(end.x * size, end.y * size); }
   if (op.shape === "rectangle") context.rect(left, top, width, height);
-  if (op.shape === "circle") context.ellipse(left + width / 2, top + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
+  if (op.shape === "rounded-rectangle") context.roundRect(left, top, width, height, Math.min(width, height) * .2);
+  if (op.shape === "circle") context.ellipse(centerX, centerY, width / 2, height / 2, 0, 0, Math.PI * 2);
   if (op.shape === "triangle") { context.moveTo(left + width / 2, top); context.lineTo(left, top + height); context.lineTo(left + width, top + height); context.closePath(); }
+  if (op.shape === "star") {
+    const outer = Math.min(width, height) / 2; const inner = outer * .46;
+    for (let point = 0; point < 10; point += 1) {
+      const radius = point % 2 === 0 ? outer : inner; const angle = -Math.PI / 2 + point * Math.PI / 5;
+      const x = centerX + Math.cos(angle) * radius; const y = centerY + Math.sin(angle) * radius;
+      if (point === 0) context.moveTo(x, y); else context.lineTo(x, y);
+    }
+    context.closePath();
+  }
+  if (op.shape === "heart") {
+    context.moveTo(centerX, top + height);
+    context.bezierCurveTo(left - width * .08, top + height * .58, left + width * .03, top + height * .12, centerX, top + height * .36);
+    context.bezierCurveTo(left + width * .97, top + height * .12, left + width * 1.08, top + height * .58, centerX, top + height);
+    context.closePath();
+  }
+  if (op.shape === "arrow") {
+    const direction = end.x >= start.x ? 1 : -1; const baseX = direction > 0 ? left : left + width; const tipX = direction > 0 ? left + width : left;
+    const neckX = baseX + direction * width * .58; const topStem = centerY - height * .16; const bottomStem = centerY + height * .16;
+    context.moveTo(baseX, topStem); context.lineTo(neckX, topStem); context.lineTo(neckX, top); context.lineTo(tipX, centerY); context.lineTo(neckX, top + height); context.lineTo(neckX, bottomStem); context.lineTo(baseX, bottomStem); context.closePath();
+  }
+  if (op.shape === "curve") {
+    context.moveTo(start.x * size, start.y * size);
+    context.bezierCurveTo(start.x * size + (end.x - start.x) * size * .28, start.y * size - (end.y - start.y) * size * .55, start.x * size + (end.x - start.x) * size * .72, end.y * size + (end.y - start.y) * size * .55, end.x * size, end.y * size);
+  }
+  if (op.shape === "cloud") {
+    context.moveTo(left + width * .18, top + height * .78);
+    context.bezierCurveTo(left - width * .02, top + height * .75, left - width * .02, top + height * .42, left + width * .22, top + height * .42);
+    context.bezierCurveTo(left + width * .24, top + height * .14, left + width * .55, top + height * .04, left + width * .68, top + height * .29);
+    context.bezierCurveTo(left + width * .98, top + height * .22, left + width * 1.08, top + height * .62, left + width * .84, top + height * .76);
+    context.bezierCurveTo(left + width * .66, top + height * .91, left + width * .34, top + height * .88, left + width * .18, top + height * .78); context.closePath();
+  }
+  if (op.filled && op.shape !== "line" && op.shape !== "curve") context.fill();
   context.stroke(); context.restore();
+}
+
+function smoothedPoints(points: NonNullable<DrawOp["points"]>) {
+  if (points.length < 3) return points;
+  return points.map((point, index) => {
+    if (index === 0 || index === points.length - 1) return point;
+    const previous = points[index - 1]; const next = points[index + 1];
+    return { ...point, x: (previous.x + point.x * 2 + next.x) / 4, y: (previous.y + point.y * 2 + next.y) / 4 };
+  });
+}
+
+function eraseWithSquareFootprint(context: CanvasRenderingContext2D, op: DrawOp, size: number) {
+  if (!op.points?.length) return;
+  const footprint = Math.max(1, (op.width ?? 8) * size / 1024); const half = footprint / 2;
+  context.save(); context.globalCompositeOperation = "destination-out"; context.globalAlpha = 1; context.fillStyle = "#000";
+  const stamp = (x: number, y: number) => context.fillRect(x * size - half, y * size - half, footprint, footprint);
+  stamp(op.points[0].x, op.points[0].y);
+  for (let index = 1; index < op.points.length; index += 1) {
+    const start = op.points[index - 1]; const end = op.points[index]; const distance = Math.hypot((end.x - start.x) * size, (end.y - start.y) * size);
+    const steps = Math.max(1, Math.ceil(distance / Math.max(1, footprint * .22)));
+    for (let step = 1; step <= steps; step += 1) {
+      const amount = step / steps; stamp(start.x + (end.x - start.x) * amount, start.y + (end.y - start.y) * amount);
+    }
+  }
+  context.restore();
 }
 
 export function renderDrawOperation(context: CanvasRenderingContext2D, op: DrawOp, size: number) {
@@ -59,9 +118,11 @@ export function renderDrawOperation(context: CanvasRenderingContext2D, op: DrawO
     context.fillText(STICKER_EMOJI[op.sticker], center.x * size, center.y * size); context.restore(); return;
   }
   if (!op.points?.length) return;
+  if (op.tool === "eraser" && op.squareEraser) { eraseWithSquareFootprint(context, op, size); return; }
+  const points = op.smoothed ? smoothedPoints(op.points) : op.points;
   context.save(); context.lineCap = "round"; context.lineJoin = "round";
   context.globalCompositeOperation = op.tool === "eraser" ? "destination-out" : "source-over";
-  context.strokeStyle = op.tool === "eraser" ? "#000000" : (op.color ?? "#1B3A57");
+  context.strokeStyle = op.color ?? "#1B3A57";
   // 도구별 질감: 크레용은 반투명(기존 렌더 보존을 위해 값 불변), 수채붓은 아주 옅고 넓게 +
   // 바깥 번짐 패스(겹칠수록 물감처럼 진해짐), 마커는 가장 넓고 완전 불투명.
   context.globalAlpha = op.tool === "crayon" ? 0.62 : op.tool === "watercolor" ? 0.3 : 1;
@@ -69,19 +130,19 @@ export function renderDrawOperation(context: CanvasRenderingContext2D, op: DrawO
   context.lineWidth = baseWidth;
   // 새 연필(pencil)만 필압으로 굵기가 변한다. 기존 "pen" 획에는 실필압이 이미 기록돼 있어
   // 배율을 적용하면 저장 당시 이미지와 재생이 어긋나므로, pen은 예전과 동일한 균일 굵기로 남긴다.
-  if (op.tool === "pencil" && op.points.length > 1) {
-    for (let index = 1; index < op.points.length; index += 1) {
-      const start = op.points[index - 1]; const end = op.points[index];
+  if (op.tool === "pencil" && points.length > 1) {
+    for (let index = 1; index < points.length; index += 1) {
+      const start = points[index - 1]; const end = points[index];
       const pressure = ((start.pressure ?? 0.5) + (end.pressure ?? 0.5)) / 2;
       context.lineWidth = baseWidth * Math.max(0.35, Math.min(1.5, 0.5 + pressure));
       context.beginPath(); context.moveTo(start.x * size, start.y * size); context.lineTo(end.x * size, end.y * size); context.stroke();
     }
     context.restore(); return;
   }
-  if (op.tool === "pencil") context.lineWidth = baseWidth * Math.max(0.35, Math.min(1.5, 0.5 + (op.points[0].pressure ?? 0.5)));
-  context.beginPath(); context.moveTo(op.points[0].x * size, op.points[0].y * size);
-  for (const point of op.points.slice(1)) context.lineTo(point.x * size, point.y * size);
-  if (op.points.length === 1) context.lineTo(op.points[0].x * size + 0.1, op.points[0].y * size + 0.1);
+  if (op.tool === "pencil") context.lineWidth = baseWidth * Math.max(0.35, Math.min(1.5, 0.5 + (points[0].pressure ?? 0.5)));
+  context.beginPath(); context.moveTo(points[0].x * size, points[0].y * size);
+  for (const point of points.slice(1)) context.lineTo(point.x * size, point.y * size);
+  if (points.length === 1) context.lineTo(points[0].x * size + 0.1, points[0].y * size + 0.1);
   if (op.tool === "watercolor") {
     // 같은 경로를 넓고 옅게 한 번 더 그어 가장자리 번짐을 만든다. (결정적 — 재생·타임랩스 동일)
     context.globalAlpha = 0.12; context.lineWidth = baseWidth * 1.35; context.stroke();

@@ -4,6 +4,7 @@ import test from "node:test";
 
 const read = async (path) =>
   (await readFile(new URL(path, import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const compactSource = (text) => text.replace(/\s+/g, " ");
 
 test("Korean text wraps by word while code, passwords, emoji and canvas surfaces stay intact", async () => {
   const css = await read("../app/globals.css");
@@ -33,7 +34,8 @@ test("mobile forms, actions and overlays honor iPhone zoom, touch and safe-area 
 });
 
 test("mobile studio and teacher layouts finish in two rows without horizontal text overflow", async () => {
-  const [css, studio, teacher] = await Promise.all([read("../app/globals.css"), read("../app/components/DrawingStudio.tsx"), read("../app/components/TeacherApp.tsx")]);
+  const [css, studioRaw, teacher] = await Promise.all([read("../app/globals.css"), read("../app/components/DrawingStudio.tsx"), read("../app/components/TeacherApp.tsx")]);
+  const studio = compactSource(studioRaw);
   // 첫 720px 블록은 레거시, 두 번째가 최종 모바일 도구 배치다. 뒤에 학생 홈 전용
   // 720px 블록도 있으므로 고유한 entry-shell 시작점을 기준으로 자른다.
   const finalMobileStart = css.indexOf("@media (max-width:720px) {\n  .entry-shell");
@@ -51,7 +53,7 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(css, /\.studio-header>\.grimi-button:before \{ content:"✨"; \}/);
   assert.match(css, /\.studio-header>\.button\.primary\.compact:before \{ content:"✓"; \}/);
   assert.match(css, /\.save-conflict \{ top:auto; bottom:calc\(72px \+ env\(safe-area-inset-bottom\)\); \}/);
-  assert.match(studio, /aria-label="연필" title="연필"[\s\S]*?<span className="tool-icon" aria-hidden="true">✏️<\/span><span className="tool-name" aria-hidden="true">연필<\/span>/);
+  assert.match(studio, /aria-label="연필" title="연필"[\s\S]*?<span className="tool-icon" aria-hidden="true">\s*✏️\s*<\/span>\s*<span className="tool-name" aria-hidden="true">\s*연필\s*<\/span>/);
   assert.doesNotMatch(studio, /✒️|>펜<|>펜<\/button>/);
   // 도구 그룹은 브러시(4)·만들기(2)·고치기(지우개+대칭)로 재편됐다. aria-pressed는 studioTool 기준.
   assert.match(studio, /className="tool-group brush-group" role="group" aria-label="브러시"[\s\S]*aria-pressed=\{studioTool === "pencil"\}[\s\S]*aria-pressed=\{studioTool === "crayon"\}[\s\S]*aria-pressed=\{studioTool === "marker"\}[\s\S]*aria-pressed=\{studioTool === "watercolor"\}/);
@@ -64,9 +66,10 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(finalMobile, /\.tool-panel \{[^}]*display:grid;[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\);[^}]*overflow:hidden;/);
   assert.match(finalMobile, /\.tool-panel \.tool-group \{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(finalMobile, /\.tool-panel \.brush-group \{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
-  // shape-kind-row가 make/edit 사이에 끼어들 때 sparse 구멍이 생기지 않게 dense 백필을 쓴다.
+  // shape-options가 make/edit 사이에 끼어들 때 sparse 구멍이 생기지 않게 dense 백필을 쓴다.
   assert.match(finalMobile, /\.tool-panel \{[^}]*grid-auto-flow:row dense;/);
-  assert.match(finalMobile, /\.tool-panel \.shape-kind-row \{[^}]*grid-template-columns:repeat\(4,minmax\(44px,1fr\)\)/);
+  assert.match(finalMobile, /\.tool-panel \.shape-options \{[^}]*grid-column:1\/-1/);
+  assert.match(finalMobile, /\.tool-panel \.shape-kind-row \{[^}]*grid-template-columns:repeat\(5,minmax\(44px,1fr\)\)/);
   // 굵기 5단이 한 줄에 44px 이상으로 들어간다.
   assert.match(finalMobile, /\.tool-panel \.width-row \{[^}]*grid-template-columns:repeat\(5,minmax\(44px,1fr\)\)/);
   assert.match(finalMobile, /\.tool-panel \.palette \{[^}]*grid-template-columns:repeat\(6,minmax\(44px,1fr\)\)/);

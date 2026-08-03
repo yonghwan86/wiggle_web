@@ -9,6 +9,7 @@ export const STICKER_ALLOWLIST = ["star", "heart", "leaf", "cloud", "sparkle"] a
 // 새 연필 획은 "pencil"로 저장해 필압 렌더를 새 획에만 적용한다.
 export const STROKE_TOOLS = ["pen", "pencil", "crayon", "marker", "watercolor", "eraser"] as const;
 export const STROKE_WIDTHS = [3, 8, 16, 30, 48] as const;
+export const SHAPE_KINDS = ["line", "circle", "triangle", "rectangle", "rounded-rectangle", "star", "heart", "arrow", "curve", "cloud"] as const;
 // 서버가 거부하는 한도. 클라이언트가 같은 값을 미리 지켜야 저장이 영구 실패하지 않는다.
 export const MAX_DOCUMENT_OPS = 5000;
 export const MAX_STROKE_POINTS = 12000;
@@ -55,6 +56,7 @@ type Point = { x: number; y: number; pressure?: number };
 
 export type StrokeTool = (typeof STROKE_TOOLS)[number];
 export type StrokeWidth = (typeof STROKE_WIDTHS)[number];
+export type ShapeKind = (typeof SHAPE_KINDS)[number];
 
 export type DrawOp = {
   opId: string;
@@ -65,7 +67,10 @@ export type DrawOp = {
   color?: string;
   width?: StrokeWidth;
   points?: Point[];
-  shape?: "circle" | "triangle" | "rectangle" | "line";
+  smoothed?: boolean;
+  squareEraser?: boolean;
+  shape?: ShapeKind;
+  filled?: boolean;
   sticker?: (typeof STICKER_ALLOWLIST)[number];
 };
 
@@ -111,13 +116,16 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
     if (op.type === "stroke") {
       if (!op.tool || !STROKE_TOOLS.includes(op.tool) || !STROKE_WIDTHS.includes((op.width ?? 0) as StrokeWidth) || !Array.isArray(op.points) || op.points.length < 1 || op.points.length > MAX_STROKE_POINTS) return null;
       if (op.tool !== "eraser" && !isHexColor(op.color)) return null;
+      if (op.smoothed !== undefined && typeof op.smoothed !== "boolean") return null;
+      if (op.squareEraser !== undefined && typeof op.squareEraser !== "boolean") return null;
       if (op.points.some(invalidPoint)) return null;
     }
     if (op.type === "fill") {
       if (!isHexColor(op.color) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint)) return null;
     }
     if (op.type === "shape") {
-      if (!op.shape || !["circle", "triangle", "rectangle", "line"].includes(op.shape) || !isHexColor(op.color) || !STROKE_WIDTHS.includes((op.width ?? 0) as StrokeWidth) || !Array.isArray(op.points) || op.points.length !== 2 || op.points.some(invalidPoint)) return null;
+      if (!op.shape || !SHAPE_KINDS.includes(op.shape) || !isHexColor(op.color) || !STROKE_WIDTHS.includes((op.width ?? 0) as StrokeWidth) || !Array.isArray(op.points) || op.points.length !== 2 || op.points.some(invalidPoint)) return null;
+      if (op.filled !== undefined && typeof op.filled !== "boolean") return null;
     }
     if (op.type === "sticker" && (!STICKER_ALLOWLIST.includes(op.sticker as (typeof STICKER_ALLOWLIST)[number]) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint))) return null;
   }
@@ -145,9 +153,11 @@ function normalizeOp(raw: DrawOp): DrawOp {
     if (raw.tool !== "eraser") op.color = raw.color;
     op.width = raw.width;
     op.points = points;
+    if (raw.smoothed !== undefined) op.smoothed = raw.smoothed;
+    if (raw.squareEraser !== undefined) op.squareEraser = raw.squareEraser;
   }
   if (raw.type === "fill") { op.color = raw.color; op.points = points; }
-  if (raw.type === "shape") { op.shape = raw.shape; op.color = raw.color; op.width = raw.width; op.points = points; }
+  if (raw.type === "shape") { op.shape = raw.shape; op.color = raw.color; op.width = raw.width; op.points = points; if (raw.filled !== undefined) op.filled = raw.filled; }
   if (raw.type === "sticker") { op.sticker = raw.sticker; op.points = points; }
   return op;
 }
