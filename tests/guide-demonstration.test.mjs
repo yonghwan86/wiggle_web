@@ -26,6 +26,11 @@ test("guide demonstrations are replayable, skippable and student scoped", () => 
   assert.match(studio, /removeEventListener\("change", stopForReducedMotion\)/);
 });
 
+test("detailed guided steps slow the pencil demo down for young children", () => {
+  assert.match(studio, /Math\.min\(6800, 1600 \+ currentGuideTraces\.length \* 600\)/);
+  assert.doesNotMatch(studio, /Math\.min\(3200,/);
+});
+
 test("the demonstration remains outside the child's artwork and timelapse", () => {
   assert.match(studio, /<canvas ref=\{guideRef\}[\s\S]*<canvas ref=\{canvasRef\}/);
   assert.match(css, /\.guide-canvas \{[^}]*pointer-events:none/);

@@ -394,7 +394,7 @@ export function DrawingStudio() {
       renderGuideFrame(canvas, currentGuideTraces, "practice");
       markCurrentGuideSeen(); setGuidePhase("practice"); return;
     }
-    const duration = Math.min(3200, 1700 + currentGuideTraces.length * 450); const startedAt = performance.now();
+    const duration = Math.min(6800, 1600 + currentGuideTraces.length * 600); const startedAt = performance.now();
     const stopForReducedMotion = (event: MediaQueryListEvent) => {
       if (!event.matches) return;
       if (guideAnimationRef.current !== null) cancelAnimationFrame(guideAnimationRef.current);

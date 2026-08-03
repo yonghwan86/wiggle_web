@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import type { GuideMark, Lesson } from "@/lib/lesson-content";
 
+const STEP_COLORS = ["#087da7", "#e2645f", "#d99516", "#2d9568", "#7962bd"];
+
 function traceMark(context: CanvasRenderingContext2D, mark: GuideMark, size: number) {
   context.beginPath();
   if (mark.kind === "ellipse") {
@@ -43,8 +45,10 @@ export function LessonIllustration({ lesson, currentStep, className = "" }: { le
     for (const mark of lesson.guide) {
       const highlighted = currentStep !== undefined && mark.step === currentStep + 1;
       const future = currentStep !== undefined && mark.step > currentStep + 1;
-      context.strokeStyle = highlighted ? "#098bb8" : future ? "rgba(27,58,87,.2)" : "#1b3a57";
-      context.lineWidth = highlighted ? 10 : 7;
+      context.strokeStyle = currentStep === undefined
+        ? STEP_COLORS[(mark.step - 1) % STEP_COLORS.length]
+        : highlighted ? "#098bb8" : future ? "rgba(27,58,87,.2)" : "#1b3a57";
+      context.lineWidth = highlighted ? 10 : 8;
       traceMark(context, mark, size);
       context.stroke();
     }

@@ -52,11 +52,26 @@ test("every guided and observation drawing has a visible guide for every drawing
   }
 });
 
+test("ten guided drawings use detailed, canvas-safe finished outlines", () => {
+  const guidedLessons = LESSONS.filter((lesson) => lesson.mode === "guided");
+  assert.equal(guidedLessons.length, 10);
+  for (const lesson of guidedLessons) {
+    assert.ok(lesson.guide.length >= 13, `${lesson.slug}: 단순 도형 몇 개가 아니라 완성 윤곽과 특징이 필요하다`);
+    const values = lesson.guide.flatMap((mark) => {
+      if (mark.kind === "ellipse") return [mark.x - mark.rx, mark.x + mark.rx, mark.y - mark.ry, mark.y + mark.ry];
+      if (mark.kind === "rect") return [mark.x, mark.y, mark.x + mark.width, mark.y + mark.height];
+      return mark.points.flat();
+    });
+    assert.ok(values.every((value) => value >= 0 && value <= 1), `${lesson.slug}: 점선이 도화지 밖으로 잘리면 안 된다`);
+  }
+});
+
 test("guided lessons show cumulative lines while observation lessons show ten real reference pictures", async () => {
   const [illustration, reference, studio, picker] = await Promise.all([
     read("../app/components/LessonIllustration.tsx"), read("../app/components/LessonReference.tsx"), read("../app/components/DrawingStudio.tsx"), read("../app/components/LessonPicker.tsx"),
   ]);
   assert.match(illustration, /for \(const mark of lesson\.guide\)/);
+  assert.match(illustration, /const STEP_COLORS = \[/);
   assert.match(illustration, /aria-label=\{`\$\{lesson\.title\} 전체 참고 그림`\}/);
   assert.match(reference, /lesson\.mode !== "observe"/);
   assert.match(reference, /lesson\.referenceImage/);
