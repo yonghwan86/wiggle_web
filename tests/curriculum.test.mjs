@@ -46,8 +46,12 @@ test("every lesson has short bounded steps, child choices, a data guide and a fr
 test("every guided and observation drawing has a visible guide for every drawing step", () => {
   for (const lesson of LESSONS.filter((item) => item.stage >= 2)) {
     const guidedSteps = new Set(lesson.guide.map((mark) => mark.step));
-    for (let step = 1; step < lesson.steps.length; step += 1) assert.ok(guidedSteps.has(step), `${lesson.slug}: ${step}단계 guide가 필요하다`);
+    for (let step = 1; step < lesson.steps.length; step += 1) {
+      if (lesson.steps[step - 1].activity !== "color") assert.ok(guidedSteps.has(step), `${lesson.slug}: ${step}단계 guide가 필요하다`);
+    }
     assert.ok(lesson.guide.length >= 8, `${lesson.slug}: 전체 대상이 보일 만큼 충분한 선이 필요하다`);
+    const colorStep = lesson.steps.findIndex((step) => step.activity === "color");
+    if (colorStep >= 0) assert.ok(!guidedSteps.has(colorStep + 1), `${lesson.slug}: 색칠 단계에는 정답 점선을 덧씌우지 않는다`);
     assert.ok(!guidedSteps.has(lesson.steps.length), `${lesson.slug}: 마지막 자유 창작에는 정답 점선이 없어야 한다`);
   }
 });
@@ -56,6 +60,9 @@ test("ten guided drawings use detailed, canvas-safe finished outlines", () => {
   const guidedLessons = LESSONS.filter((lesson) => lesson.mode === "guided");
   assert.equal(guidedLessons.length, 10);
   for (const lesson of guidedLessons) {
+    assert.equal(lesson.steps.length, 7, `${lesson.slug}: 윤곽 5단계, 색칠, 자유 창작 순서여야 한다`);
+    assert.equal(lesson.steps.at(-2).activity, "color", `${lesson.slug}: 자유 창작 전에 색칠한다`);
+    assert.equal(lesson.steps.at(-1).activity, "free", `${lesson.slug}: 마지막은 아이 생각을 더한다`);
     assert.ok(lesson.guide.length >= 13, `${lesson.slug}: 단순 도형 몇 개가 아니라 완성 윤곽과 특징이 필요하다`);
     const values = lesson.guide.flatMap((mark) => {
       if (mark.kind === "ellipse") return [mark.x - mark.rx, mark.x + mark.rx, mark.y - mark.ry, mark.y + mark.ry];
@@ -66,17 +73,24 @@ test("ten guided drawings use detailed, canvas-safe finished outlines", () => {
   }
 });
 
-test("guided lessons show cumulative lines while observation lessons show ten real reference pictures", async () => {
-  const [illustration, reference, studio, picker] = await Promise.all([
-    read("../app/components/LessonIllustration.tsx"), read("../app/components/LessonReference.tsx"), read("../app/components/DrawingStudio.tsx"), read("../app/components/LessonPicker.tsx"),
+test("guided lessons show polished finished art while observation lessons show ten real reference pictures", async () => {
+  const [illustration, finished, reference, studio, picker] = await Promise.all([
+    read("../app/components/LessonIllustration.tsx"), read("../app/components/LessonFinishedIllustration.tsx"), read("../app/components/LessonReference.tsx"), read("../app/components/DrawingStudio.tsx"), read("../app/components/LessonPicker.tsx"),
   ]);
   assert.match(illustration, /for \(const mark of lesson\.guide\)/);
   assert.match(illustration, /const STEP_COLORS = \[/);
   assert.match(illustration, /aria-label=\{`\$\{lesson\.title\} 전체 참고 그림`\}/);
   assert.match(reference, /lesson\.mode !== "observe"/);
+  assert.match(reference, /lesson\.mode === "guided"/);
+  assert.match(finished, /guided-finished-sprite\.webp/);
+  await access(new URL("../public/lessons/guided-finished-sprite.webp", import.meta.url));
   assert.match(reference, /lesson\.referenceImage/);
   assert.match(reference, /관찰 그림 크게 보기/);
   assert.match(studio, /LessonReference as LessonIllustration/);
+  assert.match(studio, /currentLessonActivity === "color"/);
+  assert.match(studio, /setStudioTool\("crayon"\)/);
+  assert.match(studio, /setDrawWidth\(48\)/);
+  assert.match(finished, /lesson\.slug === "delivery-bike" \? "scaleX\(-1\)"/);
   assert.match(picker, /<LessonReference lesson=\{lesson\}/);
   const observationLessons = LESSONS.filter((lesson) => lesson.mode === "observe");
   assert.equal(observationLessons.length, 10);

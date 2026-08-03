@@ -14,7 +14,14 @@ test("draw width and eraser width are remembered separately", () => {
   assert.match(studio, /const \[drawWidth, setDrawWidth\] = useState<StrokeWidth>\(16\)/);
   assert.match(studio, /const \[eraserWidth, setEraserWidth\] = useState<StrokeWidth>\(48\)/);
   assert.match(studio, /const width = studioTool === "eraser" \? eraserWidth : drawWidth/);
-  assert.match(studio, /if \(studioTool === "eraser"\) setEraserWidth\(value\); else setDrawWidth\(value\)/);
+  assert.match(studio, /if \(studioTool === "eraser"\) setEraserWidth\(value\);\s*else \{ drawWidthRef\.current = value; setDrawWidth\(value\); \}/);
+});
+
+test("coloring starts broad without locking the child's width choice", () => {
+  assert.match(studio, /currentLessonActivity === "color"[\s\S]*setStudioTool\("crayon"\)[\s\S]*setDrawWidth\(48\)/);
+  assert.match(studio, /else \{ drawWidthRef\.current = value; setDrawWidth\(value\); \}/);
+  assert.match(studio, /\}, \[currentLessonActivity\]\);/);
+  assert.match(studio, /lastBrushRef\.current = colorReturnBrushRef\.current;\s*setStudioTool\(colorReturnBrushRef\.current\)/);
 });
 
 test("every studio tool is reachable from the panel", () => {

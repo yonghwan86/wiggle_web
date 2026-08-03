@@ -86,6 +86,7 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(css, /\.step-panel \.choice-chips \{ display:flex; grid-column:1\/-1;[^}]*overflow-x:auto;/);
   assert.match(css, /\.step-panel \.choice-chips button \{[^}]*min-height:44px;/);
   assert.match(css, /\.step-panel \.step-actions \{ display:grid; grid-column:1\/-1;[^}]*overflow:visible;/);
+  assert.match(css, /\.step-panel:has\(\.lesson-finished-illustration\) \.reference-tile \{ display:block;[^}]*width:84px;/);
   assert.match(teacher, /className="modal-close" aria-label="학생 그림 미리보기 닫기" onClick=\{closePreview\}/);
   const ipadStart = css.indexOf("@media (min-width:721px) and (max-width:1024px) and (orientation:portrait)");
   const ipad = css.slice(ipadStart, css.indexOf("@media (max-width:720px)", ipadStart));
