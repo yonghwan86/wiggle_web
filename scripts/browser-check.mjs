@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
 const IPAD_MODE = process.argv.includes("--ipad");
+const DESKTOP_MODE = process.argv.includes("--desktop");
 const CHROME_CANDIDATES = [
   `${process.env.ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe`,
   `${process.env["ProgramFiles(x86)"]}\\Google\\Chrome\\Application\\chrome.exe`,
@@ -19,6 +20,9 @@ const CHROME_CANDIDATES = [
 const VIEWPORTS = IPAD_MODE ? [
   { name: "iPad-768x1024", width: 768, height: 1024 },
   { name: "iPad-820x1180", width: 820, height: 1180 },
+] : DESKTOP_MODE ? [
+  { name: "desktop-1440x900", width: 1440, height: 900 },
+  { name: "desktop-1920x1080", width: 1920, height: 1080 },
 ] : [
   { name: "320x568", width: 320, height: 568 },
   { name: "390x844", width: 390, height: 844 },
@@ -370,6 +374,17 @@ async function main() {
           const body = document.querySelector('.studio-body');
           const targets = [...document.querySelectorAll('.tool-panel button')];
           if (!targets.length) return { error: 'no-tools' };
+          const primaryTools = [...document.querySelectorAll('.tool-panel .tool-group button')].map((button) => {
+            const icon = button.querySelector('.tool-icon');
+            const name = button.querySelector('.tool-name');
+            const buttonBox = window.__wiggle.box(button);
+            const iconBox = icon ? window.__wiggle.box(icon) : null;
+            return {
+              label: button.getAttribute('aria-label') ?? '', title: button.getAttribute('title') ?? '',
+              buttonBox, iconBox, nameDisplay: name ? getComputedStyle(name).display : '',
+              iconInside: Boolean(iconBox && iconBox.left >= buttonBox.left && iconBox.right <= buttonBox.right && iconBox.top >= buttonBox.top && iconBox.bottom <= buttonBox.bottom),
+            };
+          });
           const unreachable = [];
           for (const target of targets) {
             target.scrollIntoView({ block: 'center' });
@@ -377,10 +392,16 @@ async function main() {
             const reach = window.__wiggle.reachable(target);
             if (!reach.onScreen || !reach.hitsSelf) unreachable.push({ label: window.__wiggle.label(target), ...reach });
           }
-          return { unreachable, scrolls: body ? body.scrollHeight - body.clientHeight : 0 };
+          return { unreachable, primaryTools, scrolls: body ? body.scrollHeight - body.clientHeight : 0 };
         })()`);
         check(!tools.error, `${viewport.name} 도구 패널 재현`, tools.error);
-        if (!tools.error) check(tools.unreachable.length === 0, `${viewport.name} 모든 그리기 도구에 닿을 수 있음`, tools.unreachable);
+        if (!tools.error) {
+          check(tools.unreachable.length === 0, `${viewport.name} 모든 그리기 도구에 닿을 수 있음`, tools.unreachable);
+          check(tools.primaryTools.length === 8 && tools.primaryTools.every((tool) => tool.label && tool.title), `${viewport.name} 아이콘 도구 이름을 접근성 정보로 제공`, tools.primaryTools);
+          check(tools.primaryTools.every((tool) => tool.nameDisplay === 'none'), `${viewport.name} 좁은 도구 버튼의 글자를 숨김`, tools.primaryTools);
+          check(tools.primaryTools.every((tool) => Math.min(tool.buttonBox.w, tool.buttonBox.h) >= 44), `${viewport.name} 아이콘 도구 터치 목표 44px 이상`, tools.primaryTools);
+          check(tools.primaryTools.every((tool) => tool.iconInside), `${viewport.name} 모든 도구 아이콘이 버튼 안에 온전히 보임`, tools.primaryTools);
+        }
 
         // 4.5) 새 도구 실동작: 대칭 쌍·그룹 되돌리기·채우기·도형 2탭을 실제 입력 파이프라인으로 검증.
         // 합성 PointerEvent는 setPointerCapture가 실패하므로 CDP Input.dispatchMouseEvent(실입력)를 쓴다.
@@ -488,6 +509,10 @@ async function main() {
           // 다음 검증(그리미·소감)을 위해 연필로 되돌린다.
           await clickPanelButton("연필"); await sleep(120);
         }
+
+        // 데스크톱 모드는 좁은 오른쪽 도구 레일 전용 회귀 검사다. 아래 항목은
+        // 모바일 바텀시트 전용 계약이라 데스크톱 정적 패널에 적용하지 않는다.
+        if (DESKTOP_MODE) return;
 
         const grimi = await evaluate(cdp, session, `(async () => {
           const wait = (ms) => new Promise((done) => setTimeout(done, ms));

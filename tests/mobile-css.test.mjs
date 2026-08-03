@@ -51,12 +51,13 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(css, /\.studio-header>\.grimi-button:before \{ content:"✨"; \}/);
   assert.match(css, /\.studio-header>\.button\.primary\.compact:before \{ content:"✓"; \}/);
   assert.match(css, /\.save-conflict \{ top:auto; bottom:calc\(72px \+ env\(safe-area-inset-bottom\)\); \}/);
-  assert.match(studio, /<span className="tool-icon" aria-hidden="true">✏️<\/span>연필/);
+  assert.match(studio, /aria-label="연필" title="연필"[\s\S]*?<span className="tool-icon" aria-hidden="true">✏️<\/span><span className="tool-name" aria-hidden="true">연필<\/span>/);
   assert.doesNotMatch(studio, /✒️|>펜<|>펜<\/button>/);
   // 도구 그룹은 브러시(4)·만들기(2)·고치기(지우개+대칭)로 재편됐다. aria-pressed는 studioTool 기준.
   assert.match(studio, /className="tool-group brush-group" role="group" aria-label="브러시"[\s\S]*aria-pressed=\{studioTool === "pencil"\}[\s\S]*aria-pressed=\{studioTool === "crayon"\}[\s\S]*aria-pressed=\{studioTool === "marker"\}[\s\S]*aria-pressed=\{studioTool === "watercolor"\}/);
   assert.match(studio, /className="tool-group make-group" role="group" aria-label="채우기와 도형"/);
   assert.match(studio, /className="tool-group edit-group" role="group" aria-label="고치기"[\s\S]*aria-pressed=\{studioTool === "eraser"\}/);
+  assert.match(css, /\.tool-group \.tool-name \{ display:none; \}/);
   assert.match(studio, /className="width-row" role="group" aria-label="선 굵기"/);
   assert.match(studio, /className="palette" role="group" aria-label="색 고르기"/);
   assert.match(studio, /className="history-row" role="group" aria-label="그리기 기록"[\s\S]*↶ 되돌리기[\s\S]*↷ 다시하기/);

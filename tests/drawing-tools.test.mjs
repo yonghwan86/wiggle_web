@@ -33,10 +33,12 @@ test("new pencil strokes get pressure widths while legacy pen strokes render unc
 });
 
 test("all tools have recognizable visual icons and child-readable size labels", () => {
-  assert.match(studio, /<span className="tool-icon" aria-hidden="true">✏️<\/span>연필/);
-  assert.match(studio, /<span className="tool-icon" aria-hidden="true">🖍️<\/span>크레용/);
-  assert.match(studio, /<span className="tool-icon" aria-hidden="true">🖊️<\/span>마커/);
-  assert.match(studio, /<span className="tool-icon" aria-hidden="true">🖌️<\/span>수채붓/);
+  assert.match(studio, /aria-label="연필" title="연필"[\s\S]*?<span className="tool-icon" aria-hidden="true">✏️<\/span><span className="tool-name" aria-hidden="true">연필<\/span>/);
+  assert.match(studio, /aria-label="크레용" title="크레용"[\s\S]*?<span className="tool-icon" aria-hidden="true">🖍️<\/span><span className="tool-name" aria-hidden="true">크레용<\/span>/);
+  assert.match(studio, /aria-label="마커" title="마커"[\s\S]*?<span className="tool-icon" aria-hidden="true">🖊️<\/span><span className="tool-name" aria-hidden="true">마커<\/span>/);
+  assert.match(studio, /aria-label="수채붓" title="수채붓"[\s\S]*?<span className="tool-icon" aria-hidden="true">🖌️<\/span><span className="tool-name" aria-hidden="true">수채붓<\/span>/);
+  assert.match(studio, /aria-label="지우개" title="지우개"/);
+  assert.match(studio, /aria-label="좌우 대칭" title="좌우 대칭"/);
   assert.match(studio, /className="tool-icon eraser-icon"/);
   assert.match(studio, /STROKE_WIDTH_LABELS\[value\]/);
   assert.match(studio, /3: "아주 얇게", 8: "얇게", 16: "보통", 30: "굵게", 48: "아주 굵게"/);
