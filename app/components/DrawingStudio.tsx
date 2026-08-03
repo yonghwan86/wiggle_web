@@ -15,7 +15,7 @@ import { SpeakButton } from "./SpeakButton";
 import { TimelapsePlayer } from "./TimelapsePlayer";
 import { VoiceWhisperStatus } from "./VoiceWhisper";
 import { useModalDialog } from "./useModalDialog";
-import { LessonIllustration } from "./LessonIllustration";
+import { LessonReference as LessonIllustration } from "./LessonReference";
 import { StudentMessageCenter, StudentTeacherMessage } from "./StudentMessageCenter";
 
 const PALETTE = ["#1B3A57", "#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#8D6E63", "#F06292", "#4DD0E1", "#FFCC80", "#FFFFFF"];
@@ -1037,6 +1037,13 @@ export function DrawingStudio() {
 
   function guideControls() {
     if (!lessonGuideAvailable) return null;
+    if (lesson?.mode === "observe" && !aiGuide) {
+      return <div className="guide-actions observation-guide-actions" aria-label="관찰 그리기 점선 힌트">
+        <button className="guide-toggle" type="button" aria-pressed={guidePhase === "practice"} disabled={Boolean(conflictDraft)} onClick={() => setGuidePhase((phase) => phase === "practice" ? "independent" : "practice")}>
+          {guidePhase === "practice" ? "점선 힌트 숨기기" : "🔎 점선 힌트 보기"}
+        </button>
+      </div>;
+    }
     return <div className="guide-actions" aria-label="그리기 시범과 점선">
       <button className="guide-demo-button" type="button" aria-pressed={guidePhase === "demo"} disabled={Boolean(conflictDraft)} onClick={() => guidePhase === "demo" ? stopGuideDemoForPractice() : startGuideDemo()}>
         {guidePhase === "demo" ? "시범 멈추기" : guidePhase === "practice" ? "✏️ 다시 보기" : "✏️ 먼저 보여줘"}

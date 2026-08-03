@@ -88,7 +88,7 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(teacher, /className="modal-close" aria-label="학생 그림 미리보기 닫기" onClick=\{closePreview\}/);
   const ipadStart = css.indexOf("@media (min-width:721px) and (max-width:1024px) and (orientation:portrait)");
   const ipad = css.slice(ipadStart, css.indexOf("@media (max-width:720px)", ipadStart));
-  assert.match(ipad, /\.studio-body,\.studio-body\.without-step-panel \{[^}]*grid-template-rows:auto minmax\(380px,1fr\) auto/);
+  assert.match(ipad, /\.studio-body,\.studio-body\.without-step-panel,\.studio-body:has\(\.step-panel \.observation-reference\) \{[^}]*grid-template-columns:1fr;[^}]*grid-template-rows:auto minmax\(380px,1fr\) auto/);
   assert.match(ipad, /\.tool-panel \{[^}]*grid-template-columns:repeat\(12,minmax\(0,1fr\)\)/);
   assert.match(ipad, /\.tool-panel \.palette \{[^}]*grid-template-columns:repeat\(12,minmax\(44px,1fr\)\)/);
 });

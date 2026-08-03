@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import { ACTIVITY_KEYS, DEFAULT_ACTIVITY_KEY, FREE_ACTIVITY_KEY, LESSONS, activityLabel, normalizeActivityKey } from "../lib/lesson-content.ts";
 
@@ -52,14 +52,24 @@ test("every guided and observation drawing has a visible guide for every drawing
   }
 });
 
-test("the child sees a full service-made reference drawing instead of only an emoji", async () => {
-  const [illustration, studio, picker] = await Promise.all([
-    read("../app/components/LessonIllustration.tsx"), read("../app/components/DrawingStudio.tsx"), read("../app/components/LessonPicker.tsx"),
+test("guided lessons show cumulative lines while observation lessons show ten real reference pictures", async () => {
+  const [illustration, reference, studio, picker] = await Promise.all([
+    read("../app/components/LessonIllustration.tsx"), read("../app/components/LessonReference.tsx"), read("../app/components/DrawingStudio.tsx"), read("../app/components/LessonPicker.tsx"),
   ]);
   assert.match(illustration, /for \(const mark of lesson\.guide\)/);
   assert.match(illustration, /aria-label=\{`\$\{lesson\.title\} 전체 참고 그림`\}/);
-  assert.match(studio, /<LessonIllustration lesson=\{lesson\} currentStep=\{step\}/);
-  assert.match(picker, /<LessonIllustration lesson=\{lesson\}/);
+  assert.match(reference, /lesson\.mode !== "observe"/);
+  assert.match(reference, /lesson\.referenceImage/);
+  assert.match(reference, /관찰 그림 크게 보기/);
+  assert.match(studio, /LessonReference as LessonIllustration/);
+  assert.match(picker, /<LessonReference lesson=\{lesson\}/);
+  const observationLessons = LESSONS.filter((lesson) => lesson.mode === "observe");
+  assert.equal(observationLessons.length, 10);
+  for (const lesson of observationLessons) {
+    assert.match(lesson.referenceImage, /^\/lessons\/observe\/[a-z-]+\.webp$/, lesson.slug);
+    assert.equal(lesson.observationWords?.length, 4, lesson.slug);
+    await access(new URL(`../public${lesson.referenceImage}`, import.meta.url));
+  }
   assert.doesNotMatch(picker, /바로 자유롭게 그리기/);
 });
 

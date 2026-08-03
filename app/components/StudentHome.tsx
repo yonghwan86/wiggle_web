@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { activeProfile, deactivateProfile, flushSaves, studentFetch } from "@/lib/client-session";
 import { lessonBySlug } from "@/lib/lesson-content";
-import { LessonIllustration } from "./LessonIllustration";
+import { LessonReference } from "./LessonReference";
 import { Logo } from "./Logo";
 import { SpeakButton } from "./SpeakButton";
 import { StudentMessageCenter, StudentTeacherMessage } from "./StudentMessageCenter";
@@ -104,7 +104,7 @@ export function StudentHome() {
 
     <section className="teacher-selected-activity">
       <div className="teacher-activity-copy"><p className="teacher-activity-pill">⭐ 선생님이 선택한 오늘 활동</p><h2>{data.currentActivityLabel}</h2><p>{teacherLesson?.description ?? "내 생각을 그리고, 필요할 때 그리미를 불러요."}</p><a className="button primary child-primary-action" href={teacherActivityPath}><span aria-hidden="true">▶️</span>{teacherDone ? "한 번 더 그리기" : teacherArtwork ? "이어 그리기" : "그림 시작하기"}</a></div>
-      <div className="teacher-activity-visual">{teacherLesson ? <LessonIllustration lesson={teacherLesson} /> : <img src="/brand/grimi-mascot.png" alt="자유 창작을 안내하는 그리미" />}<span>{teacherStep}/{teacherStepTotal}</span><div className="teacher-activity-progress" aria-label={`오늘 활동 ${teacherProgress}% 진행`}><i style={{ width: `${teacherProgress}%` }} /></div></div>
+      <div className="teacher-activity-visual">{teacherLesson ? <LessonReference lesson={teacherLesson} /> : <img src="/brand/grimi-mascot.png" alt="자유 창작을 안내하는 그리미" />}<span>{teacherStep}/{teacherStepTotal}</span><div className="teacher-activity-progress" aria-label={`오늘 활동 ${teacherProgress}% 진행`}><i style={{ width: `${teacherProgress}%` }} /></div></div>
     </section>
   </main>;
 }

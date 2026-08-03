@@ -14,6 +14,8 @@ export type Lesson = {
   topic: string;
   emoji: string;
   description: string;
+  referenceImage?: string;
+  observationWords?: string[];
   steps: LessonStep[];
   guide: GuideMark[];
   finalFree: true;
@@ -217,7 +219,7 @@ export const LESSONS: Lesson[] = [
     guide: [ellipse(1, .52, .56, .25, .19), curve(2, [.34, .51], [.24, .4], [.25, .22], [.36, .2]), curve(2, [.42, .4], [.38, .31], [.42, .24], [.45, .23]), ellipse(2, .4, .2, .09, .065), ellipse(3, .37, .19, .014), line(3, [.43, .37], [.48, .28], [.53, .38]), line(3, [.53, .38], [.59, .29], [.64, .4]), line(3, [.64, .4], [.7, .34], [.74, .45]), line(4, [.36, .66], [.34, .83], [.42, .83], [.43, .69]), line(4, [.48, .71], [.47, .86], [.54, .86], [.55, .72]), line(4, [.6, .7], [.61, .84], [.68, .84], [.68, .66]), line(4, [.71, .64], [.74, .8], [.8, .79]), curve(5, [.75, .54], [.9, .48], [.91, .37], [.87, .32]), curve(5, [.75, .63], [.86, .61], [.9, .52], [.87, .32])],
   },
   {
-    slug: "hanok-day", stage: 3, order: 1, mode: "observe", title: "한옥의 하루", topic: "한옥", emoji: "🏠", description: "지붕과 처마, 기둥을 천천히 관찰해요.", finalFree: true,
+    slug: "hanok-day", stage: 3, order: 1, mode: "observe", title: "한옥의 하루", topic: "한옥", emoji: "🏠", description: "지붕과 처마, 기둥을 천천히 관찰해요.", referenceImage: "/lessons/observe/hanok-day.webp", observationWords: ["굽은 지붕", "올라간 처마", "나무 기둥", "창살문"], finalFree: true,
     steps: [
       { instruction: "지붕 양끝과 가운데를 이어요." }, { instruction: "양쪽으로 올라가는 처마를 그어요." },
       { instruction: "대들보와 기둥 네 개를 세워요.", choices: ["갈색 기둥", "검은 기둥"] }, { instruction: "가운데 문과 창살을 그어요." },
@@ -226,7 +228,7 @@ export const LESSONS: Lesson[] = [
     guide: [line(1, [.14, .4], [.5, .16], [.86, .4]), curve(2, [.1, .42], [.28, .49], [.42, .43], [.5, .38]), curve(2, [.5, .38], [.58, .43], [.72, .49], [.9, .42]), line(3, [.2, .47], [.8, .47]), line(3, [.27, .47], [.27, .82]), line(3, [.42, .47], [.42, .82]), line(3, [.58, .47], [.58, .82]), line(3, [.73, .47], [.73, .82]), line(3, [.22, .82], [.78, .82]), rect(4, .42, .52, .16, .3), line(4, [.5, .52], [.5, .82]), line(4, [.42, .62], [.58, .62]), line(4, [.42, .72], [.58, .72]), line(5, [.27, .29], [.73, .29]), line(5, [.2, .36], [.8, .36]), curve(5, [.12, .86], [.34, .8], [.66, .9], [.88, .84])],
   },
   {
-    slug: "calm-capybara", stage: 3, order: 2, mode: "observe", title: "느긋한 카피바라", topic: "카피바라", emoji: "🦫", description: "둥근 몸과 짧은 귀, 네 발을 관찰해요.", finalFree: true,
+    slug: "calm-capybara", stage: 3, order: 2, mode: "observe", title: "느긋한 카피바라", topic: "카피바라", emoji: "🦫", description: "둥근 몸과 짧은 귀, 네 발을 관찰해요.", referenceImage: "/lessons/observe/calm-capybara.webp", observationWords: ["긴 둥근 몸", "큰 주둥이", "작은 귀", "짧은 네 발"], finalFree: true,
     steps: [
       { instruction: "길고 둥근 몸의 바깥선을 그어요." }, { instruction: "앞쪽에 머리와 튀어나온 주둥이를 이어요." },
       { instruction: "작은 귀, 눈, 코를 찾아 그어요.", choices: ["갈색 털", "연한 갈색 털"] }, { instruction: "몸 아래에 짧은 다리 네 개를 그어요." },
@@ -235,7 +237,7 @@ export const LESSONS: Lesson[] = [
     guide: [ellipse(1, .58, .55, .28, .19), ellipse(2, .31, .46, .16, .14), curve(2, [.2, .46], [.13, .48], [.14, .58], [.25, .58]), ellipse(3, .28, .32, .038), ellipse(3, .23, .43, .018), ellipse(3, .15, .51, .025, .018), line(3, [.18, .55], [.22, .57]), line(4, [.42, .68], [.4, .83], [.47, .83], [.49, .71]), line(4, [.55, .72], [.54, .85], [.61, .85], [.62, .72]), line(4, [.68, .7], [.68, .83], [.75, .83], [.77, .67]), line(4, [.79, .63], [.81, .78], [.86, .77]), curve(5, [.12, .88], [.35, .82], [.66, .92], [.9, .86]), line(5, [.3, .86], [.27, .79]), line(5, [.33, .86], [.36, .78])],
   },
   {
-    slug: "old-tree", stage: 3, order: 3, mode: "observe", title: "오래된 나무", topic: "나무", emoji: "🌳", description: "줄기의 갈라짐과 잎 덩어리를 관찰해요.", finalFree: true,
+    slug: "old-tree", stage: 3, order: 3, mode: "observe", title: "오래된 나무", topic: "나무", emoji: "🌳", description: "줄기의 갈라짐과 잎 덩어리를 관찰해요.", referenceImage: "/lessons/observe/old-tree.webp", observationWords: ["굵은 줄기", "갈라진 가지", "둥근 잎 덩어리", "퍼진 뿌리"], finalFree: true,
     steps: [
       { instruction: "굵은 줄기와 뿌리를 아래에서 올려요." }, { instruction: "양쪽으로 갈라지는 가지를 살펴 그어요." },
       { instruction: "구름 같은 잎 덩어리를 여러 개 그어요.", choices: ["초록 잎", "주황 잎"] }, { instruction: "줄기에 짧은 껍질 무늬를 그어요." },
@@ -244,7 +246,7 @@ export const LESSONS: Lesson[] = [
     guide: [line(1, [.35, .86], [.43, .78], [.46, .43], [.54, .43], [.58, .78], [.67, .86]), line(1, [.43, .82], [.5, .88], [.58, .82]), line(2, [.48, .5], [.33, .27]), line(2, [.5, .43], [.5, .2]), line(2, [.52, .48], [.7, .25]), ellipse(3, .34, .25, .17, .13), ellipse(3, .5, .18, .19, .14), ellipse(3, .67, .27, .18, .13), ellipse(3, .5, .34, .23, .13), line(4, [.47, .56], [.52, .52]), line(4, [.46, .66], [.53, .62]), line(4, [.45, .75], [.51, .71]), line(5, [.16, .87], [.84, .87]), line(5, [.24, .82], [.28, .78], [.32, .82])],
   },
   {
-    slug: "snail-closeup", stage: 3, order: 4, mode: "observe", title: "달팽이 가까이", topic: "달팽이", emoji: "🐌", description: "나선 껍데기와 더듬이를 자세히 봐요.", finalFree: true,
+    slug: "snail-closeup", stage: 3, order: 4, mode: "observe", title: "달팽이 가까이", topic: "달팽이", emoji: "🐌", description: "나선 껍데기와 더듬이를 자세히 봐요.", referenceImage: "/lessons/observe/snail-closeup.webp", observationWords: ["빙글 껍데기", "긴 몸", "긴 더듬이", "작은 눈"], finalFree: true,
     steps: [
       { instruction: "큰 동그라미 껍데기를 그어요." }, { instruction: "안쪽 나선을 천천히 그어요." },
       { instruction: "껍데기 아래에 긴 몸을 이어 닫아요.", choices: ["노란 몸", "연두 몸"] }, { instruction: "머리에 더듬이 두 개와 눈을 그어요." },
@@ -253,7 +255,7 @@ export const LESSONS: Lesson[] = [
     guide: [ellipse(1, .43, .43, .21), curve(2, [.43, .43], [.62, .24], [.7, .59], [.45, .58]), curve(2, [.45, .58], [.3, .57], [.31, .36], [.45, .36]), curve(2, [.45, .36], [.54, .36], [.54, .5], [.45, .49]), curve(3, [.18, .66], [.4, .56], [.66, .69], [.82, .61]), curve(3, [.18, .66], [.25, .8], [.7, .8], [.84, .66]), curve(4, [.72, .63], [.75, .52], [.76, .44], [.78, .38]), curve(4, [.79, .63], [.83, .53], [.84, .46], [.87, .41]), ellipse(4, .78, .37, .015), ellipse(4, .87, .4, .015), curve(5, [.16, .78], [.34, .9], [.58, .84], [.78, .88])],
   },
   {
-    slug: "rainy-umbrella", stage: 3, order: 5, mode: "observe", title: "비 오는 우산", topic: "우산", emoji: "☂️", description: "둥근 덮개와 반복되는 살을 관찰해요.", finalFree: true,
+    slug: "rainy-umbrella", stage: 3, order: 5, mode: "observe", title: "비 오는 우산", topic: "우산", emoji: "☂️", description: "둥근 덮개와 반복되는 살을 관찰해요.", referenceImage: "/lessons/observe/rainy-umbrella.webp", observationWords: ["둥근 덮개", "반복되는 살", "긴 막대", "굽은 손잡이"], finalFree: true,
     steps: [
       { instruction: "우산의 큰 곡선을 그어요." }, { instruction: "아래쪽 물결선을 살펴요." },
       { instruction: "가운데에서 퍼지는 우산살을 그어요.", choices: ["노란 우산", "파란 우산"] }, { instruction: "가운데 손잡이를 내려 굽혀요." },
@@ -262,7 +264,7 @@ export const LESSONS: Lesson[] = [
     guide: [curve(1, [.14, .48], [.28, .12], [.72, .12], [.86, .48]), curve(2, [.14, .48], [.23, .59], [.32, .59], [.38, .48]), curve(2, [.38, .48], [.45, .59], [.52, .59], [.58, .48]), curve(2, [.58, .48], [.66, .59], [.77, .59], [.86, .48]), line(3, [.5, .2], [.38, .48]), line(3, [.5, .2], [.58, .48]), line(3, [.5, .2], [.14, .48]), line(3, [.5, .2], [.86, .48]), line(4, [.5, .2], [.5, .78]), curve(4, [.5, .78], [.5, .91], [.66, .91], [.66, .81]), line(5, [.23, .65], [.2, .72]), line(5, [.78, .62], [.75, .7]), line(5, [.32, .76], [.29, .83]), line(5, [.84, .75], [.81, .83])],
   },
   {
-    slug: "playground-watch", stage: 3, order: 6, mode: "observe", title: "놀이터 관찰", topic: "놀이터", emoji: "🛝", description: "미끄럼틀의 높이와 사다리 간격을 살펴요.", finalFree: true,
+    slug: "playground-watch", stage: 3, order: 6, mode: "observe", title: "놀이터 관찰", topic: "놀이터", emoji: "🛝", description: "미끄럼틀의 높이와 사다리 간격을 살펴요.", referenceImage: "/lessons/observe/playground-watch.webp", observationWords: ["높은 발판", "사다리 칸", "안전 손잡이", "굽은 미끄럼판"], finalFree: true,
     steps: [
       { instruction: "높은 기둥 두 개와 발판을 그어요." }, { instruction: "평행한 두 선으로 미끄럼틀을 이어요." },
       { instruction: "사다리 칸을 같은 간격으로 그어요.", choices: ["빨간 미끄럼틀", "파란 미끄럼틀"] }, { instruction: "위에 안전 손잡이를 올려요." },
@@ -271,7 +273,7 @@ export const LESSONS: Lesson[] = [
     guide: [line(1, [.3, .27], [.3, .78]), line(1, [.48, .27], [.48, .78]), line(1, [.3, .31], [.58, .31]), curve(2, [.55, .31], [.62, .45], [.75, .62], [.84, .77]), curve(2, [.48, .38], [.57, .53], [.69, .7], [.8, .81]), line(3, [.3, .42], [.48, .42]), line(3, [.3, .54], [.48, .54]), line(3, [.3, .66], [.48, .66]), curve(4, [.34, .3], [.34, .16], [.42, .13], [.46, .28]), curve(4, [.49, .3], [.49, .16], [.57, .13], [.59, .3]), curve(5, [.12, .85], [.34, .79], [.66, .91], [.9, .84]), ellipse(5, .19, .76, .045)],
   },
   {
-    slug: "fruit-basket", stage: 3, order: 7, mode: "observe", title: "과일 바구니", topic: "과일", emoji: "🧺", description: "겹쳐 있는 과일의 크기와 위치를 살펴요.", finalFree: true,
+    slug: "fruit-basket", stage: 3, order: 7, mode: "observe", title: "과일 바구니", topic: "과일", emoji: "🧺", description: "겹쳐 있는 과일의 크기와 위치를 살펴요.", referenceImage: "/lessons/observe/fruit-basket.webp", observationWords: ["큰 사과", "길쭉한 배", "작은 귤", "겹친 잎"], finalFree: true,
     steps: [
       { instruction: "넓은 바구니와 둥근 손잡이를 그어요." }, { instruction: "큰 사과와 배를 먼저 놓아요." },
       { instruction: "작은 귤 두 개를 사이에 놓아요.", choices: ["빨간 사과", "초록 사과"] }, { instruction: "과일 꼭지와 잎을 살펴 그어요." },
@@ -280,7 +282,7 @@ export const LESSONS: Lesson[] = [
     guide: [curve(1, [.18, .51], [.25, .86], [.75, .86], [.82, .51]), line(1, [.18, .51], [.82, .51]), curve(1, [.29, .5], [.28, .2], [.72, .2], [.71, .5]), ellipse(2, .4, .43, .13), curve(2, [.55, .5], [.54, .31], [.68, .28], [.7, .49]), ellipse(3, .29, .49, .08), ellipse(3, .75, .48, .075), line(4, [.4, .3], [.42, .24]), curve(4, [.42, .26], [.47, .21], [.5, .26], [.45, .29]), line(4, [.64, .31], [.62, .25]), line(4, [.29, .4], [.27, .35]), line(5, [.23, .62], [.77, .62]), line(5, [.26, .73], [.74, .73]), line(5, [.36, .53], [.36, .8]), line(5, [.5, .53], [.5, .82]), line(5, [.64, .53], [.64, .8])],
   },
   {
-    slug: "bus-stop", stage: 3, order: 8, mode: "observe", title: "우리 동네 버스 정류장", topic: "버스 정류장", emoji: "🚏", description: "기둥과 표지판, 기다리는 사람을 관찰해요.", finalFree: true,
+    slug: "bus-stop", stage: 3, order: 8, mode: "observe", title: "우리 동네 버스 정류장", topic: "버스 정류장", emoji: "🚏", description: "기둥과 표지판, 기다리는 사람을 관찰해요.", referenceImage: "/lessons/observe/bus-stop.webp", observationWords: ["둥근 표지판", "정류장 지붕", "긴 의자", "기다리는 사람"], finalFree: true,
     steps: [
       { instruction: "긴 기둥과 위쪽 표지판을 그어요." }, { instruction: "표지판 안에 작은 버스를 그어요." },
       { instruction: "옆에 지붕과 긴 의자를 그어요.", choices: ["파란 정류장", "초록 정류장"] }, { instruction: "기다리는 사람의 머리와 몸을 그어요." },
@@ -289,7 +291,7 @@ export const LESSONS: Lesson[] = [
     guide: [line(1, [.24, .28], [.24, .83]), rect(1, .13, .16, .22, .17), rect(2, .17, .21, .14, .065), ellipse(2, .2, .29, .018), ellipse(2, .28, .29, .018), line(3, [.43, .28], [.84, .28], [.84, .72]), line(3, [.43, .28], [.43, .72]), line(3, [.47, .59], [.78, .59]), line(3, [.5, .59], [.5, .73]), line(3, [.75, .59], [.75, .73]), ellipse(4, .58, .42, .045), line(4, [.58, .47], [.58, .62]), line(4, [.58, .52], [.52, .58]), line(4, [.58, .52], [.64, .58]), line(5, [.1, .85], [.9, .85]), line(5, [.44, .9], [.63, .9])],
   },
   {
-    slug: "seaside-lighthouse", stage: 3, order: 9, mode: "observe", title: "바닷가 등대", topic: "등대", emoji: "🚨", description: "위는 좁고 아래는 넓은 등대 모양을 살펴요.", finalFree: true,
+    slug: "seaside-lighthouse", stage: 3, order: 9, mode: "observe", title: "바닷가 등대", topic: "등대", emoji: "🚨", description: "위는 좁고 아래는 넓은 등대 모양을 살펴요.", referenceImage: "/lessons/observe/seaside-lighthouse.webp", observationWords: ["넓은 아래", "좁은 위", "줄무늬", "양쪽 불빛"], finalFree: true,
     steps: [
       { instruction: "아래가 넓고 위가 좁은 탑을 닫아 그어요." }, { instruction: "맨 위에 불빛 방과 삼각 지붕을 그어요." },
       { instruction: "탑에 줄무늬와 문을 그어요.", choices: ["빨간 줄무늬", "파란 줄무늬"] }, { instruction: "불빛 방에서 양쪽으로 빛을 뻗어요." },
@@ -298,7 +300,7 @@ export const LESSONS: Lesson[] = [
     guide: [line(1, [.35, .8], [.44, .31], [.56, .31], [.65, .8], [.35, .8]), rect(2, .39, .2, .22, .12), line(2, [.37, .2], [.5, .09], [.63, .2]), line(2, [.36, .34], [.64, .34]), line(3, [.41, .48], [.59, .48]), line(3, [.38, .62], [.62, .62]), rect(3, .47, .66, .06, .14), line(4, [.39, .24], [.14, .17]), line(4, [.39, .29], [.14, .36]), line(4, [.61, .24], [.86, .17]), line(4, [.61, .29], [.86, .36]), curve(5, [.12, .85], [.28, .73], [.38, .92], [.5, .82]), curve(5, [.5, .82], [.62, .72], [.72, .91], [.88, .82])],
   },
   {
-    slug: "favorite-sneaker", stage: 3, order: 10, mode: "observe", title: "내 운동화", topic: "운동화", emoji: "👟", description: "신발의 바닥선과 끈 모양을 자세히 봐요.", finalFree: true,
+    slug: "favorite-sneaker", stage: 3, order: 10, mode: "observe", title: "내 운동화", topic: "운동화", emoji: "👟", description: "신발의 바닥선과 끈 모양을 자세히 봐요.", referenceImage: "/lessons/observe/favorite-sneaker.webp", observationWords: ["둥근 앞코", "두꺼운 밑창", "교차한 끈", "뒤꿈치"], finalFree: true,
     steps: [
       { instruction: "신발의 긴 밑창 위아래 선을 그어요." }, { instruction: "뒤꿈치에서 발등과 앞코를 이어요." },
       { instruction: "혀와 세 쌍의 교차 끈을 그어요.", choices: ["하얀 끈", "무지개 끈"] }, { instruction: "옆면에 번개 무늬를 그어요." },
