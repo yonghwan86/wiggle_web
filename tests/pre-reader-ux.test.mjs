@@ -24,6 +24,8 @@ test("important child prompts can be heard on demand without automatic classroom
   assert.match(speak, /선생님과 같이 읽어요/);
   assert.match(home, /SpeakButton text="오늘은 무엇을 그릴까\? 선생님이 고른 활동부터 시작해 봐요\."/);
   assert.match(messageCenter, /선생님이 말했어요/);
+  assert.match(messageCenter, /className="teacher-message-icon" aria-hidden="true">👩‍🏫<\/span>/);
+  assert.doesNotMatch(messageCenter, /📬/);
   assert.match(studio, /SpeakButton text=\{`\$\{lesson\.steps\[step\]\.instruction\}/);
   assert.match(studio, /SpeakButton text=\{`\$\{coaching\.question\}/);
   assert.match(studio, /SpeakButton text=\{coaching\.nextAction\}/);
@@ -59,6 +61,7 @@ test("drawing, navigation and reflection retain familiar visual actions when tex
 test("speaker, picture slots and choice controls remain large and visible on small screens", () => {
   assert.match(css, /\.speak-button \{[^}]*min-height:52px/);
   assert.match(css, /\.speak-button\.compact \{[^}]*min-width:48px; width:48px; min-height:48px/);
+  assert.match(css, /\.student-message-button \.teacher-message-icon \{[^}]*font-size:26px/);
   assert.match(css, /\.password-slots span \{[^}]*width:52px; height:52px/);
   assert.match(css, /\.reflection-choice-grid button \{[^}]*min-height:76px/);
   assert.match(css, /@media \(max-width:720px\)[\s\S]*\.welcome-title-row \{ grid-template-columns:48px minmax\(0,1fr\) 52px/);

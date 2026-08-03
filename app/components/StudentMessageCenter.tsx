@@ -37,12 +37,12 @@ export function StudentMessageCenter({ messages, floating = false, compact = fal
       <button type="button" className="canvas-message-close" onClick={() => void acknowledge(latestUnread.id)} aria-label="선생님 말씀 닫기">×</button>
     </aside>}
     <button type="button" className={`student-message-button${floating ? " floating" : ""}${compact ? " compact" : ""}`} onClick={openHistory} aria-label={`선생님 말씀 ${unread.length ? `${unread.length}개 새로 옴` : "이력 보기"}`}>
-      <span aria-hidden="true">📬</span>{compact ? <span className="sr-only">선생님 말씀</span> : " 선생님 말씀"}{unread.length > 0 && <b>{unread.length}</b>}
+      <span className="teacher-message-icon" aria-hidden="true">👩‍🏫</span>{compact ? <span className="sr-only">선생님 말씀</span> : " 선생님 말씀"}{unread.length > 0 && <b>{unread.length}</b>}
     </button>
     {open && <div className="modal-backdrop" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="student-message-title">
       <section className="student-message-history">
         <button type="button" className="modal-close" onClick={() => setOpen(false)} aria-label="선생님 말씀 이력 닫기">×</button>
-        <h2 id="student-message-title">📬 선생님 말씀</h2>
+        <h2 id="student-message-title">👩‍🏫 선생님 말씀</h2>
         <p>닫아도 여기에서 다시 볼 수 있어요.</p>
         <div>{[...messages].reverse().map((message) => <article key={message.id}>
           <div><b>👩‍🏫 선생님</b><small>{message.audience === "all" ? "우리 반 모두" : "나에게"}</small></div>
