@@ -42,7 +42,7 @@ test("keeps canvas contracts and guide data separate", async () => {
     assert.ok(modeLessons.every((lesson) => !lesson.guide.some((mark) => mark.step === lesson.steps.length)), `${mode} final free steps have no guide`);
   }
   assert.match(studio, /function guideControls\(\) \{[\s\S]*if \(!lessonGuideAvailable\) return null;[\s\S]*className="guide-demo-button"/);
-  assert.match(studio, /step === lesson\.steps\.length - 1\) \{ setReflectionOpen\(true\); return; \}/);
+  assert.match(studio, /function advanceOrCompleteLessonStep\(skip = false\)[\s\S]*!skip && !currentLessonStepStatus\.ready[\s\S]*setReflectionOpen\(true\)/);
   // 고학년 전환에서 마지막 단계 라벨을 "그림 다 그렸어요"→"완성하기"로 중립화했다.
   assert.match(studio, /step === lesson\.steps\.length - 1 \? "완성하기" : "다음"/);
   assert.ok(catalog.LESSONS.every((lesson) => lesson.steps.filter((step) => step.choices?.length >= 2).length >= 2)); assert.match(lessons, /내 마음대로/);

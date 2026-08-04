@@ -7,6 +7,7 @@ import { renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
 import { mirrorOp, undoGroupSize } from "@/lib/symmetry";
 import { CanvasView, IDENTITY_VIEW, pinchView } from "@/lib/canvas-view";
 import { lessonBySlug, Lesson } from "@/lib/lesson-content";
+import { createLessonStepBaseline, isLessonStepProgress, lessonStepActionStatus, LessonStepProgress } from "@/lib/lesson-step-progress";
 import { activeProfile, clearQueuedArtworkSaves, createSerialTaskQueue, deleteQueuedArtworkSave, flushSaves, queueSave, queuedArtworkDraft, queuedArtworkSaves, resolveArtworkDraftDisposition, studentFetch } from "@/lib/client-session";
 
 import type { QueuedArtworkDraft } from "@/lib/client-session";
@@ -126,6 +127,7 @@ type SaveOptions = {
   reflection?: Record<string, string>;
   currentStep?: number;
 };
+type LessonStepPrompt = "step-action" | "unfinished-lesson" | null;
 
 function renderDocument(canvas: HTMLCanvasElement, document: DrawDocument, size = 1024) {
   canvas.width = size;
@@ -424,6 +426,10 @@ function coachingRequestId() {
   return `coaching_${crypto.randomUUID().replaceAll("-", "")}`;
 }
 
+function lessonStepStorageKey(artworkId: string, lessonSlug: string, step: number) {
+  return `wiggle:lesson-step:v1:${artworkId}:${lessonSlug}:${step}`;
+}
+
 export function DrawingStudio() {
   const params = useParams<{ id: string }>();
   const search = useSearchParams();
@@ -452,6 +458,8 @@ export function DrawingStudio() {
   const [guidePhase, setGuidePhase] = useState<GuidePhase>("independent");
   const [guideDemoRun, setGuideDemoRun] = useState(0);
   const [guidePracticeTried, setGuidePracticeTried] = useState(false);
+  const [lessonStepProgress, setLessonStepProgress] = useState<LessonStepProgress | null>(null);
+  const [lessonStepPrompt, setLessonStepPrompt] = useState<LessonStepPrompt>(null);
   const [saveState, setSaveState] = useState("불러오는 중");
   const [editVersion, setEditVersion] = useState(0);
   const [reflectionOpen, setReflectionOpen] = useState(false);
@@ -636,7 +644,45 @@ export function DrawingStudio() {
   const currentGuideTraces = useMemo(() => guideTraces(aiGuide ? undefined : lesson, artwork?.currentStep ?? 0, aiGuideShape), [aiGuide, aiGuideShape, artwork?.currentStep, lesson]);
   const currentLessonActivity = lesson?.steps[artwork?.currentStep ?? 0]?.activity;
   const lessonGuideAvailable = currentGuideTraces.length > 0;
+  const currentLessonStepStatus = useMemo(
+    () => lessonStepActionStatus(documentState.ops, lessonStepProgress, currentGuideTraces.length, currentLessonActivity),
+    [currentGuideTraces.length, currentLessonActivity, documentState.ops, lessonStepProgress],
+  );
   const guideSourceKey = aiGuide ? `ai:${aiGuide.eventId}:${aiGuideStep}` : lesson ? `lesson:${lesson.slug}:${artwork?.currentStep ?? 0}` : "none";
+  const lessonArtworkId = artwork?.id;
+  const lessonArtworkStep = artwork?.currentStep;
+
+  useEffect(() => {
+    if (!lessonArtworkId || lessonArtworkStep === undefined || !lesson) {
+      setLessonStepProgress(null);
+      setLessonStepPrompt(null);
+      return;
+    }
+    const step = Math.min(lessonArtworkStep, lesson.steps.length - 1);
+    const key = lessonStepStorageKey(lessonArtworkId, lesson.slug, step);
+    let stored: LessonStepProgress | null = null;
+    try {
+      const raw = localStorage.getItem(key);
+      const parsed: unknown = raw ? JSON.parse(raw) : null;
+      if (isLessonStepProgress(parsed)) stored = parsed;
+    } catch {}
+    const next = stored ?? {
+      baseline: createLessonStepBaseline(documentStateRef.current.ops),
+      completed: false,
+      skipped: false,
+    };
+    if (!stored) {
+      try {
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch {}
+    }
+    setLessonStepProgress(next);
+    setLessonStepPrompt(null);
+  }, [lesson, lessonArtworkId, lessonArtworkStep]);
+
+  useEffect(() => {
+    if (currentLessonStepStatus.ready && lessonStepPrompt === "step-action") setLessonStepPrompt(null);
+  }, [currentLessonStepStatus.ready, lessonStepPrompt]);
   const markCurrentGuideSeen = useCallback(() => {
     if (lesson?.stage !== 1 || aiGuide || guideSourceKey === "none") return;
     const profile = activeProfile();
@@ -1857,18 +1903,65 @@ export function DrawingStudio() {
     setArtwork((value) => value && { ...value, currentStep: bounded });
   }
 
-  function changeLessonStep(delta: -1 | 1) {
+  function saveLessonStepProgress(next: LessonStepProgress) {
+    if (!artwork || !lesson) return;
+    const step = Math.min(artwork.currentStep, lesson.steps.length - 1);
+    try {
+      localStorage.setItem(lessonStepStorageKey(artwork.id, lesson.slug, step), JSON.stringify(next));
+    } catch {}
+    setLessonStepProgress(next);
+  }
+
+  function completeCurrentLessonStep(skipped = false) {
+    if (!lessonStepProgress) return;
+    saveLessonStepProgress({ ...lessonStepProgress, completed: true, skipped });
+  }
+
+  function changeLessonStep(delta: -1 | 1, options?: { skip?: boolean }) {
     if (!artwork || !lesson || conflictDraftRef.current) {
       if (conflictDraftRef.current) setSaveState("먼저 보관한 그림을 새 사본으로 저장해 주세요");
       return;
     }
+    if (delta === 1 && !options?.skip && !currentLessonStepStatus.ready) {
+      setLessonStepPrompt("step-action");
+      return;
+    }
     const next = Math.max(0, Math.min(lesson.steps.length - 1, artwork.currentStep + delta));
     if (next === artwork.currentStep) return;
+    if (delta === 1) completeCurrentLessonStep(Boolean(options?.skip));
     currentStepRef.current = next;
     setGuidePhase("independent");
+    setLessonStepPrompt(null);
     markEdited();
     setEditVersion((value) => value + 1);
     setArtwork({ ...artwork, currentStep: next });
+  }
+
+  function advanceOrCompleteLessonStep(skip = false) {
+    if (!artwork || !lesson || conflictDraftRef.current) return;
+    if (!skip && !currentLessonStepStatus.ready) {
+      setLessonStepPrompt("step-action");
+      return;
+    }
+    if (artwork.currentStep < lesson.steps.length - 1) {
+      changeLessonStep(1, { skip });
+      return;
+    }
+    completeCurrentLessonStep(skip);
+    setLessonStepPrompt(null);
+    setReflectionOpen(true);
+  }
+
+  function requestArtworkCompletion() {
+    if (!lesson) {
+      setReflectionOpen(true);
+      return;
+    }
+    if (artwork && artwork.currentStep < lesson.steps.length - 1) {
+      setLessonStepPrompt("unfinished-lesson");
+      return;
+    }
+    advanceOrCompleteLessonStep(false);
   }
 
   function closeGrimiState() {
@@ -1960,6 +2053,14 @@ export function DrawingStudio() {
   const step = lesson ? Math.min(artwork.currentStep, lesson.steps.length - 1) : 0;
   const guideNotice = guidePhase === "demo" ? "연필이 먼저 보여줄게!" : guidePhase === "practice" ? (guidePracticeTried ? "한 번 따라 했어! 이제 점선 없이도 해볼까?" : "이제 네 차례야. 초록 점에서 시작해 봐.") : "";
   const nextStepLabel = lesson ? (step === lesson.steps.length - 1 ? "완성하기" : "다음") : "다음";
+  const guardedNextStepLabel = currentLessonStepStatus.ready ? nextStepLabel : step === (lesson?.steps.length ?? 1) - 1 ? "한 번 그리고 완성" : "그린 뒤 다음";
+  const lessonStepPromptText = currentLessonActivity === "color"
+    ? "색을 하나 고르고 쓱쓱 칠해 볼까?"
+    : currentLessonActivity === "free"
+      ? "마지막으로 네 생각을 하나 더 그려 볼까?"
+      : currentLessonStepStatus.remaining > 1
+        ? "점이나 선을 조금 더 그려 볼까?"
+        : "점이나 선을 한 번 더 그려 볼까?";
   return (
     <main className="studio">
       <header className="studio-header">
@@ -1983,7 +2084,7 @@ export function DrawingStudio() {
           ✨ 그리미 부르기
         </button>
         <StudentMessageCenter messages={teacherMessages} floating compact />
-        <button className="button primary compact" disabled={Boolean(conflictDraft)} onClick={() => setReflectionOpen(true)}>
+        <button className="button primary compact" disabled={Boolean(conflictDraft)} onClick={requestArtworkCompletion}>
           완성
         </button>
       </header>
@@ -2177,20 +2278,36 @@ export function DrawingStudio() {
                 <button disabled={Boolean(conflictDraft) || step === 0} onClick={() => changeLessonStep(-1)}>
                   ⬅️ 이전
                 </button>
-                <button
-                  disabled={Boolean(conflictDraft)}
-                  onClick={() => {
-                    if (step === lesson.steps.length - 1) {
-                      setReflectionOpen(true);
-                      return;
-                    }
-                    changeLessonStep(1);
-                  }}
-                >
+                <button disabled={Boolean(conflictDraft)} onClick={() => advanceOrCompleteLessonStep(false)}>
                   <span aria-hidden="true">{step === lesson.steps.length - 1 ? "⭐" : "➡️"}</span>
-                  {nextStepLabel}
+                  {guardedNextStepLabel}
                 </button>
               </div>
+              {lessonStepPrompt && (
+                <div className="lesson-step-prompt" role="status" aria-live="polite">
+                  <div className="spoken-prompt">
+                    <b>{lessonStepPrompt === "unfinished-lesson" ? "아직 그릴 순서가 남았어. 다음을 눌러 천천히 이어 가자." : lessonStepPromptText}</b>
+                    <SpeakButton
+                      text={lessonStepPrompt === "unfinished-lesson" ? "아직 그릴 순서가 남았어. 다음을 눌러 천천히 이어 가자." : lessonStepPromptText}
+                      compact
+                    />
+                  </div>
+                  <div className="lesson-step-prompt-actions">
+                    <button type="button" onClick={() => setLessonStepPrompt(null)}>
+                      ✏️ 그려 볼게
+                    </button>
+                    {lessonStepPrompt === "unfinished-lesson" ? (
+                      <button type="button" onClick={() => { setLessonStepPrompt(null); setReflectionOpen(true); }}>
+                        ⭐ 여기서 완성할래
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => advanceOrCompleteLessonStep(true)}>
+                        ⏭️ 이번 단계 넘기기
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
               <button className="text-button" onClick={chooseIndependentDrawing}>
                 🎨 그냥 그릴래
               </button>
