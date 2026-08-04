@@ -59,12 +59,21 @@ test("a coloring step requires a color-making action", () => {
 });
 
 test("the studio gates next and complete but keeps an explicit child-controlled skip", async () => {
-  const studio = await readFile(new URL("../app/components/DrawingStudio.tsx", import.meta.url), "utf8");
+  const [studio, css] = await Promise.all([
+    readFile(new URL("../app/components/DrawingStudio.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
   assert.match(studio, /if \(delta === 1 && !options\?\.skip && !currentLessonStepStatus\.ready\)/);
   assert.match(studio, /onClick=\{requestArtworkCompletion\}/);
   assert.match(studio, /advanceOrCompleteLessonStep\(false\)/);
-  assert.match(studio, /이번 단계 넘기기/);
+  assert.match(studio, /내 생각을 하나 더 그릴까\?/);
+  assert.match(studio, /✏️ 더 그릴래/);
+  assert.equal(studio.match(/⭐ 지금 완성/g)?.length, 2);
+  assert.doesNotMatch(studio, /한 번 그리고 완성|이번 단계 넘기기|마지막으로 네 생각을 하나 더 그려 볼까/);
+  assert.match(css, /\.studio-body \{[^}]*grid-template-columns:240px minmax\(0,1fr\) 180px;/);
+  assert.match(css, /\.lesson-step-prompt-actions button \{[^}]*white-space:nowrap;/);
+  assert.match(css, /\.step-panel \.lesson-step-prompt\s*\{\s*grid-column:2\/4;\s*grid-row:3;/);
+  assert.match(css, /\.lesson-step-prompt-actions\s*\{\s*grid-template-columns:1fr;/);
   assert.match(studio, /lessonStepPrompt === "unfinished-lesson"/);
   assert.doesNotMatch(studio, /창의력 점수|그림 점수|정답률/);
 });
-

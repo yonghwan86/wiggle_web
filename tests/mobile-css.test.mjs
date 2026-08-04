@@ -33,6 +33,18 @@ test("mobile forms, actions and overlays honor iPhone zoom, touch and safe-area 
   assert.ok(css.lastIndexOf("bottom:max(8px,env(safe-area-inset-bottom))") > css.lastIndexOf(".student-footer { bottom:8px"));
 });
 
+test("mobile lesson cards keep the picture, copy and start action readable", async () => {
+  const css = await read("../app/globals.css");
+  const mobileStart = css.lastIndexOf("@media (max-width:720px)");
+  const mobile = css.slice(mobileStart, css.indexOf("@media (max-width:460px)", mobileStart));
+
+  assert.match(mobile, /\.lesson-card \{ display:grid; grid-template-columns:112px minmax\(0,1fr\);/);
+  assert.match(mobile, /\.lesson-card>:is\(\.lesson-illustration,\.lesson-finished-illustration\) \{ grid-column:1; grid-row:1\/span 2;/);
+  assert.match(mobile, /\.lesson-card>\.observation-reference \{ grid-column:1; grid-row:1\/span 2;/);
+  assert.match(mobile, /\.lesson-card>div:not\(\.lesson-finished-illustration\):not\(\.observation-reference\) \{ grid-column:2; grid-row:1;/);
+  assert.match(mobile, /\.lesson-card>b \{ grid-column:2; grid-row:2;/);
+});
+
 test("mobile studio and teacher layouts finish in two rows without horizontal text overflow", async () => {
   const [css, studioRaw, teacher] = await Promise.all([read("../app/globals.css"), read("../app/components/DrawingStudio.tsx"), read("../app/components/TeacherApp.tsx")]);
   const studio = compactSource(studioRaw);

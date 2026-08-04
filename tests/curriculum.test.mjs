@@ -84,6 +84,9 @@ test("guided lessons show polished finished art while observation lessons show t
   assert.match(reference, /lesson\.mode === "guided"/);
   assert.match(finished, /guided-finished-sprite\.webp/);
   await access(new URL("../public/lessons/guided-finished-sprite.webp", import.meta.url));
+  assert.match(finished, /"curious-cat": "\/lessons\/guided\/curious-cat-v2\.png"/);
+  const catCutout = await readFile(new URL("../public/lessons/guided/curious-cat-v2.png", import.meta.url));
+  assert.equal(catCutout[25], 6, "the cat cutout must be an RGBA PNG without a baked-in background");
   assert.match(reference, /lesson\.referenceImage/);
   assert.match(reference, /관찰 그림 크게 보기/);
   assert.match(studio, /LessonReference as LessonIllustration/);

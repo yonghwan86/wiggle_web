@@ -86,8 +86,12 @@ export function StudentHome() {
     {error && <p className="error-box" role="alert">{error}</p>}
     <section className="student-home-hero">
       <img className="grimi-home-character" src="/brand/grimi-mascot.png" alt="붓과 팔레트를 든 그림 친구 그리미" />
-      <div><p className="eyebrow">그리미와 함께</p><h1>오늘은 무엇을 그릴까?</h1><p>선생님이 고른 활동부터 시작해 봐요.</p></div>
-      <SpeakButton text="오늘은 무엇을 그릴까? 선생님이 고른 활동부터 시작해 봐요." />
+      <div className="student-home-hero-copy">
+        <p className="eyebrow">그리미와 함께</p>
+        <h1>오늘은 무엇을 그릴까?</h1>
+        <p>선생님이 고른 활동부터 시작해 봐요.</p>
+        <SpeakButton text="오늘은 무엇을 그릴까? 선생님이 고른 활동부터 시작해 봐요." />
+      </div>
     </section>
 
     <nav className="student-primary-menu" aria-label="내 그림 메뉴">

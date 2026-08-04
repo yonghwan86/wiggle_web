@@ -8,6 +8,7 @@ import { mirrorOp, undoGroupSize } from "@/lib/symmetry";
 import { CanvasView, IDENTITY_VIEW, pinchView } from "@/lib/canvas-view";
 import { lessonBySlug, Lesson } from "@/lib/lesson-content";
 import { createLessonStepBaseline, isLessonStepProgress, lessonStepActionStatus, LessonStepProgress } from "@/lib/lesson-step-progress";
+import { lockGuideTrace, snapGuideTrace } from "@/lib/trace-guidance.mjs";
 import { activeProfile, clearQueuedArtworkSaves, createSerialTaskQueue, deleteQueuedArtworkSave, flushSaves, queueSave, queuedArtworkDraft, queuedArtworkSaves, resolveArtworkDraftDisposition, studentFetch } from "@/lib/client-session";
 
 import type { QueuedArtworkDraft } from "@/lib/client-session";
@@ -22,6 +23,14 @@ import { StudentMessageCenter, StudentTeacherMessage } from "./StudentMessageCen
 const PALETTE = ["#1B3A57", "#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#8D6E63", "#F06292", "#4DD0E1", "#FFCC80", "#FFFFFF"];
 // 기본 12색과 짝을 이루는 밝은 12색. 흰색 자리는 밝기 짝이 없어 회색을 준다.
 const LIGHT_PALETTE = ["#5B7FA0", "#F8A9A4", "#FFC97E", "#FFF0A6", "#A5D6A7", "#90CAF9", "#CE93D8", "#C4A79F", "#F8BBD0", "#B2EBF2", "#FFE0B2", "#9AA7B1"];
+const CHOICE_DRAWING_SETUP: Record<string, { color?: string; shade?: "base" | "light"; tool: BrushTool; width: StrokeWidth; feedback: string }> = {
+  "초록 눈": { color: "#43A047", shade: "base", tool: "pencil", width: 16, feedback: "초록 연필을 골랐어요. 눈 안쪽을 초록색으로 그려요." },
+  "파란 눈": { color: "#1E88E5", shade: "base", tool: "pencil", width: 16, feedback: "파란 연필을 골랐어요. 눈 안쪽을 파란색으로 그려요." },
+  "줄무늬 꼬리": { tool: "pencil", width: 16, feedback: "연필로 꼬리에 짧은 선을 세 개 더해요." },
+  "점무늬 꼬리": { tool: "pencil", width: 16, feedback: "연필로 꼬리에 작은 동그라미를 세 개 더해요." },
+  "하얀 고양이": { color: "#F8BBD0", shade: "light", tool: "crayon", width: 48, feedback: "몸은 하얗게 남기고, 분홍 크레용으로 귀와 볼을 꾸며요." },
+  "회색 고양이": { color: "#9AA7B1", shade: "light", tool: "crayon", width: 48, feedback: "회색 크레용을 골랐어요. 몸 안을 크게 쓱쓱 칠해요." },
+};
 const COLOR_NAMES: Record<string, string> = {
   "#1B3A57": "남색",
   "#E53935": "빨간색",
@@ -493,6 +502,7 @@ export function DrawingStudio() {
   const eraserFootprintRef = useRef<HTMLDivElement>(null);
   const guideAnimationRef = useRef<number | null>(null);
   const activePoints = useRef(new Map<number, Array<{ x: number; y: number; pressure: number }>>());
+  const guideTraceLocksRef = useRef(new Map<number, { traceIndex: number; pointIndex: number }>());
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<CanvasView>(IDENTITY_VIEW);
   const penModeRef = useRef(false);
@@ -842,6 +852,17 @@ export function DrawingStudio() {
       setChildChoice("");
     }
   }, [artwork]);
+
+  useEffect(() => {
+    const setup = CHOICE_DRAWING_SETUP[childChoice];
+    if (!setup) return;
+    setStudioTool(setup.tool);
+    lastBrushRef.current = setup.tool;
+    if (setup.shade) setPaletteShade(setup.shade);
+    if (setup.color) setColor(setup.color);
+    drawWidthRef.current = setup.width;
+    setDrawWidth(setup.width);
+  }, [childChoice]);
 
   function chooseChildChoice(choice: string) {
     setChildChoice(choice);
@@ -1338,6 +1359,7 @@ export function DrawingStudio() {
       else if (canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
     }
     activePoints.current.clear();
+    guideTraceLocksRef.current.clear();
     strokeMetaRef.current.clear();
     strokeSnapshotRef.current = null;
     shapeDragRef.current = null;
@@ -1347,6 +1369,7 @@ export function DrawingStudio() {
   }
   function endStroke(event: ReactPointerEvent<HTMLCanvasElement>) {
     activePoints.current.delete(event.pointerId);
+    guideTraceLocksRef.current.delete(event.pointerId);
     strokeMetaRef.current.delete(event.pointerId);
     lastClientRef.current.delete(event.pointerId);
     strokeSnapshotRef.current = null;
@@ -1414,16 +1437,24 @@ export function DrawingStudio() {
       return;
     }
     const meta: StrokeMeta = { tool: studioTool, color, width };
+    let strokeStart = first;
+    if ((guidePhase === "practice" || guidePhase === "demo") && lessonGuideAvailable && studioTool !== "eraser" && currentLessonActivity !== "color") {
+      const guidedStart = lockGuideTrace(currentGuideTraces, first);
+      if (guidedStart) {
+        guideTraceLocksRef.current.set(event.pointerId, guidedStart.lock);
+        strokeStart = guidedStart.point;
+      }
+    }
     strokeMetaRef.current.set(event.pointerId, meta);
     event.currentTarget.setPointerCapture(event.pointerId);
-    activePoints.current.set(event.pointerId, [first]);
+    activePoints.current.set(event.pointerId, [strokeStart]);
     // 반투명 브러시는 미리보기를 스냅숏 복원 방식으로 그린다 (세그먼트 알파 중첩 방지).
     if (meta.tool === "crayon" || meta.tool === "watercolor") {
       const context = event.currentTarget.getContext("2d");
       strokeSnapshotRef.current = context ? context.getImageData(0, 0, event.currentTarget.width, event.currentTarget.height) : null;
     } else strokeSnapshotRef.current = null;
-    renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, [first]);
-    if (mirror) renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, [{ ...first, x: 1 - first.x }]);
+    renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, [strokeStart]);
+    if (mirror) renderLiveStroke(event.currentTarget, meta.tool, meta.color, meta.width, [{ ...strokeStart, x: 1 - strokeStart.x }]);
   }
   function pointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (studioTool === "eraser") updateEraserFootprint(event, event.currentTarget.hasPointerCapture(event.pointerId));
@@ -1471,11 +1502,21 @@ export function DrawingStudio() {
     if (!points) return;
     const meta = strokeMetaRef.current.get(event.pointerId);
     if (!meta) return;
-    const next = canvasPoint(event);
-    const last = points.at(-1);
-    if (last && Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= 2.5) {
+    const rawNext = canvasPoint(event);
+    const guideLock = guideTraceLocksRef.current.get(event.pointerId);
+    const guidedMove = guideLock ? snapGuideTrace(currentGuideTraces, guideLock, rawNext) : null;
+    if (guidedMove) guideTraceLocksRef.current.set(event.pointerId, guidedMove.lock);
+    const incoming = guidedMove ? guidedMove.points : [rawNext];
+    let addedPoint = false;
+    for (const next of incoming) {
+      const last = points.at(-1);
+      if (last && Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= 2.5) {
+        points.push(next);
+        addedPoint = true;
+      }
+    }
+    if (addedPoint) {
       event.preventDefault();
-      points.push(next);
       if (strokeSnapshotRef.current) {
         // 반투명 브러시: 스냅숏 복원 후 누적 획 전체를 한 번에 그려 커밋 결과와 같은 알파로 보인다.
         const context = event.currentTarget.getContext("2d");
@@ -1516,7 +1557,7 @@ export function DrawingStudio() {
           setSaveState("종이가 가득 찼어요. ‘완성’을 눌러 완성해요");
           return;
         }
-        activePoints.current.set(event.pointerId, [next]);
+        activePoints.current.set(event.pointerId, [points.at(-1)!]);
         if (strokeSnapshotRef.current) {
           // 분할 커밋 뒤에는 방금 커밋된 획이 포함된 문서로 스냅숏을 새로 뜬다.
           renderDocument(event.currentTarget, documentStateRef.current);
@@ -1531,7 +1572,7 @@ export function DrawingStudio() {
     lastClientRef.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
-  function pointerUp(event: ReactPointerEvent<HTMLCanvasElement>) {
+  function pointerUp(event: ReactPointerEvent<HTMLCanvasElement>, includeReleasePoint = true) {
     if (studioTool === "eraser") {
       if (event.pointerType === "touch") hideEraserFootprint();
       else updateEraserFootprint(event, false);
@@ -1605,7 +1646,21 @@ export function DrawingStudio() {
     }
     if (!points?.length || !meta) return;
     event.preventDefault();
+    // Safari와 일부 태블릿 브라우저는 빠른 획에서 pointermove를 거의 보내지 않는다.
+    // 손을 뗀 좌표를 마지막으로 보간해야 시작점만 점처럼 남지 않고, 자석 점선도
+    // 건너뛴 안내점을 모두 채워 매끈한 선으로 완성된다.
+    if (includeReleasePoint) {
+      const releasePoint = canvasPoint(event);
+      const guideLock = guideTraceLocksRef.current.get(event.pointerId);
+      const guidedRelease = guideLock ? snapGuideTrace(currentGuideTraces, guideLock, releasePoint) : null;
+      const incoming = guidedRelease ? guidedRelease.points : [releasePoint];
+      for (const next of incoming) {
+        const last = points.at(-1);
+        if (last && Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= 2.5) points.push(next);
+      }
+    }
     activePoints.current.delete(event.pointerId);
+    guideTraceLocksRef.current.delete(event.pointerId);
     strokeMetaRef.current.delete(event.pointerId);
     strokeSnapshotRef.current = null;
     lastClientRef.current.delete(event.pointerId);
@@ -1643,7 +1698,7 @@ export function DrawingStudio() {
       renderDocument(event.currentTarget, documentStateRef.current);
       return;
     }
-    pointerUp(event);
+    pointerUp(event, false);
   }
   function undo() {
     if (conflictDraftRef.current) return;
@@ -2052,12 +2107,14 @@ export function DrawingStudio() {
   if (!artwork) return <main className="drawing-loading">{saveState}</main>;
   const step = lesson ? Math.min(artwork.currentStep, lesson.steps.length - 1) : 0;
   const guideNotice = guidePhase === "demo" ? "연필이 먼저 보여줄게!" : guidePhase === "practice" ? (guidePracticeTried ? "한 번 따라 했어! 이제 점선 없이도 해볼까?" : "이제 네 차례야. 초록 점에서 시작해 봐.") : "";
+  const choiceFeedback = childChoice ? CHOICE_DRAWING_SETUP[childChoice]?.feedback ?? "고른 모습을 그림에 직접 더해요." : "";
+  const canvasGuideStatus = guideNotice || (currentLessonActivity === "color" ? choiceFeedback || "색을 고르면 크레용도 함께 준비해 줄게요." : "");
   const nextStepLabel = lesson ? (step === lesson.steps.length - 1 ? "완성하기" : "다음") : "다음";
-  const guardedNextStepLabel = currentLessonStepStatus.ready ? nextStepLabel : step === (lesson?.steps.length ?? 1) - 1 ? "한 번 그리고 완성" : "그린 뒤 다음";
+  const guardedNextStepLabel = currentLessonStepStatus.ready ? nextStepLabel : step === (lesson?.steps.length ?? 1) - 1 ? "완성하기" : "그린 뒤 다음";
   const lessonStepPromptText = currentLessonActivity === "color"
     ? "색을 하나 고르고 쓱쓱 칠해 볼까?"
     : currentLessonActivity === "free"
-      ? "마지막으로 네 생각을 하나 더 그려 볼까?"
+      ? "내 생각을 하나 더 그릴까?"
       : currentLessonStepStatus.remaining > 1
         ? "점이나 선을 조금 더 그려 볼까?"
         : "점이나 선을 한 번 더 그려 볼까?";
@@ -2265,13 +2322,16 @@ export function DrawingStudio() {
                 <SpeakButton text={`${lesson.steps[step].instruction}${lesson.steps[step].choices?.length ? ` 고를 수 있어요. ${lesson.steps[step].choices.join(", ")}` : ""}`} compact />
               </div>
               {lesson.steps[step].choices?.length && (
-                <div className="choice-chips">
-                  {lesson.steps[step].choices.map((choice) => (
-                    <button aria-pressed={childChoice === choice} onClick={() => chooseChildChoice(choice)} key={choice}>
-                      {choice}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="choice-chips">
+                    {lesson.steps[step].choices.map((choice) => (
+                      <button aria-pressed={childChoice === choice} onClick={() => chooseChildChoice(choice)} key={choice}>
+                        {choice}
+                      </button>
+                    ))}
+                  </div>
+                  {choiceFeedback && <p className="choice-feedback" role="status">✓ {choiceFeedback}</p>}
+                </>
               )}
               {guideControls()}
               <div className="step-actions">
@@ -2294,15 +2354,15 @@ export function DrawingStudio() {
                   </div>
                   <div className="lesson-step-prompt-actions">
                     <button type="button" onClick={() => setLessonStepPrompt(null)}>
-                      ✏️ 그려 볼게
+                      ✏️ 더 그릴래
                     </button>
                     {lessonStepPrompt === "unfinished-lesson" ? (
                       <button type="button" onClick={() => { setLessonStepPrompt(null); setReflectionOpen(true); }}>
-                        ⭐ 여기서 완성할래
+                        ⭐ 지금 완성
                       </button>
                     ) : (
                       <button type="button" onClick={() => advanceOrCompleteLessonStep(true)}>
-                        ⏭️ 이번 단계 넘기기
+                        ⭐ 지금 완성
                       </button>
                     )}
                   </div>
@@ -2314,18 +2374,15 @@ export function DrawingStudio() {
             </aside>
           )
         )}
-        <section className="canvas-zone">
-          <div className="canvas-wrap" ref={wrapRef}>
-            {guideNotice && (
+        <section className={`canvas-zone${canvasGuideStatus ? " has-canvas-status" : ""}`}>
+          {canvasGuideStatus && (
+            <div className="canvas-status-rail">
               <div className="guide-notice" role="status" aria-live="polite">
-                {guidePhase === "demo" ? "✏️" : "🟢"} {guideNotice}
+                {currentLessonActivity === "color" ? "🖍️" : guidePhase === "demo" ? "✏️" : "🟢"} {canvasGuideStatus}
               </div>
-            )}
-            {currentLessonActivity === "color" && (
-              <div className="guide-notice color-guide-notice" role="status">
-                🖍️ 색을 고르고 크게 쓱쓱 색칠해 봐!
-              </div>
-            )}
+            </div>
+          )}
+          <div className="canvas-wrap" ref={wrapRef}>
             {!lesson && !aiGuide && !documentState.ops.length && !shapeStartPoint && (
               <div className="canvas-start-hint" role="status">
                 ✏️ 하얀 종이에 그어 봐!

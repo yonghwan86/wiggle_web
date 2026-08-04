@@ -67,4 +67,7 @@ test("speaker, picture slots and choice controls remain large and visible on sma
   assert.match(css, /@media \(max-width:720px\)[\s\S]*\.welcome-title-row \{ grid-template-columns:48px minmax\(0,1fr\) 52px/);
   assert.match(css, /@media \(max-width:460px\) and \(orientation:portrait\)[\s\S]*\.lesson-spoken-prompt \{ grid-column:1; grid-row:1; grid-template-columns:minmax\(0,1fr\) 48px/);
   assert.match(css, /\.reflection-choice-grid \{ display:grid; grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(home, /className="student-home-hero-copy"[\s\S]*<SpeakButton text="오늘은 무엇을 그릴까\? 선생님이 고른 활동부터 시작해 봐요\."/);
+  assert.match(css, /\.student-home-hero \{[^}]*grid-template-columns:220px minmax\(0,1fr\);/);
+  assert.match(css, /\.student-home-hero-copy \.speak-button \{ margin-top:14px; \}/);
 });

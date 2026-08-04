@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { lockGuideTrace, snapGuideTrace } from "../lib/trace-guidance.mjs";
 
 const studio = await readFile(new URL("../app/components/DrawingStudio.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const lessons = await readFile(new URL("../lib/lesson-content.ts", import.meta.url), "utf8");
 
 test("stage-one guides demonstrate the path before dotted practice", () => {
   assert.match(studio, /type GuidePhase = "independent" \| "demo" \| "practice"/);
@@ -53,4 +55,33 @@ test("guide controls and notices remain touch friendly on mobile", () => {
   assert.match(css, /\.grimi-panel \{ order:initial; grid-column:1;/);
   assert.match(css, /\.canvas-zone \{ order:initial; grid-column:2;/);
   assert.match(css, /\.tool-panel \{ display:flex; order:initial; grid-column:3;/);
+});
+
+test("practice pencil locks to one dotted trace and fills skipped curve samples", () => {
+  const traces = [
+    [{ x: 100, y: 100 }, { x: 200, y: 100 }, { x: 300, y: 100 }, { x: 400, y: 100 }],
+    [{ x: 100, y: 150 }, { x: 200, y: 150 }, { x: 300, y: 150 }],
+  ];
+  const start = lockGuideTrace(traces, { x: 0.1, y: 0.102, pressure: 0.7 });
+  assert.ok(start);
+  assert.equal(start.lock.traceIndex, 0);
+  const moved = snapGuideTrace(traces, start.lock, { x: 0.39, y: 0.147, pressure: 0.7 });
+  assert.ok(moved);
+  assert.equal(moved.lock.traceIndex, 0, "nearby details must not steal an active stroke");
+  assert.deepEqual(moved.points.map((point) => Math.round(point.x * 1024)), [200, 300, 400]);
+  assert.equal(lockGuideTrace(traces, { x: 0.9, y: 0.9 }), null, "drawing away from dots stays the child's free stroke");
+});
+
+test("guide status no longer covers the paper and cat choices change the actual drawing setup", () => {
+  assert.match(studio, /className="canvas-status-rail"[\s\S]*className="canvas-wrap"/);
+  assert.match(css, /\.canvas-status-rail \.guide-notice \{ position:static;/);
+  assert.match(studio, /lockGuideTrace\(currentGuideTraces, first\)/);
+  assert.match(studio, /snapGuideTrace\(currentGuideTraces, guideLock, rawNext\)/);
+  assert.match(studio, /Safari와 일부 태블릿 브라우저는 빠른 획에서 pointermove를 거의 보내지 않는다/);
+  assert.match(studio, /snapGuideTrace\(currentGuideTraces, guideLock, releasePoint\)/);
+  assert.match(studio, /"회색 고양이": \{ color: "#9AA7B1"[\s\S]*회색 크레용을 골랐어요/);
+  assert.match(studio, /setPaletteShade\(setup\.shade\)[\s\S]*setColor\(setup\.color\)/);
+  assert.match(studio, /className="choice-feedback"/);
+  assert.match(lessons, /머리 위에 귀 삼각형을 포개던 이전 가이드는 그대로 따라도 선이 겹쳤다/);
+  assert.doesNotMatch(lessons.match(/slug: "curious-cat"[\s\S]*?\n  \},\n  \{/u)?.[0] ?? "", /line\(2, \[\.37, \.16\]/);
 });

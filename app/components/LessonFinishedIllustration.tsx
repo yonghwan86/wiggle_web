@@ -2,8 +2,22 @@ import type { CSSProperties } from "react";
 import type { Lesson } from "@/lib/lesson-content";
 
 const GUIDED_FINISHED_SPRITE = "/lessons/guided-finished-sprite.webp";
+const GUIDED_FINISHED_CUTOUTS: Partial<Record<string, string>> = {
+  "curious-cat": "/lessons/guided/curious-cat-v2.png",
+};
 
 export function LessonFinishedIllustration({ lesson, className = "" }: { lesson: Lesson; className?: string }) {
+  const cutout = GUIDED_FINISHED_CUTOUTS[lesson.slug];
+  if (cutout) {
+    return <img
+      className={`lesson-finished-illustration transparent-cutout ${className}`.trim()}
+      src={cutout}
+      alt={`${lesson.title} 색칠 완성 예시`}
+      loading="eager"
+      decoding="async"
+    />;
+  }
+
   const column = Math.max(0, Math.min(4, (lesson.order - 1) % 5));
   const row = lesson.order > 5 ? 1 : 0;
   const style = {
