@@ -26,7 +26,7 @@ test("mobile forms, actions and overlays honor iPhone zoom, touch and safe-area 
   assert.match(css, /\.modal-backdrop \{ padding:[^}]*safe-area-inset-top[^}]*safe-area-inset-bottom/);
   assert.match(css, /\.app-shell \{[^}]*safe-area-inset-right[^}]*safe-area-inset-bottom[^}]*safe-area-inset-left/);
   assert.match(css, /\.app-header \{ min-height:calc\(74px \+ env\(safe-area-inset-top\)\); padding-top:env\(safe-area-inset-top\); \}/);
-  assert.match(css, /\.reflection-modal,\.teacher-preview,\.timelapse-modal,\.large-qr-dialog \{[^}]*max-height:calc\(100dvh - max\(16px,env\(safe-area-inset-top\)\) - max\(16px,env\(safe-area-inset-bottom\)\)\);/);
+  assert.match(css, /\.reflection-modal,\.text-composer-modal,\.teacher-preview,\.timelapse-modal,\.large-qr-dialog \{[^}]*max-height:calc\(100dvh - max\(16px,env\(safe-area-inset-top\)\) - max\(16px,env\(safe-area-inset-bottom\)\)\);/);
   assert.doesNotMatch(css.slice(css.lastIndexOf("@media (max-width:460px)")), /max-height:calc\(100dvh - 24px\)/);
   assert.match(css, /\.palette button \{ width:44px; min-width:44px; height:44px; \}/);
   assert.match(css, /\.width-row button \{ width:44px; min-width:44px; height:44px; \}/);
@@ -54,6 +54,8 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   const finalMobile = css.slice(finalMobileStart, css.indexOf("@media (max-width:460px) and (orientation:portrait)", finalMobileStart));
   assert.ok(css.lastIndexOf("grid-template-rows:calc(60px + env(safe-area-inset-top)) minmax(0,1fr)") > css.lastIndexOf("grid-template-rows:60px 1fr 92px"));
   assert.match(css, /\.canvas-message,\.save-conflict,\.teacher-viewing,\.voice-speaking \{[^}]*max-width:calc\(100vw - max\(12px,env\(safe-area-inset-left\)\) - max\(12px,env\(safe-area-inset-right\)\)\);[^}]*overflow-wrap:break-word;/);
+  assert.match(css, /\.canvas-message \{[^}]*grid-template-columns:minmax\(0,1fr\) 44px 44px;/);
+  assert.match(css, /\.canvas-message>\.canvas-message-close \{ grid-column:3; grid-row:1 \/ span 2; \}/);
   assert.match(css, /\.artwork-name b,\.artwork-name small \{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; \}/);
   assert.match(css, /\.teacher-room \.teacher-header \{ display:grid; grid-template-columns:auto minmax\(0,1fr\) auto;/);
   assert.match(css, /\.message-history p,\.family-link-history p \{ display:grid; grid-template-columns:minmax\(0,1fr\) auto;/);

@@ -45,6 +45,7 @@ test("duplicate recovery, logout and protected response regressions stay fixed",
   assert.match(student, /LEFT JOIN message_receipts r ON r\.message_id = m\.id AND r\.student_id = \?/);
   assert.doesNotMatch(student, /if \(messages\.results\.length\).*message_receipts/);
   assert.match(student, /action === "ackTeacherMessage"/); assert.match(student, /INSERT OR IGNORE INTO message_receipts/);
+  assert.match(student, /action === "ackTeacherMessages"/); assert.match(student, /rawMessageIds[\s\S]*slice\(0, 50\)/); assert.match(student, /db\.batch\(messageIds\.map/);
 });
 
 test("P1 operational safeguards are wired", async () => {

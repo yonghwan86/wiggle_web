@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { DrawDocument, DrawOp } from "@/lib/drawing-model";
-import { renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
+import { renderDrawDocument, renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
 import { useModalDialog } from "./useModalDialog";
 
 export function TimelapsePlayer({ document, onClose }: { document: DrawDocument; onClose: () => void }) {
@@ -18,10 +18,10 @@ export function TimelapsePlayer({ document, onClose }: { document: DrawDocument;
     if (canvas.width !== size || canvas.height !== size) { canvas.width = size; canvas.height = size; renderedFrame.current = -1; renderedOps.current = null; }
     const context = canvas.getContext("2d"); if (!context) return;
     const canAdvanceOne = renderedOps.current === document.ops && renderedFrame.current + 1 === frame;
-    if (canAdvanceOne) renderDrawOperation(context, document.ops[frame - 1], size);
+    if (canAdvanceOne && document.ops[frame - 1]?.type !== "text") renderDrawOperation(context, document.ops[frame - 1], size);
     else if (renderedOps.current !== document.ops || renderedFrame.current !== frame) {
       resetDrawingCanvas(context, size);
-      for (let index = 0; index < frame; index += 1) renderDrawOperation(context, document.ops[index], size);
+      renderDrawDocument(context, document.ops, size, frame);
     }
     renderedOps.current = document.ops; renderedFrame.current = frame;
   }, [document, frame]);

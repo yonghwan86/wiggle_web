@@ -460,9 +460,14 @@ Claude Code는 루트 [`CLAUDE.md`](./CLAUDE.md)를 먼저 읽고, 상세 상태
 - [보안·데이터 모델](./docs/security-data-model.md)
 - [Flutter 참고 자료 이식 감사](./docs/flutter-adoption-audit.md)
 - [저학년 UX·시장 점검](./docs/ux-market-audit-2026-07.md)
+- [편집 기능·Excalidraw 제한 도입 계획](./docs/editor-roadmap.md)
 - [Claude 개발 인수인계](./docs/claude-handoff-2026-07-27.md)
 - [Claude → Codex 자동 검증·배포 파이프라인](./docs/agent-pipeline.md)
 - [브랜드 자산 manifest](./public/brand/asset-manifest.json)
+
+### 캔버스 짧은 글씨
+
+학생은 그림 위에 이름표·제목·말풍선을 넣고, 도화지에서 위치를 고르거나 빈 곳 추천을 요청할 수 있습니다. 글씨는 끌어서 이동하고 내용·크기·색을 바꾸거나 삭제할 수 있으며, 모든 변경은 원본 그림과 함께 자동 저장·썸네일·최종 PNG·타임랩스에 반영됩니다. Excalidraw는 이 핵심 학생 캔버스에 포함하지 않으며, 추후 교사용 참고 자료 편집과 비파괴 공유 카드 구성에만 제한적으로 검토합니다.
 
 ## 🧩 Flutter 프로젝트와의 관계
 

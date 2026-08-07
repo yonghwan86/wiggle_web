@@ -1,4 +1,4 @@
-import type { DrawOp } from "@/lib/drawing-model";
+import { drawingTextGraphemes, visibleDrawOperations, type DrawOp } from "@/lib/drawing-model";
 
 const STICKER_EMOJI: Record<NonNullable<DrawOp["sticker"]>, string> = {
   star: "⭐", heart: "❤️", leaf: "🍃", cloud: "☁️", sparkle: "✨",
@@ -109,9 +109,105 @@ function eraseWithSquareFootprint(context: CanvasRenderingContext2D, op: DrawOp,
   context.restore();
 }
 
+function roundedPath(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.lineTo(x + width - r, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + r);
+  context.lineTo(x + width, y + height - r);
+  context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  context.lineTo(x + r, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - r);
+  context.lineTo(x, y + r);
+  context.quadraticCurveTo(x, y, x + r, y);
+  context.closePath();
+}
+
+function wrapText(context: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number) {
+  const characters = drawingTextGraphemes(text);
+  const lines: string[] = [];
+  let line = "";
+  for (const character of characters) {
+    const candidate = `${line}${character}`;
+    if (line && context.measureText(candidate).width > maxWidth && lines.length < maxLines - 1) {
+      lines.push(line);
+      line = character;
+    } else line = candidate;
+  }
+  if (line) lines.push(line);
+  return lines.slice(0, maxLines);
+}
+
+function drawText(context: CanvasRenderingContext2D, op: DrawOp, size: number) {
+  const center = op.points?.[0];
+  if (!center || !op.text || !op.textKind || !op.fontSize || op.deleted) return;
+  const scale = size / 1024;
+  const fontSize = op.fontSize * scale;
+  const x = center.x * size;
+  const y = center.y * size;
+  const isTitle = op.textKind === "title";
+  const isSpeech = op.textKind === "speech";
+  const maxWidth = size * (isTitle ? 0.82 : isSpeech ? 0.58 : 0.55);
+  const lineHeight = fontSize * 1.28;
+  const [red, green, blue] = rgb(op.color);
+  const lightInk = red * 0.299 + green * 0.587 + blue * 0.114 > 185;
+  const outlineColor = lightInk ? "rgba(27,58,87,.96)" : "rgba(255,255,255,.96)";
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  context.globalAlpha = 1;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = `${isTitle ? 800 : 700} ${Math.round(fontSize)}px "Arial Rounded MT Bold", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif`;
+  const lines = isSpeech ? wrapText(context, op.text, maxWidth, 2) : [op.text];
+  const measuredWidth = Math.min(maxWidth, Math.max(...lines.map((line) => context.measureText(line).width)));
+  const paddingX = 22 * scale;
+  const paddingY = 16 * scale;
+  if (!isTitle) {
+    const bubbleWidth = measuredWidth + paddingX * 2;
+    const bubbleHeight = Math.max(lineHeight, lines.length * lineHeight) + paddingY * 2;
+    const left = x - bubbleWidth / 2;
+    const top = y - bubbleHeight / 2;
+    context.fillStyle = "rgba(255,255,255,.94)";
+    context.strokeStyle = lightInk ? "#5B7FA0" : op.color ?? "#1B3A57";
+    context.lineWidth = Math.max(2, 3 * scale);
+    roundedPath(context, left, top, bubbleWidth, bubbleHeight, 18 * scale);
+    context.fill();
+    context.stroke();
+    if (isSpeech) {
+      context.beginPath();
+      context.moveTo(x + bubbleWidth * 0.18, top + bubbleHeight - 2 * scale);
+      context.lineTo(x + bubbleWidth * 0.30, top + bubbleHeight + 24 * scale);
+      context.lineTo(x + bubbleWidth * 0.34, top + bubbleHeight - 2 * scale);
+      context.closePath();
+      context.fill();
+      context.stroke();
+    }
+  }
+  context.fillStyle = op.color ?? "#1B3A57";
+  if (isTitle) {
+    context.strokeStyle = outlineColor;
+    context.lineWidth = Math.max(3, 8 * scale);
+    context.lineJoin = "round";
+    context.strokeText(op.text, x, y, maxWidth);
+    context.fillText(op.text, x, y, maxWidth);
+  } else {
+    const topLineY = y - ((lines.length - 1) * lineHeight) / 2;
+    context.strokeStyle = outlineColor;
+    context.lineWidth = Math.max(1.5, 3 * scale);
+    context.lineJoin = "round";
+    lines.forEach((line, index) => {
+      context.strokeText(line, x, topLineY + index * lineHeight, maxWidth);
+      context.fillText(line, x, topLineY + index * lineHeight, maxWidth);
+    });
+  }
+  context.restore();
+}
+
 export function renderDrawOperation(context: CanvasRenderingContext2D, op: DrawOp, size: number) {
   if (op.type === "fill") { floodFill(context, op, size); return; }
   if (op.type === "shape") { drawShape(context, op, size); return; }
+  if (op.type === "text") { drawText(context, op, size); return; }
   if (op.type === "sticker") {
     const center = op.points?.[0]; if (!center || !op.sticker) return;
     context.save(); context.globalCompositeOperation = "source-over"; context.globalAlpha = 1; context.textAlign = "center"; context.textBaseline = "middle"; context.font = `${Math.round(140 * size / 1024)}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
@@ -149,6 +245,10 @@ export function renderDrawOperation(context: CanvasRenderingContext2D, op: DrawO
     context.globalAlpha = 0.3; context.lineWidth = baseWidth;
   }
   context.stroke(); context.restore();
+}
+
+export function renderDrawDocument(context: CanvasRenderingContext2D, ops: readonly DrawOp[], size: number, limit = ops.length) {
+  for (const op of visibleDrawOperations(ops, limit)) renderDrawOperation(context, op, size);
 }
 
 export function resetDrawingCanvas(context: CanvasRenderingContext2D, size: number) {

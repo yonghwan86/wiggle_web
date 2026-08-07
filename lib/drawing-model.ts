@@ -10,6 +10,14 @@ export const STICKER_ALLOWLIST = ["star", "heart", "leaf", "cloud", "sparkle"] a
 export const STROKE_TOOLS = ["pen", "pencil", "crayon", "marker", "watercolor", "eraser"] as const;
 export const STROKE_WIDTHS = [3, 8, 16, 30, 48] as const;
 export const SHAPE_KINDS = ["line", "circle", "triangle", "rectangle", "rounded-rectangle", "star", "heart", "arrow", "curve", "cloud"] as const;
+export const TEXT_KINDS = ["label", "title", "speech"] as const;
+export const TEXT_SIZES = [48, 64, 84] as const;
+export const MAX_TEXT_OBJECTS = 5;
+export const MAX_TEXT_GRAPHEMES = {
+  label: 12,
+  title: 20,
+  speech: 30,
+} as const;
 // 서버가 거부하는 한도. 클라이언트가 같은 값을 미리 지켜야 저장이 영구 실패하지 않는다.
 export const MAX_DOCUMENT_OPS = 5000;
 export const MAX_STROKE_POINTS = 12000;
@@ -34,6 +42,9 @@ function opBytes(op: DrawOp) {
     + (op.opId?.length ?? 0) + (op.clientOpId?.length ?? 0) + (op.type?.length ?? 0)
     + (op.at?.length ?? 0) + (op.tool?.length ?? 0) + (op.color?.length ?? 0)
     + (op.shape?.length ?? 0) + (op.sticker?.length ?? 0)
+    + (op.textObjectId?.length ?? 0) + (op.textKind?.length ?? 0)
+    // UTF-8에서 한 UTF-16 code unit가 차지할 수 있는 양보다 넉넉하게 잡는다.
+    + (op.text?.length ?? 0) * 6
     + (op.points?.length ?? 0) * POINT_BYTES;
 }
 
@@ -57,11 +68,13 @@ type Point = { x: number; y: number; pressure?: number };
 export type StrokeTool = (typeof STROKE_TOOLS)[number];
 export type StrokeWidth = (typeof STROKE_WIDTHS)[number];
 export type ShapeKind = (typeof SHAPE_KINDS)[number];
+export type TextKind = (typeof TEXT_KINDS)[number];
+export type TextSize = (typeof TEXT_SIZES)[number];
 
 export type DrawOp = {
   opId: string;
   clientOpId: string;
-  type: "stroke" | "fill" | "shape" | "sticker";
+  type: "stroke" | "fill" | "shape" | "sticker" | "text";
   at: string;
   tool?: StrokeTool;
   color?: string;
@@ -72,6 +85,11 @@ export type DrawOp = {
   shape?: ShapeKind;
   filled?: boolean;
   sticker?: (typeof STICKER_ALLOWLIST)[number];
+  textObjectId?: string;
+  text?: string;
+  textKind?: TextKind;
+  fontSize?: TextSize;
+  deleted?: boolean;
 };
 
 export type DrawDocument = {
@@ -98,11 +116,49 @@ function invalidPoint(value: unknown) {
   return !finiteUnit(point.x) || !finiteUnit(point.y) || (point.pressure !== undefined && !finiteUnit(point.pressure));
 }
 
+export function drawingTextGraphemes(value: string) {
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    const segmenter = new Intl.Segmenter("ko", { granularity: "grapheme" });
+    return [...segmenter.segment(value)].map((part) => part.segment);
+  }
+  return Array.from(value);
+}
+
+export function normalizeDrawingText(value: string) {
+  return value
+    .normalize("NFC")
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// 텍스트 편집은 같은 textObjectId의 전체 상태를 새 op로 덧붙인다. 마지막 상태만 그리면
+// 이동·크기·색 변경도 되돌리기와 타임랩스에 남고, 삭제 op를 지우면 직전 상태가 복구된다.
+export function visibleDrawOperations(ops: readonly DrawOp[], limit = ops.length) {
+  const end = Math.max(0, Math.min(ops.length, limit));
+  const latestText = new Map<string, number>();
+  for (let index = 0; index < end; index += 1) {
+    const op = ops[index];
+    if (op.type === "text" && op.textObjectId) latestText.set(op.textObjectId, index);
+  }
+  const visible: DrawOp[] = [];
+  for (let index = 0; index < end; index += 1) {
+    const op = ops[index];
+    if (op.type !== "text" || (latestText.get(op.textObjectId ?? "") === index && !op.deleted)) visible.push(op);
+  }
+  return visible;
+}
+
+export function activeTextObjects(ops: readonly DrawOp[]) {
+  return visibleDrawOperations(ops).filter((op): op is DrawOp & Required<Pick<DrawOp, "textObjectId" | "text" | "textKind" | "fontSize" | "color" | "points">> => op.type === "text");
+}
+
 export function validateDrawDocument(value: unknown): DrawDocument | null {
   if (!value || typeof value !== "object") return null;
   const doc = value as Partial<DrawDocument>;
   if (doc.schemaVersion !== DRAWING_SCHEMA_VERSION || doc.rendererVersion !== RENDERER_VERSION || doc.size !== DOCUMENT_SIZE || !Array.isArray(doc.ops) || doc.ops.length > MAX_DOCUMENT_OPS) return null;
   const seen = new Set<string>();
+  const activeTextIds = new Set<string>();
   for (const raw of doc.ops) {
     if (!raw || typeof raw !== "object") return null;
     const op = raw as DrawOp;
@@ -112,7 +168,7 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
     if (!/^[a-zA-Z0-9_-]{8,80}$/.test(op.opId) || !/^[a-zA-Z0-9_-]{8,80}$/.test(op.clientOpId) || seen.has(op.clientOpId)) return null;
     seen.add(op.clientOpId);
     // 제어문자가 섞인 날짜도 Date.parse는 통과시킨다. JSON에서 이스케이프되며 길이가 폭증하므로 길이를 먼저 막는다.
-    if (!["stroke", "fill", "shape", "sticker"].includes(op.type) || op.at.length > 40 || !Number.isFinite(Date.parse(op.at))) return null;
+    if (!["stroke", "fill", "shape", "sticker", "text"].includes(op.type) || op.at.length > 40 || !Number.isFinite(Date.parse(op.at))) return null;
     if (op.type === "stroke") {
       if (!op.tool || !STROKE_TOOLS.includes(op.tool) || !STROKE_WIDTHS.includes((op.width ?? 0) as StrokeWidth) || !Array.isArray(op.points) || op.points.length < 1 || op.points.length > MAX_STROKE_POINTS) return null;
       if (op.tool !== "eraser" && !isHexColor(op.color)) return null;
@@ -128,6 +184,17 @@ export function validateDrawDocument(value: unknown): DrawDocument | null {
       if (op.filled !== undefined && typeof op.filled !== "boolean") return null;
     }
     if (op.type === "sticker" && (!STICKER_ALLOWLIST.includes(op.sticker as (typeof STICKER_ALLOWLIST)[number]) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint))) return null;
+    if (op.type === "text") {
+      if (typeof op.textObjectId !== "string" || !/^[a-zA-Z0-9_-]{8,80}$/.test(op.textObjectId)) return null;
+      if (typeof op.text !== "string" || normalizeDrawingText(op.text) !== op.text) return null;
+      if (!op.textKind || !TEXT_KINDS.includes(op.textKind) || !TEXT_SIZES.includes((op.fontSize ?? 0) as TextSize)) return null;
+      if (!isHexColor(op.color) || !Array.isArray(op.points) || op.points.length !== 1 || op.points.some(invalidPoint)) return null;
+      if (op.deleted !== undefined && typeof op.deleted !== "boolean") return null;
+      if (!op.text.length || drawingTextGraphemes(op.text).length > MAX_TEXT_GRAPHEMES[op.textKind]) return null;
+      if (op.deleted) activeTextIds.delete(op.textObjectId);
+      else activeTextIds.add(op.textObjectId);
+      if (activeTextIds.size > MAX_TEXT_OBJECTS) return null;
+    }
   }
   // 알려진 필드만 남기고 좌표를 정규화한 사본을 돌려준다. 원본을 그대로 통과시키면
   // 전체 정밀도 좌표(0.12345678901234568)와 미지의 속성이 함께 저장돼,
@@ -159,6 +226,15 @@ function normalizeOp(raw: DrawOp): DrawOp {
   if (raw.type === "fill") { op.color = raw.color; op.points = points; }
   if (raw.type === "shape") { op.shape = raw.shape; op.color = raw.color; op.width = raw.width; op.points = points; if (raw.filled !== undefined) op.filled = raw.filled; }
   if (raw.type === "sticker") { op.sticker = raw.sticker; op.points = points; }
+  if (raw.type === "text") {
+    op.textObjectId = raw.textObjectId;
+    op.text = raw.text;
+    op.textKind = raw.textKind;
+    op.fontSize = raw.fontSize;
+    op.color = raw.color;
+    op.points = points;
+    if (raw.deleted !== undefined) op.deleted = raw.deleted;
+  }
   return op;
 }
 

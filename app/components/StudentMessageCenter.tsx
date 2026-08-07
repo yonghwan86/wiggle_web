@@ -21,20 +21,29 @@ export function StudentMessageCenter({ messages, floating = false, compact = fal
   const unread = useMemo(() => messages.filter((message) => !message.seenAt && !locallySeen.has(message.id)), [locallySeen, messages]);
   const latestUnread = unread.at(-1);
 
-  async function acknowledge(messageId: string) {
-    setLocallySeen((current) => new Set(current).add(messageId));
-    await studentFetch("/api/student", { method: "POST", body: JSON.stringify({ action: "ackTeacherMessage", messageId }) }).catch(() => undefined);
+  async function acknowledge(messageIds: string[]) {
+    if (!messageIds.length) return;
+    setLocallySeen((current) => {
+      const next = new Set(current);
+      for (const messageId of messageIds) next.add(messageId);
+      return next;
+    });
+    await studentFetch("/api/student", { method: "POST", body: JSON.stringify({ action: "ackTeacherMessages", messageIds }) }).catch(() => undefined);
+  }
+
+  function dismissUnread() {
+    void acknowledge(unread.map((message) => message.id));
   }
 
   function openHistory() {
     setOpen(true);
-    for (const message of unread) void acknowledge(message.id);
+    dismissUnread();
   }
 
   return <>
     {latestUnread && <aside className={floating ? "canvas-message" : "teacher-message"} role="status">
       <b>👩‍🏫 선생님</b><p>{latestUnread.body}</p><SpeakButton text={`선생님이 말했어요. ${latestUnread.body}`} compact />
-      <button type="button" className="canvas-message-close" onClick={() => void acknowledge(latestUnread.id)} aria-label="선생님 말씀 닫기">×</button>
+      <button type="button" className="canvas-message-close" onClick={dismissUnread} aria-label="새 선생님 말씀 모두 닫기">×</button>
     </aside>}
     <button type="button" className={`student-message-button${floating ? " floating" : ""}${compact ? " compact" : ""}`} onClick={openHistory} aria-label={`선생님 말씀 ${unread.length ? `${unread.length}개 새로 옴` : "이력 보기"}`}>
       <span className="teacher-message-icon" aria-hidden="true">👩‍🏫</span>{compact ? <span className="sr-only">선생님 말씀</span> : " 선생님 말씀"}{unread.length > 0 && <b>{unread.length}</b>}

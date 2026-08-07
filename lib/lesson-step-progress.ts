@@ -54,7 +54,7 @@ export function lessonStepNewOps(ops: DrawOp[], baseline: LessonStepBaseline) {
 
 export function isMeaningfulLessonOp(op: DrawOp, activity: LessonStepActivity) {
   if (op.type === "stroke" && op.tool === "eraser") return false;
-  if (activity !== "color") return op.type === "stroke" || op.type === "fill" || op.type === "shape" || op.type === "sticker";
+  if (activity !== "color") return op.type === "stroke" || op.type === "fill" || op.type === "shape" || op.type === "sticker" || (op.type === "text" && !op.deleted);
 
   if (op.type === "fill") return true;
   if (op.type === "shape") return op.filled === true || (typeof op.color === "string" && op.color.toUpperCase() !== "#1B3A57");
@@ -92,4 +92,3 @@ export function lessonStepActionStatus(
     remaining: Math.max(0, required - actionCount),
   };
 }
-

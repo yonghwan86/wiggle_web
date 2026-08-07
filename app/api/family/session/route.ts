@@ -27,8 +27,16 @@ function publicTimelapseOps(serialized: string) {
       color: operation.color,
       width: operation.width,
       points: operation.points,
+      smoothed: operation.smoothed,
+      squareEraser: operation.squareEraser,
       shape: operation.shape,
+      filled: operation.filled,
       sticker: operation.sticker,
+      textObjectId: operation.textObjectId,
+      text: operation.text,
+      textKind: operation.textKind,
+      fontSize: operation.fontSize,
+      deleted: operation.deleted,
     }));
   } catch {
     return [];

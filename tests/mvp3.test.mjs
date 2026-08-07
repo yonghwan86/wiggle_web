@@ -502,8 +502,10 @@ test("routes and UI preserve token-free family history, consent, no-store, and d
   assert.match(inviteRoute, /createFamilyHandoffInvite/); assert.match(inviteRoute, /family-handoff:/); assert.match(familyPage, /<FamilyView \/>/); assert.doesNotMatch(familyPage, /params|token/);
   assert.doesNotMatch(familyUi, /location\.href|encodeURIComponent\(token\)|FamilyView\(\{ token/); assert.match(familyUi, /\/api\/family\/invite/); assert.match(familyUi, /navigator\.share/);
   assert.match(teacherRoute, /guardianConsentConfirmed/); assert.match(teacherRoute, /consentMethod/); assert.match(teacherUi, /실제 보호자의 사전 동의/); assert.match(teacherUi, /school_portal/);
+  assert.match(teacherUi, /familySharePanelOpen/); assert.match(teacherUi, /openPreview\(student, true\)/); assert.match(teacherUi, /!familySharePanelOpen/); assert.match(teacherUi, /나중에 하기/);
   assert.match(worker, /referrer-policy/); assert.match(worker, /x-frame-options/); assert.match(worker, /content-security-policy/);
   assert.match(voiceUi, /onPointerDown/); assert.match(voiceUi, /MediaRecorder/); assert.match(voiceCore, /x-wiggle-single-consume/); assert.match(voiceCore, /x-wiggle-replay-protection/); assert.doesNotMatch(voiceCore + voiceRoute, /INSERT|UPDATE|ARTWORKS\.put|ARTWORKS\.get/);
+  assert.match(teacherUi, /async function sendPreviewMessage/); assert.match(teacherUi, /studentId: recipientId/); assert.match(teacherUi, /텍스트로 바로 알려주기/); assert.match(teacherUi, /학생 화면에 보냈어요/);
   assert.match(subscriptionRoute, /SUBSCRIPTIONS_DISABLED/); assert.match(webhookRoute, /verifyAndApplySubscriptionWebhook/);
   assert.match(schema + runtime + migration, /guardian_consent_at/); assert.match(schema + runtime + migration, /family_share_sessions/); assert.match(schema + runtime + migration, /provider_event_at/); assert.match(schema + runtime + migration, /occurred_at/);
 });

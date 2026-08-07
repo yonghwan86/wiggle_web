@@ -2,13 +2,14 @@
 
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { DrawDocument, DrawOp, emptyDocument, estimateDocumentBytes, estimateStrokeBytes, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, roundUnit, ShapeKind, STROKE_WIDTHS, StrokeWidth, validateDrawDocument } from "@/lib/drawing-model";
-import { renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
+import { activeTextObjects, DrawDocument, DrawOp, drawingTextGraphemes, emptyDocument, estimateDocumentBytes, estimateStrokeBytes, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, MAX_TEXT_GRAPHEMES, MAX_TEXT_OBJECTS, normalizeDrawingText, roundUnit, ShapeKind, STROKE_WIDTHS, StrokeWidth, TextKind, TEXT_SIZES, TextSize, validateDrawDocument } from "@/lib/drawing-model";
+import { renderDrawDocument, renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
 import { mirrorOp, undoGroupSize } from "@/lib/symmetry";
 import { CanvasView, IDENTITY_VIEW, pinchView } from "@/lib/canvas-view";
 import { lessonBySlug, Lesson } from "@/lib/lesson-content";
 import { createLessonStepBaseline, isLessonStepProgress, lessonStepActionStatus, LessonStepProgress } from "@/lib/lesson-step-progress";
 import { lockGuideTrace, snapGuideTrace } from "@/lib/trace-guidance.mjs";
+import { clampTextPlacement, suggestTextPlacement } from "@/lib/text-placement";
 import { activeProfile, clearQueuedArtworkSaves, createSerialTaskQueue, deleteQueuedArtworkSave, flushSaves, queueSave, queuedArtworkDraft, queuedArtworkSaves, resolveArtworkDraftDisposition, studentFetch } from "@/lib/client-session";
 
 import type { QueuedArtworkDraft } from "@/lib/client-session";
@@ -95,11 +96,17 @@ const FAVORITE_REASON_CHOICES = [
   { emoji: "💡", label: "내 생각", value: "내 생각을 그림에 넣어서" },
   { emoji: "💪", label: "해냈어", value: "어려워도 끝까지 그려서" },
 ];
+const TEXT_KIND_OPTIONS: Array<{ kind: TextKind; icon: string; label: string; help: string }> = [
+  { kind: "label", icon: "🏷️", label: "이름표", help: "짧은 낱말" },
+  { kind: "title", icon: "✨", label: "제목", help: "그림의 이름" },
+  { kind: "speech", icon: "💬", label: "말풍선", help: "그림 속 한마디" },
+];
 // "pencil"이 새 연필 획(필압 렌더 적용). "pen"은 이 UI가 더 만들지 않는 기존 획 값이다.
 type BrushTool = "pencil" | "crayon" | "marker" | "watercolor";
 type Tool = BrushTool | "eraser";
 type StrokeMeta = { tool: Tool; color: string; width: StrokeWidth };
-type StudioTool = Tool | "fill" | "shape";
+type StudioTool = Tool | "fill" | "shape" | "text";
+type PendingText = { text: string; textKind: TextKind; fontSize: TextSize; color: string };
 type GuidePhase = "independent" | "demo" | "practice";
 type TracePoint = { x: number; y: number };
 type GuideTrace = TracePoint[];
@@ -144,7 +151,7 @@ function renderDocument(canvas: HTMLCanvasElement, document: DrawDocument, size 
   const context = canvas.getContext("2d");
   if (!context) return;
   resetDrawingCanvas(context, size);
-  for (const op of document.ops) renderDrawOperation(context, op, size);
+  renderDrawDocument(context, document.ops, size);
 }
 
 function renderLiveStroke(canvas: HTMLCanvasElement, tool: Tool, color: string, width: StrokeWidth, points: Array<{ x: number; y: number; pressure: number }>) {
@@ -456,6 +463,14 @@ export function DrawingStudio() {
   const [shapeKind, setShapeKind] = useState<ShapeKind>("line");
   const [shapeFilled, setShapeFilled] = useState(false);
   const [moreShapes, setMoreShapes] = useState(false);
+  const [textComposerOpen, setTextComposerOpen] = useState(false);
+  const [textDraft, setTextDraft] = useState("");
+  const [textKind, setTextKind] = useState<TextKind>("label");
+  const [textSize, setTextSize] = useState<TextSize>(64);
+  const [pendingText, setPendingText] = useState<PendingText | null>(null);
+  const [selectedTextObjectId, setSelectedTextObjectId] = useState<string | null>(null);
+  const [editingTextObjectId, setEditingTextObjectId] = useState<string | null>(null);
+  const [textDragPoint, setTextDragPoint] = useState<{ x: number; y: number } | null>(null);
   const [shapeStartPoint, setShapeStartPoint] = useState<{
     x: number;
     y: number;
@@ -518,6 +533,7 @@ export function DrawingStudio() {
     moved: boolean;
   } | null>(null);
   const shapeSnapshotRef = useRef<ImageData | null>(null);
+  const textDragRef = useRef<{ pointerId: number; moved: boolean; startX: number; startY: number } | null>(null);
   const gestureTouches = useRef(new Map<number, { x: number; y: number }>());
   const gestureStartRef = useRef<{ at: number; moved: boolean } | null>(null);
   const lastTwoFingerTapRef = useRef(0);
@@ -1097,9 +1113,17 @@ export function DrawingStudio() {
   }, [preserveUnsavedOnExit]);
 
   const canvasFull = useMemo(() => documentTooLarge(documentState), [documentState]);
+  const textObjects = useMemo(() => activeTextObjects(documentState.ops), [documentState.ops]);
+  const selectedText = useMemo(() => textObjects.find((op) => op.textObjectId === selectedTextObjectId) ?? null, [selectedTextObjectId, textObjects]);
   const reflectionDialogRef = useRef<HTMLDivElement>(null);
   const closeReflection = useCallback(() => setReflectionOpen(false), []);
   useModalDialog(reflectionDialogRef, closeReflection, reflectionOpen);
+  const textDialogRef = useRef<HTMLDivElement>(null);
+  const closeTextComposer = useCallback(() => {
+    setTextComposerOpen(false);
+    setEditingTextObjectId(null);
+  }, []);
+  useModalDialog(textDialogRef, closeTextComposer, textComposerOpen);
   const artworkId = artwork?.id;
   const flushCurrentArtwork = useCallback(() => {
     if (!artworkId) return;
@@ -1178,6 +1202,45 @@ export function DrawingStudio() {
       pressure: roundUnit(event.pressure || 0.5),
     };
   }
+  function canvasPointFromClient(clientX: number, clientY: number) {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: roundUnit(Math.max(0.04, Math.min(0.96, (clientX - rect.left) / rect.width))),
+      y: roundUnit(Math.max(0.04, Math.min(0.96, (clientY - rect.top) / rect.height))),
+    };
+  }
+  function startTextDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!selectedText || conflictDraftRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    textDragRef.current = { pointerId: event.pointerId, moved: false, startX: event.clientX, startY: event.clientY };
+    setTextDragPoint(selectedText.points[0]);
+  }
+  function moveTextDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = textDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 5) drag.moved = true;
+    const point = canvasPointFromClient(event.clientX, event.clientY);
+    if (point && selectedText?.textKind) setTextDragPoint(clampTextPlacement(point, selectedText.textKind));
+  }
+  function finishTextDrag(event: ReactPointerEvent<HTMLButtonElement>, commit: boolean) {
+    const drag = textDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    textDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const current = activeTextObjects(documentStateRef.current.ops).find((op) => op.textObjectId === selectedTextObjectId);
+    const rawPoint = canvasPointFromClient(event.clientX, event.clientY) ?? textDragPoint;
+    const point = rawPoint && current?.textKind ? clampTextPlacement(rawPoint, current.textKind) : rawPoint;
+    setTextDragPoint(null);
+    if (commit && drag.moved && point && current && updateTextObject(current, { points: [point] })) setSaveState("글씨를 옮겼어요");
+  }
   const width = studioTool === "eraser" ? eraserWidth : drawWidth;
   function hideEraserFootprint() {
     if (eraserFootprintRef.current) eraserFootprintRef.current.hidden = true;
@@ -1200,11 +1263,68 @@ export function DrawingStudio() {
     shapeStartRef.current = null;
     setShapeStartPoint(null);
   }
+  function clampText(value: string, kind: TextKind) {
+    const normalized = value.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ");
+    return drawingTextGraphemes(normalized).slice(0, MAX_TEXT_GRAPHEMES[kind]).join("");
+  }
+  function openTextComposer(target?: DrawOp | null) {
+    if (target?.type === "text" && target.textObjectId && target.text && target.textKind && target.fontSize) {
+      setTextDraft(target.text);
+      setTextKind(target.textKind);
+      setTextSize(target.fontSize);
+      if (target.color) setColor(target.color);
+      setEditingTextObjectId(target.textObjectId);
+    } else {
+      setTextDraft("");
+      setTextKind("label");
+      setTextSize(64);
+      setEditingTextObjectId(null);
+    }
+    setTextComposerOpen(true);
+  }
+  function submitTextComposer() {
+    const text = normalizeDrawingText(clampText(textDraft, textKind));
+    if (!text) return;
+    const editing = editingTextObjectId ? textObjects.find((op) => op.textObjectId === editingTextObjectId) : null;
+    if (editing) {
+      updateTextObject(editing, { text, textKind, fontSize: textSize });
+      setTextComposerOpen(false);
+      setEditingTextObjectId(null);
+      setSaveState("글씨를 바꿨어요");
+      return;
+    }
+    if (textObjects.length >= MAX_TEXT_OBJECTS) {
+      setSaveState(`글씨는 한 그림에 ${MAX_TEXT_OBJECTS}개까지 넣을 수 있어요`);
+      return;
+    }
+    setPendingText({ text, textKind, fontSize: textSize, color });
+    setSelectedTextObjectId(null);
+    setStudioTool("text");
+    setTextComposerOpen(false);
+    setEditingTextObjectId(null);
+    setSaveState("글씨를 놓을 곳을 도화지에서 콕 눌러 주세요");
+  }
+  function placeTextInSuggestedSpot() {
+    const text = normalizeDrawingText(clampText(textDraft, textKind));
+    if (!text || editingTextObjectId || textObjects.length >= MAX_TEXT_OBJECTS) return;
+    const next: PendingText = { text, textKind, fontSize: textSize, color };
+    setStudioTool("text");
+    setTextComposerOpen(false);
+    setEditingTextObjectId(null);
+    if (!commitText(suggestTextPlacement(documentStateRef.current.ops, textKind), next)) {
+      setSaveState("빈 곳에 글씨를 놓지 못했어요. 종이의 저장 공간을 확인해 주세요");
+    }
+  }
   function chooseStudioTool(next: StudioTool) {
     setStudioTool(next);
     if (next !== "eraser") hideEraserFootprint();
     if (next === "pencil" || next === "crayon" || next === "marker" || next === "watercolor") lastBrushRef.current = next;
     if (next !== "shape") clearShapeStart();
+    if (next !== "text") {
+      setPendingText(null);
+      setSelectedTextObjectId(null);
+      setTextDragPoint(null);
+    }
   }
   function chooseWidth(value: StrokeWidth) {
     if (studioTool === "eraser") setEraserWidth(value);
@@ -1250,11 +1370,13 @@ export function DrawingStudio() {
   // 함께 커밋된 묶음(대칭 쌍)은 한 번의 편집이다. 되돌리기도 lib/symmetry의 쌍 규칙으로 함께 지워진다.
   function commitOps(ops: DrawOp[]) {
     if (documentStateRef.current.ops.length + ops.length > OPS_WARN_THRESHOLD) return false;
-    markEdited();
-    documentStateRef.current = {
+    const nextDocument = {
       ...documentStateRef.current,
       ops: [...documentStateRef.current.ops, ...ops],
     };
+    if (estimateDocumentBytes(nextDocument) >= DOCUMENT_BYTES_WARN) return false;
+    markEdited();
+    documentStateRef.current = nextDocument;
     setDocumentState(documentStateRef.current);
     setRedo([]);
     setEditVersion((value) => value + 1);
@@ -1312,6 +1434,45 @@ export function DrawingStudio() {
       ],
     };
     return commitOps(mirror ? [op, mirrorOp(op)] : [op]);
+  }
+  function commitText(point: { x: number; y: number }, pending: PendingText) {
+    if (activeTextObjects(documentStateRef.current.ops).length >= MAX_TEXT_OBJECTS) return false;
+    const operationId = newOperationId();
+    const textObjectId = `text_${operationId}`;
+    const op: DrawOp = {
+      opId: `op_${operationId}`,
+      clientOpId: `client_${operationId}`,
+      type: "text",
+      at: new Date().toISOString(),
+      textObjectId,
+      text: pending.text,
+      textKind: pending.textKind,
+      fontSize: pending.fontSize,
+      color: pending.color,
+      points: [clampTextPlacement(point, pending.textKind)],
+    };
+    if (!commitOps([op])) return false;
+    setPendingText(null);
+    setSelectedTextObjectId(textObjectId);
+    setSaveState("글씨를 놓았어요. 테두리를 끌어서 옮길 수 있어요");
+    return true;
+  }
+  function updateTextObject(current: DrawOp, changes: Partial<Pick<DrawOp, "text" | "textKind" | "fontSize" | "color" | "points" | "deleted">>) {
+    if (current.type !== "text" || !current.textObjectId) return false;
+    const operationId = newOperationId();
+    const op: DrawOp = {
+      ...current,
+      ...changes,
+      opId: `op_${operationId}`,
+      clientOpId: `client_${operationId}`,
+      at: new Date().toISOString(),
+    };
+    if (!commitOps([op])) return false;
+    if (changes.deleted) {
+      setSelectedTextObjectId(null);
+      setTextDragPoint(null);
+    }
+    return true;
   }
   function previewShape(canvas: HTMLCanvasElement, start: { x: number; y: number }, end: { x: number; y: number }) {
     const context = canvas.getContext("2d");
@@ -1382,7 +1543,7 @@ export function DrawingStudio() {
     // 펜이 없는 기기: 첫 손가락은 그리고, 그리는 중 두 번째 손가락이 오면
     // 진행 중이던 그리기를 폐기하고 두 손가락 모두 핀치 제스처로 전환한다.
     if (event.pointerType === "touch") {
-      if (penModeRef.current) {
+      if (penModeRef.current && studioTool !== "text") {
         startGestureTouch(event);
         return;
       }
@@ -1410,6 +1571,22 @@ export function DrawingStudio() {
     if (guidePhase === "demo") stopGuideDemoForPractice();
     event.preventDefault();
     const first = canvasPoint(event);
+    if (studioTool === "text") {
+      if (pendingText) {
+        if (!commitText(first, pendingText)) setSaveState("글씨를 놓지 못했어요. 종이의 저장 공간을 확인해 주세요");
+        else renderDocument(event.currentTarget, documentStateRef.current);
+        return;
+      }
+      const nearest = activeTextObjects(documentStateRef.current.ops)
+        .map((op) => ({ op, distance: Math.hypot((op.points?.[0]?.x ?? 2) - first.x, (op.points?.[0]?.y ?? 2) - first.y) }))
+        .filter((item) => item.distance <= 0.18)
+        .sort((left, right) => left.distance - right.distance)[0]?.op;
+      if (nearest?.textObjectId) {
+        setSelectedTextObjectId(nearest.textObjectId);
+        setSaveState("글씨를 골랐어요. 테두리를 끌어서 옮기거나 아래에서 고쳐요");
+      } else openTextComposer();
+      return;
+    }
     if (studioTool === "eraser") updateEraserFootprint(event, true);
     lastClientRef.current.set(event.pointerId, {
       x: event.clientX,
@@ -2393,6 +2570,11 @@ export function DrawingStudio() {
                 🟢 끝나는 곳을 콕 눌러 줘!
               </div>
             )}
+            {pendingText && (
+              <div className="canvas-start-hint text-place-hint" role="status">
+                👆 “{pendingText.text}”을 놓을 곳을 콕 눌러 줘!
+              </div>
+            )}
             {canvasFull && (
               <div className="canvas-full-hint" role="alert">
                 <span aria-hidden="true">🌟</span> 종이가 가득 찼어! ‘완성’을 눌러 완성하자.
@@ -2432,6 +2614,25 @@ export function DrawingStudio() {
                 aria-disabled={Boolean(conflictDraft)}
                 aria-label="그림 그리는 도화지"
               />
+              {studioTool === "text" && selectedText && (
+                <button
+                  type="button"
+                  className="text-object-selection"
+                  aria-label={`글씨 ${selectedText.text}. 끌어서 옮기기`}
+                  style={{
+                    left: `${(textDragPoint?.x ?? selectedText.points[0].x) * 100}%`,
+                    top: `${(textDragPoint?.y ?? selectedText.points[0].y) * 100}%`,
+                    width: `${selectedText.textKind === "title" ? 82 : selectedText.textKind === "speech" ? 60 : 56}%`,
+                    height: `${selectedText.textKind === "speech" ? Math.max(20, selectedText.fontSize / 3.4) : Math.max(12, selectedText.fontSize / 5.2)}%`,
+                  }}
+                  onPointerDown={startTextDrag}
+                  onPointerMove={moveTextDrag}
+                  onPointerUp={(event) => finishTextDrag(event, true)}
+                  onPointerCancel={(event) => finishTextDrag(event, false)}
+                >
+                  <span>✥ 끌어서 옮겨요</span>
+                </button>
+              )}
             </div>
             {view.scale > 1.01 && (
               <button type="button" className="zoom-reset" onClick={resetViewToFit}>
@@ -2493,6 +2694,19 @@ export function DrawingStudio() {
                 도형
               </span>
             </button>
+            <button
+              type="button"
+              aria-label="글씨"
+              title="글씨"
+              aria-pressed={studioTool === "text"}
+              onClick={() => {
+                chooseStudioTool("text");
+                openTextComposer(selectedText);
+              }}
+            >
+              <span className="tool-icon text-tool-icon" aria-hidden="true">Aa</span>
+              <span className="tool-name" aria-hidden="true">글씨</span>
+            </button>
           </div>
           {studioTool === "shape" && (
             <div className="shape-options">
@@ -2527,6 +2741,46 @@ export function DrawingStudio() {
               </div>
             </div>
           )}
+          {studioTool === "text" && (
+            <div className="text-options" aria-label="글씨 고치기">
+              {pendingText ? (
+                <div className="text-pending-card" role="status">
+                  <b>“{pendingText.text}”</b>
+                  <span>도화지에 놓을 곳을 눌러요.</span>
+                  <button type="button" onClick={() => setPendingText(null)}>취소</button>
+                </div>
+              ) : selectedText ? (
+                <>
+                  <div className="text-edit-heading"><span>고른 글씨</span><b>{selectedText.text}</b></div>
+                  <div className="text-edit-actions">
+                    <button type="button" onClick={() => openTextComposer(selectedText)}>✏️ 내용</button>
+                    <button
+                      type="button"
+                      aria-label="글씨 작게"
+                      disabled={selectedText.fontSize === TEXT_SIZES[0]}
+                      onClick={() => {
+                        const index = TEXT_SIZES.indexOf(selectedText.fontSize);
+                        if (index > 0) updateTextObject(selectedText, { fontSize: TEXT_SIZES[index - 1] });
+                      }}
+                    >Aa−</button>
+                    <button
+                      type="button"
+                      aria-label="글씨 크게"
+                      disabled={selectedText.fontSize === TEXT_SIZES.at(-1)}
+                      onClick={() => {
+                        const index = TEXT_SIZES.indexOf(selectedText.fontSize);
+                        if (index >= 0 && index < TEXT_SIZES.length - 1) updateTextObject(selectedText, { fontSize: TEXT_SIZES[index + 1] });
+                      }}
+                    >Aa＋</button>
+                    <button type="button" className="text-delete" onClick={() => updateTextObject(selectedText, { deleted: true })}>🗑️ 지우기</button>
+                  </div>
+                  <button type="button" className="text-new-button" disabled={textObjects.length >= MAX_TEXT_OBJECTS} onClick={() => openTextComposer()}>＋ 새 글씨</button>
+                </>
+              ) : (
+                <button type="button" className="text-new-button" disabled={textObjects.length >= MAX_TEXT_OBJECTS} onClick={() => openTextComposer()}>＋ 새 글씨 쓰기</button>
+              )}
+            </div>
+          )}
           <div className="tool-group edit-group" role="group" aria-label="고치기">
             <button type="button" aria-label="지우개" title="지우개" aria-pressed={studioTool === "eraser"} onClick={() => chooseStudioTool("eraser")}>
               <span className="tool-icon eraser-icon" aria-hidden="true">
@@ -2546,21 +2800,25 @@ export function DrawingStudio() {
               </span>
             </button>
           </div>
-          <p className="tool-section-label width-label">굵기</p>
-          <div className="width-row" role="group" aria-label="선 굵기">
-            {STROKE_WIDTHS.map((value) => (
-              <button type="button" aria-label={STROKE_WIDTH_LABELS[value]} title={STROKE_WIDTH_LABELS[value]} aria-pressed={width === value} onClick={() => chooseWidth(value)} key={value}>
-                <i
-                  aria-hidden="true"
-                  style={{
-                    width: Math.max(6, Math.min(34, value * 0.72)),
-                    height: Math.max(6, Math.min(34, value * 0.72)),
-                  }}
-                />
-                <small>{STROKE_WIDTH_LABELS[value]}</small>
-              </button>
-            ))}
-          </div>
+          {studioTool !== "text" && (
+            <>
+              <p className="tool-section-label width-label">굵기</p>
+              <div className="width-row" role="group" aria-label="선 굵기">
+                {STROKE_WIDTHS.map((value) => (
+                  <button type="button" aria-label={STROKE_WIDTH_LABELS[value]} title={STROKE_WIDTH_LABELS[value]} aria-pressed={width === value} onClick={() => chooseWidth(value)} key={value}>
+                    <i
+                      aria-hidden="true"
+                      style={{
+                        width: Math.max(6, Math.min(34, value * 0.72)),
+                        height: Math.max(6, Math.min(34, value * 0.72)),
+                      }}
+                    />
+                    <small>{STROKE_WIDTH_LABELS[value]}</small>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <p className="tool-section-label color-label">색</p>
           <div className="palette-shade" role="group" aria-label="색 밝기">
             <button type="button" aria-pressed={paletteShade === "base"} onClick={() => setPaletteShade("base")}>
@@ -2576,9 +2834,11 @@ export function DrawingStudio() {
                 type="button"
                 aria-label={COLOR_NAMES[value]}
                 title={COLOR_NAMES[value]}
-                aria-pressed={color === value}
+                aria-pressed={(studioTool === "text" && selectedText ? selectedText.color : pendingText?.color ?? color) === value}
                 onClick={() => {
                   setColor(value);
+                  if (studioTool === "text" && selectedText) updateTextObject(selectedText, { color: value });
+                  if (studioTool === "text" && pendingText) setPendingText({ ...pendingText, color: value });
                   if (studioTool === "eraser") chooseStudioTool(lastBrushRef.current);
                 }}
                 key={value}
@@ -2602,6 +2862,65 @@ export function DrawingStudio() {
         </aside>
       </div>
       {timelapseOpen && <TimelapsePlayer document={documentState} onClose={() => setTimelapseOpen(false)} />}
+      {textComposerOpen && (
+        <div className="modal-backdrop" ref={textDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="text-composer-title">
+          <section className="text-composer-modal">
+            <button className="modal-close" onClick={closeTextComposer} aria-label="글씨 창 닫기">×</button>
+            <div className="text-composer-title-row">
+              <span aria-hidden="true">🔤</span>
+              <div><p className="eyebrow">그림에 글씨 넣기</p><h2 id="text-composer-title">무슨 말을 쓸까?</h2></div>
+              <SpeakButton text="그림에 넣을 짧은 말을 써 봐요. 키보드의 마이크로 말해도 돼요." compact />
+            </div>
+            <div className="text-kind-grid" role="group" aria-label="글씨 모양">
+              {TEXT_KIND_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  aria-pressed={textKind === option.kind}
+                  onClick={() => {
+                    setTextKind(option.kind);
+                    setTextDraft((value) => clampText(value, option.kind));
+                  }}
+                  key={option.kind}
+                >
+                  <span>{option.icon}</span><b>{option.label}</b><small>{option.help}</small>
+                </button>
+              ))}
+            </div>
+            <label className="text-entry-label" htmlFor="drawing-text-input">짧게 써 봐</label>
+            <textarea
+              id="drawing-text-input"
+              autoFocus
+              rows={2}
+              value={textDraft}
+              placeholder={textKind === "title" ? "예: 달빛 고양이" : textKind === "speech" ? "예: 같이 놀자!" : "예: 우리 집"}
+              onChange={(event) => setTextDraft(clampText(event.target.value, textKind))}
+            />
+            <div className="text-entry-meta">
+              <span>🎤 키보드의 마이크로 말해도 돼요.</span>
+              <b>{drawingTextGraphemes(normalizeDrawingText(textDraft)).length}/{MAX_TEXT_GRAPHEMES[textKind]}</b>
+            </div>
+            <div className="text-size-picker" role="group" aria-label="글씨 크기">
+              <span>크기</span>
+              {TEXT_SIZES.map((size, index) => (
+                <button type="button" aria-pressed={textSize === size} onClick={() => setTextSize(size)} key={size}>
+                  <span style={{ fontSize: `${16 + index * 4}px` }}>Aa</span>
+                  <small>{index === 0 ? "작게" : index === 1 ? "보통" : "크게"}</small>
+                </button>
+              ))}
+            </div>
+            <div className={`text-composer-preview ${textKind}`} style={{ color }} aria-label="글씨 미리 보기">{normalizeDrawingText(textDraft) || "미리 보기"}</div>
+            <div className="modal-actions text-composer-actions">
+              <button type="button" className="button secondary" onClick={closeTextComposer}>취소</button>
+              {!editingTextObjectId && (
+                <button type="button" className="button secondary" disabled={!normalizeDrawingText(textDraft)} onClick={placeTextInSuggestedSpot}>✨ 빈 곳 추천</button>
+              )}
+              <button type="button" className="button primary" disabled={!normalizeDrawingText(textDraft)} onClick={submitTextComposer}>
+                {editingTextObjectId ? "✓ 바꾸기" : "👆 놓을 곳 고르기"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {reflectionOpen && (
         <div className="modal-backdrop" ref={reflectionDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="reflection-title">
           <section className="reflection-modal">

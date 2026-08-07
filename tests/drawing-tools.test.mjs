@@ -107,7 +107,7 @@ test("saved images render from the document, never from live canvas pixels", () 
 
 test("pen mode keeps touch from drawing, is reversible, and two fingers zoom", () => {
   assert.match(studio, /if \(event\.pointerType === "pen"\) enablePenMode\(\)/);
-  assert.match(studio, /if \(penModeRef\.current\) \{ startGestureTouch\(event\); return; \}/);
+  assert.match(studio, /if \(penModeRef\.current && studioTool !== "text"\) \{ startGestureTouch\(event\); return; \}/);
   // 펜 없는 기기: 두 번째 손가락이 오면 기존 손가락을 제스처로 승격해야 핀치가 실제로 시작된다.
   assert.match(studio, /promoteEngagedToGesture\(event\.currentTarget\); startGestureTouch\(event\); return;/);
   assert.match(studio, /gestureTouches\.current\.set\(pointerId, last\)/);
@@ -121,7 +121,9 @@ test("pen mode keeps touch from drawing, is reversible, and two fingers zoom", (
 test("teacher message banner can be dismissed but every message remains in history", () => {
   assert.match(studio, /<StudentMessageCenter messages=\{teacherMessages\} floating/);
   assert.match(messageCenter, /className="canvas-message-close"/);
-  assert.match(messageCenter, /action: "ackTeacherMessage"/);
+  assert.match(messageCenter, /action: "ackTeacherMessages"/);
+  assert.match(messageCenter, /unread\.map\(\(message\) => message\.id\)/);
+  assert.match(messageCenter, /aria-label="새 선생님 말씀 모두 닫기"/);
   assert.match(messageCenter, /닫아도 여기에서 다시 볼 수 있어요/);
   assert.match(messageCenter, /\[\.\.\.messages\]\.reverse\(\)\.map/);
   assert.doesNotMatch(messageCenter, /sessionStorage/);
