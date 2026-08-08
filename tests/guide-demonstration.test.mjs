@@ -13,7 +13,7 @@ test("stage-one guides demonstrate the path before dotted practice", () => {
   assert.match(studio, /requestAnimationFrame\(animate\)/);
   assert.match(studio, /drawPencil\(context, pencil\.point, pencil\.previous\)/);
   assert.match(studio, /"연필이 먼저 보여줄게!"/);
-  assert.match(studio, /"이제 네 차례야\. 초록 점에서 시작해 봐\."/);
+  assert.match(studio, /"이제 네 차례야\. 초록 ① 가까운 점선에서 시작해 봐\."/);
 });
 
 test("guide demonstrations are replayable, skippable and student scoped", () => {
@@ -57,6 +57,15 @@ test("guide controls and notices remain touch friendly on mobile", () => {
   assert.match(css, /\.tool-panel \{ display:flex; order:initial; grid-column:3;/);
 });
 
+test("the start badge stays beside the trace instead of covering the child's line", () => {
+  const marker = studio.match(/function drawStartMarker[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.match(marker, /markerDistance = 34/);
+  assert.match(marker, /context\.arc\(marker\.x, marker\.y, markerRadius/);
+  assert.doesNotMatch(marker, /context\.arc\(start\.x, start\.y/);
+  assert.match(marker, /context\.fillText\("1", marker\.x/);
+  assert.match(studio, /if \(traceIndex === 0\) drawStartMarker\(context, trace\)/);
+});
+
 test("practice pencil locks to one dotted trace and fills skipped curve samples", () => {
   const traces = [
     [{ x: 100, y: 100 }, { x: 200, y: 100 }, { x: 300, y: 100 }, { x: 400, y: 100 }],
@@ -84,4 +93,6 @@ test("guide status no longer covers the paper and cat choices change the actual 
   assert.match(studio, /className="choice-feedback"/);
   assert.match(lessons, /머리 위에 귀 삼각형을 포개던 이전 가이드는 그대로 따라도 선이 겹쳤다/);
   assert.doesNotMatch(lessons.match(/slug: "curious-cat"[\s\S]*?\n  \},\n  \{/u)?.[0] ?? "", /line\(2, \[\.37, \.16\]/);
+  assert.match(lessons, /가슴부터 몸과 두 앞다리를 천천히 이어요/);
+  assert.match(lessons, /둥근 뒷발과 위로 살랑이는 꼬리를 더해요/);
 });

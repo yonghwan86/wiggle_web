@@ -101,7 +101,7 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   // 숨김은 수업 패널에만 적용해야 한다. 범위를 넓히면 그리미 AI 가이드의 이전·다음 버튼까지 사라진다.
   assert.doesNotMatch(css, /,\.step-actions,[^{]*\{ display:none/);
   assert.match(css, /\.step-panel \.choice-chips \{ display:flex; grid-column:1\/-1;[^}]*overflow-x:auto;/);
-  assert.match(css, /\.step-panel \.choice-chips button \{[^}]*min-height:44px;/);
+  assert.match(css, /\.step-panel \.choice-chips button \{[^}]*min-height:50px;/);
   assert.match(css, /\.step-panel \.step-actions \{ display:grid; grid-column:1\/-1;[^}]*overflow:visible;/);
   assert.match(css, /\.step-panel:has\(\.lesson-finished-illustration\) \.reference-tile \{ display:block;[^}]*width:84px;/);
   assert.match(teacher, /className="modal-close" aria-label="학생 그림 미리보기 닫기" onClick=\{closePreview\}/);

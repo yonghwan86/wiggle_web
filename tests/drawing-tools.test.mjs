@@ -184,7 +184,7 @@ test("lesson guides use a pencil demo before dotted practice without leaving the
   assert.match(studio, /type GuidePhase = "independent" \| "demo" \| "practice"/);
   assert.match(studio, /function drawPencil\(/);
   assert.match(studio, /✏️ 먼저 보여줘/);
-  assert.match(studio, /이제 네 차례야\. 초록 점에서 시작해 봐\./);
+  assert.match(studio, /이제 네 차례야\. 초록 ① 가까운 점선에서 시작해 봐\./);
   assert.match(studio, /점선만 보기/);
   assert.match(studio, /className=\{guidePhase !== "independent" && lessonGuideAvailable \? "guide-canvas" : "guide-canvas hidden"\}/);
 });

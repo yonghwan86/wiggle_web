@@ -84,12 +84,18 @@ const QUICK_DRAW_TOPICS = [
   { emoji: "🌳", label: "마법 숲" },
   { emoji: "🚲", label: "자전거" },
 ];
-const FAVORITE_PART_CHOICES = [
-  { emoji: "🎨", label: "색", value: "내가 고른 색" },
-  { emoji: "✨", label: "새로 더한 것", value: "내가 새로 더한 것" },
-  { emoji: "😊", label: "표정", value: "그림 속 표정" },
-  { emoji: "🖼️", label: "모두", value: "그림 전체" },
-];
+type ReflectionChoice = { emoji: string; label: string; value: string };
+
+function favoritePartChoices(lesson?: Lesson): ReflectionChoice[] {
+  const topic = lesson?.topic.trim();
+  const shortTopic = topic ? Array.from(topic).slice(0, 7).join("") : "주인공";
+  return [
+    { emoji: lesson?.emoji ?? "⭐", label: shortTopic, value: topic ? `내가 그린 ${topic}` : "내가 그린 주인공" },
+    { emoji: "〰️", label: "선·모양", value: "내가 그린 선과 모양" },
+    { emoji: "✨", label: "더한 것", value: "내가 새로 더한 것" },
+    { emoji: "🖼️", label: "그림 전체", value: "그림 전체" },
+  ];
+}
 const FAVORITE_REASON_CHOICES = [
   { emoji: "😄", label: "재미있어", value: "그리면서 재미있어서" },
   { emoji: "🌈", label: "색이 좋아", value: "내가 고른 색이 마음에 들어서" },
@@ -305,23 +311,32 @@ function drawTrace(context: CanvasRenderingContext2D, trace: GuideTrace, distanc
 function drawStartMarker(context: CanvasRenderingContext2D, trace: GuideTrace) {
   const start = trace[0];
   const next = trace[Math.min(4, trace.length - 1)];
+  const angle = Math.atan2(next.y - start.y, next.x - start.x);
+  const markerDistance = 34;
+  const markerRadius = 14;
+  const normal = { x: -Math.sin(angle), y: Math.cos(angle) };
+  const candidates = [
+    { x: start.x + normal.x * markerDistance, y: start.y + normal.y * markerDistance },
+    { x: start.x - normal.x * markerDistance, y: start.y - normal.y * markerDistance },
+  ];
+  const edgeRoom = (point: TracePoint) => Math.min(point.x, point.y, context.canvas.width - point.x, context.canvas.height - point.y);
+  const marker = edgeRoom(candidates[0]) >= edgeRoom(candidates[1]) ? candidates[0] : candidates[1];
   context.save();
   context.setLineDash([]);
   context.globalAlpha = 1;
-  context.fillStyle = "#43A047";
+  // 안내 레이어가 학생 선을 덮지 않도록 시작 표시는 점선 옆에 둔다.
+  context.fillStyle = "rgba(255,255,255,.94)";
+  context.strokeStyle = "#2E9B45";
+  context.lineWidth = 5;
   context.beginPath();
-  context.arc(start.x, start.y, 18, 0, Math.PI * 2);
+  context.arc(marker.x, marker.y, markerRadius, 0, Math.PI * 2);
   context.fill();
-  const angle = Math.atan2(next.y - start.y, next.x - start.x);
-  context.translate(start.x + Math.cos(angle) * 40, start.y + Math.sin(angle) * 40);
-  context.rotate(angle);
+  context.stroke();
   context.fillStyle = "#43A047";
-  context.beginPath();
-  context.moveTo(13, 0);
-  context.lineTo(-9, -10);
-  context.lineTo(-9, 10);
-  context.closePath();
-  context.fill();
+  context.font = "900 18px system-ui, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText("1", marker.x, marker.y + 1);
   context.restore();
 }
 
@@ -376,9 +391,9 @@ function renderGuideFrame(canvas: HTMLCanvasElement, traces: GuideTrace[], phase
   context.lineCap = "round";
   context.lineJoin = "round";
   if (phase === "demo") context.globalAlpha = 0.58;
-  for (const trace of traces) {
+  for (const [traceIndex, trace] of traces.entries()) {
     drawTrace(context, trace);
-    drawStartMarker(context, trace);
+    if (traceIndex === 0) drawStartMarker(context, trace);
   }
   if (phase === "demo") {
     const lengths = traces.map(traceLength);
@@ -453,6 +468,7 @@ export function DrawingStudio() {
   const [artwork, setArtwork] = useState<ArtworkPayload | null>(null);
   const [documentState, setDocumentState] = useState<DrawDocument>(emptyDocument());
   const lesson = useMemo(() => (params.id === "new" ? requestedLesson : lessonBySlug(artwork?.lessonSlug)), [artwork?.lessonSlug, params.id, requestedLesson]);
+  const reflectionPartChoices = useMemo(() => favoritePartChoices(lesson), [lesson]);
   const [studioTool, setStudioTool] = useState<StudioTool>("pencil");
   const [color, setColor] = useState(PALETTE[0]);
   // 그리기 굵기와 지우개 굵기를 따로 기억한다. 하나로 합치면 지우개를 한 번 쓸 때마다
@@ -2283,7 +2299,7 @@ export function DrawingStudio() {
 
   if (!artwork) return <main className="drawing-loading">{saveState}</main>;
   const step = lesson ? Math.min(artwork.currentStep, lesson.steps.length - 1) : 0;
-  const guideNotice = guidePhase === "demo" ? "연필이 먼저 보여줄게!" : guidePhase === "practice" ? (guidePracticeTried ? "한 번 따라 했어! 이제 점선 없이도 해볼까?" : "이제 네 차례야. 초록 점에서 시작해 봐.") : "";
+  const guideNotice = guidePhase === "demo" ? "연필이 먼저 보여줄게!" : guidePhase === "practice" ? (guidePracticeTried ? "한 번 따라 했어! 이제 점선 없이도 해볼까?" : "이제 네 차례야. 초록 ① 가까운 점선에서 시작해 봐.") : "";
   const choiceFeedback = childChoice ? CHOICE_DRAWING_SETUP[childChoice]?.feedback ?? "고른 모습을 그림에 직접 더해요." : "";
   const canvasGuideStatus = guideNotice || (currentLessonActivity === "color" ? choiceFeedback || "색을 고르면 크레용도 함께 준비해 줄게요." : "");
   const nextStepLabel = lesson ? (step === lesson.steps.length - 1 ? "완성하기" : "다음") : "다음";
@@ -2929,13 +2945,14 @@ export function DrawingStudio() {
             </button>
             <span className="modal-emoji">🌟</span>
             <div className="reflection-title-row">
-              <h2 id="reflection-title">내 그림을 소개해 줘!</h2>
-              <SpeakButton text="제일 마음에 드는 곳과 그 이유를 그림으로 골라요." />
+              <h2 id="reflection-title">네 그림을 소개해 줘!</h2>
+              <SpeakButton text="정답은 없어요. 네가 그림을 보고, 제일 마음에 드는 곳과 그 이유를 직접 골라요." />
             </div>
+            <p className="reflection-choice-note">정답이 아니에요. 네가 보고 직접 골라요.</p>
             <div className="reflection-question">
               <p>마음에 드는 곳은?</p>
               <div className="reflection-choice-grid">
-                {FAVORITE_PART_CHOICES.map((choice) => (
+                {reflectionPartChoices.map((choice) => (
                   <button type="button" aria-pressed={favoritePart === choice.value} onClick={() => setFavoritePart(choice.value)} key={choice.value}>
                     <span>{choice.emoji}</span>
                     {choice.label}
