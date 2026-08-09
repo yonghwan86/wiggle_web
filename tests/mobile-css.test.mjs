@@ -35,7 +35,7 @@ test("mobile forms, actions and overlays honor iPhone zoom, touch and safe-area 
 
 test("mobile lesson cards keep the picture, copy and start action readable", async () => {
   const css = await read("../app/globals.css");
-  const mobileStart = css.lastIndexOf("@media (max-width:720px)");
+  const mobileStart = css.indexOf("@media (max-width:720px) {\n  .lesson-card");
   const mobile = css.slice(mobileStart, css.indexOf("@media (max-width:460px)", mobileStart));
 
   assert.match(mobile, /\.lesson-card \{ display:grid; grid-template-columns:112px minmax\(0,1fr\);/);
@@ -76,7 +76,7 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(css, /\.tool-group \.tool-name \{ display:none; \}/);
   assert.match(studio, /className="width-row" role="group" aria-label="선 굵기"/);
   assert.match(studio, /className="palette" role="group" aria-label="색 고르기"/);
-  assert.match(studio, /className="history-row" role="group" aria-label="그리기 기록"[\s\S]*↶ 되돌리기[\s\S]*↷ 다시하기/);
+  assert.match(studio, /className="history-row" role="group" aria-label="그리기 기록"[\s\S]*<b>되돌리기<\/b>[\s\S]*<b>다시하기<\/b>/);
   assert.match(finalMobile, /\.tool-panel \{[^}]*display:grid;[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\);[^}]*overflow:hidden;/);
   assert.match(finalMobile, /\.tool-panel \.tool-group \{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(finalMobile, /\.tool-panel \.brush-group \{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);

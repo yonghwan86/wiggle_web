@@ -240,7 +240,7 @@ test("drawing studio wires hydration, online flush, conflict pause and local-dra
   assert.match(studio, /artwork_copy_/); assert.match(studio, /copy_\$\{stableKey\}/);
   assert.match(studio, /function pointerUp[\s\S]*if \(conflictDraftRef\.current\)[\s\S]*activePoints\.current\.delete/);
   assert.match(studio, /function changeLessonStep[\s\S]*conflictDraftRef\.current/);
-  assert.match(studio, /completingRef\.current = true;\s*window\.clearTimeout\(saveTimer\.current\)/);
+  assert.match(studio, /completingRef\.current = true;[\s\S]{0,180}window\.clearTimeout\(saveTimer\.current\)/);
   assert.match(session, /const transaction = db\.transaction\("saves", "readwrite"\); const store = transaction\.objectStore\("saves"\);\s*const request = store\.getAll\(\)/);
   assert.match(session, /sameRequestConflict && !save\.conflict/);
   assert.match(session, /item\.branchId !== incoming\.branchId/);

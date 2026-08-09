@@ -56,7 +56,8 @@ test("drawing, navigation and reflection retain familiar visual actions when tex
   assert.match(studio, /FAVORITE_REASON_CHOICES/);
   assert.match(studio, /className="reflection-choice-grid"/);
   assert.match(studio, /정답이 아니에요\. 네가 보고 직접 골라요\./);
-  assert.match(studio, /<span aria-hidden="true">⭐<\/span>작품 완성/);
+  assert.match(studio, /<span aria-hidden="true">\{completionState === "saving" \? "⏳" : "⭐"\}<\/span>/);
+  assert.match(studio, /"작품 완성"/);
 });
 
 test("speaker, picture slots and choice controls remain large and visible on small screens", () => {

@@ -43,12 +43,22 @@ export async function GET(request: Request) {
   const student = await studentFromRequest(request);
   if (!student) return jsonError("이 기기의 학생 정보를 찾지 못했어요.", 401);
   const db = bindings().DB;
-  const artworks = await db.prepare(`SELECT id, title, topic, learning_mode AS learningMode, lesson_slug AS lessonSlug, status, current_step AS currentStep, revision, CASE WHEN thumbnail_key IS NOT NULL OR final_image_key IS NOT NULL THEN 1 ELSE 0 END AS hasImage, updated_at AS updatedAt, completed_at AS completedAt FROM artworks WHERE student_id = ? ORDER BY updated_at DESC, id DESC LIMIT 40`).bind(student.id).all();
+  const url = new URL(request.url);
+  const artworkOffset = Math.max(0, Number.parseInt(url.searchParams.get("artworkOffset") ?? "0", 10) || 0);
+  const artworkPageSize = 40;
+  const artworkRows = await db.prepare(`SELECT id, title, topic, learning_mode AS learningMode, lesson_slug AS lessonSlug, status, current_step AS currentStep, revision, CASE WHEN thumbnail_key IS NOT NULL OR final_image_key IS NOT NULL THEN 1 ELSE 0 END AS hasImage, updated_at AS updatedAt, completed_at AS completedAt FROM artworks WHERE student_id = ? ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`).bind(student.id, artworkPageSize + 1, artworkOffset).all();
+  const artworks = artworkRows.results.slice(0, artworkPageSize);
   const classroom = await db.prepare(`SELECT current_activity AS currentActivity FROM classrooms WHERE id = ?`).bind(student.classroomId).first<{ currentActivity: string }>();
   const currentActivityKey = normalizeActivityKey(classroom?.currentActivity);
+  const currentLessonSlug = currentActivityKey.startsWith("lesson:") ? currentActivityKey.slice(7) : null;
+  const currentActivityArtwork = currentLessonSlug
+    ? await db.prepare(`SELECT id, title, learning_mode AS learningMode, lesson_slug AS lessonSlug, status, current_step AS currentStep, updated_at AS updatedAt FROM artworks WHERE student_id = ? AND lesson_slug = ? ORDER BY updated_at DESC, id DESC LIMIT 1`).bind(student.id, currentLessonSlug).first()
+    : await db.prepare(`SELECT id, title, learning_mode AS learningMode, lesson_slug AS lessonSlug, status, current_step AS currentStep, updated_at AS updatedAt FROM artworks WHERE student_id = ? AND learning_mode = 'free' ORDER BY updated_at DESC, id DESC LIMIT 1`).bind(student.id).first();
+  const latestUnfinishedArtwork = await db.prepare(`SELECT id, title, learning_mode AS learningMode, lesson_slug AS lessonSlug, status, current_step AS currentStep, updated_at AS updatedAt FROM artworks WHERE student_id = ? AND status <> 'complete' ORDER BY updated_at DESC, id DESC LIMIT 1`).bind(student.id).first();
+  const artworkTotal = Number((await db.prepare(`SELECT COUNT(*) AS count FROM artworks WHERE student_id = ?`).bind(student.id).first<{ count: number }>())?.count ?? 0);
   const messages = await db.prepare(`SELECT id, body, createdAt, audience, seenAt FROM (SELECT m.id, m.body, m.created_at AS createdAt, CASE WHEN m.student_id IS NULL THEN 'all' ELSE 'student' END AS audience, r.seen_at AS seenAt FROM teacher_messages m LEFT JOIN message_receipts r ON r.message_id = m.id AND r.student_id = ? WHERE m.classroom_id = ? AND (m.student_id IS NULL OR m.student_id = ?) ORDER BY m.created_at DESC, m.id DESC LIMIT 50) recent ORDER BY createdAt ASC, id ASC`).bind(student.id, student.classroomId, student.id).all<{ id: string; body: string; createdAt: string; audience: string; seenAt: string | null }>();
   const teacherViewing = Boolean(await db.prepare(`SELECT 1 FROM teacher_views WHERE student_id = ? AND classroom_id = ? AND expires_at > ? LIMIT 1`).bind(student.id, student.classroomId, new Date().toISOString()).first());
-  return noStoreJson({ student, artworks: artworks.results, messages: messages.results, teacherViewing, currentActivityKey, currentActivityLabel: activityLabel(currentActivityKey) });
+  return noStoreJson({ student, artworks, artworkTotal, currentActivityArtwork, latestUnfinishedArtwork, artworkHasMore: artworkRows.results.length > artworkPageSize, artworkNextOffset: artworkOffset + artworks.length, messages: messages.results, teacherViewing, currentActivityKey, currentActivityLabel: activityLabel(currentActivityKey) });
 }
 
 async function studentPost(request: Request) {

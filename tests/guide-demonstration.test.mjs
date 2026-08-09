@@ -7,9 +7,11 @@ const studio = await readFile(new URL("../app/components/DrawingStudio.tsx", imp
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const lessons = await readFile(new URL("../lib/lesson-content.ts", import.meta.url), "utf8");
 
-test("stage-one guides demonstrate the path before dotted practice", () => {
+test("children choose help before the pencil demonstration and dotted practice", () => {
   assert.match(studio, /type GuidePhase = "independent" \| "demo" \| "practice"/);
-  assert.match(studio, /lesson\?\.stage === 1 && !aiGuide/);
+  assert.match(studio, /guideChoiceStorageKey\(currentArtwork\.id, currentArtwork\.currentStep\)/);
+  assert.match(studio, /choice !== "help" && choice !== "solo"/);
+  assert.match(studio, /chooseGuideHelp[\s\S]*startGuideDemo\(\)/);
   assert.match(studio, /requestAnimationFrame\(animate\)/);
   assert.match(studio, /drawPencil\(context, pencil\.point, pencil\.previous\)/);
   assert.match(studio, /"연필이 먼저 보여줄게!"/);
@@ -89,7 +91,7 @@ test("guide status no longer covers the paper and cat choices change the actual 
   assert.match(studio, /Safari와 일부 태블릿 브라우저는 빠른 획에서 pointermove를 거의 보내지 않는다/);
   assert.match(studio, /snapGuideTrace\(currentGuideTraces, guideLock, releasePoint\)/);
   assert.match(studio, /"회색 고양이": \{ color: "#9AA7B1"[\s\S]*회색 크레용을 골랐어요/);
-  assert.match(studio, /setPaletteShade\(setup\.shade\)[\s\S]*setColor\(setup\.color\)/);
+  assert.match(studio, /setup\.shade === "light"[\s\S]*setColorsExpanded\(true\)[\s\S]*setColor\(setup\.color\)/);
   assert.match(studio, /className="choice-feedback"/);
   assert.match(lessons, /머리 위에 귀 삼각형을 포개던 이전 가이드는 그대로 따라도 선이 겹쳤다/);
   assert.doesNotMatch(lessons.match(/slug: "curious-cat"[\s\S]*?\n  \},\n  \{/u)?.[0] ?? "", /line\(2, \[\.37, \.16\]/);

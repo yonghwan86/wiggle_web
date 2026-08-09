@@ -4,7 +4,9 @@ import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, use
 import { useParams, useSearchParams } from "next/navigation";
 import { activeTextObjects, DrawDocument, DrawOp, drawingTextGraphemes, emptyDocument, estimateDocumentBytes, estimateStrokeBytes, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, MAX_TEXT_GRAPHEMES, MAX_TEXT_OBJECTS, normalizeDrawingText, roundUnit, ShapeKind, STROKE_WIDTHS, StrokeWidth, TextKind, TEXT_SIZES, TextSize, validateDrawDocument } from "@/lib/drawing-model";
 import { renderDrawDocument, renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
-import { mirrorOp, undoGroupSize } from "@/lib/symmetry";
+import { mirrorOp } from "@/lib/symmetry";
+import { redoDrawing, undoDrawing } from "@/lib/drawing-history";
+import { DrawingInputMode, INPUT_MODE_EVENT } from "@/lib/input-mode";
 import { CanvasView, IDENTITY_VIEW, pinchView } from "@/lib/canvas-view";
 import { lessonBySlug, Lesson } from "@/lib/lesson-content";
 import { createLessonStepBaseline, isLessonStepProgress, lessonStepActionStatus, LessonStepProgress } from "@/lib/lesson-step-progress";
@@ -22,8 +24,12 @@ import { LessonReference as LessonIllustration } from "./LessonReference";
 import { StudentMessageCenter, StudentTeacherMessage } from "./StudentMessageCenter";
 
 const PALETTE = ["#1B3A57", "#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA", "#8D6E63", "#F06292", "#4DD0E1", "#FFCC80", "#FFFFFF"];
-// 기본 12색과 짝을 이루는 밝은 12색. 흰색 자리는 밝기 짝이 없어 회색을 준다.
-const LIGHT_PALETTE = ["#5B7FA0", "#F8A9A4", "#FFC97E", "#FFF0A6", "#A5D6A7", "#90CAF9", "#CE93D8", "#C4A79F", "#F8BBD0", "#B2EBF2", "#FFE0B2", "#9AA7B1"];
+const MORE_PALETTE = [
+  "#000000", "#455A64", "#9AA7B1", "#D7DEE3",
+  "#5D4037", "#795548", "#A1887F", "#D7CCC8", "#F5E0C3", "#FFE0B2",
+  "#B71C1C", "#FF7043", "#C0CA33", "#00897B", "#80CBC4", "#26C6DA",
+  "#64B5F6", "#3949AB", "#7E57C2", "#EC407A", "#F8BBD0", "#FFF0A6",
+];
 const CHOICE_DRAWING_SETUP: Record<string, { color?: string; shade?: "base" | "light"; tool: BrushTool; width: StrokeWidth; feedback: string }> = {
   "초록 눈": { color: "#43A047", shade: "base", tool: "pencil", width: 16, feedback: "초록 연필을 골랐어요. 눈 안쪽을 초록색으로 그려요." },
   "파란 눈": { color: "#1E88E5", shade: "base", tool: "pencil", width: 16, feedback: "파란 연필을 골랐어요. 눈 안쪽을 파란색으로 그려요." },
@@ -57,6 +63,24 @@ const COLOR_NAMES: Record<string, string> = {
   "#B2EBF2": "밝은 하늘색",
   "#FFE0B2": "밝은 살구색",
   "#9AA7B1": "회색",
+  "#000000": "검정",
+  "#455A64": "진한 회색",
+  "#D7DEE3": "연한 회색",
+  "#5D4037": "진한 갈색",
+  "#795548": "갈색",
+  "#A1887F": "연한 갈색",
+  "#D7CCC8": "회갈색",
+  "#F5E0C3": "베이지",
+  "#B71C1C": "진한 빨강",
+  "#FF7043": "산호색",
+  "#C0CA33": "연두",
+  "#00897B": "청록",
+  "#80CBC4": "민트",
+  "#26C6DA": "밝은 하늘색",
+  "#64B5F6": "하늘색",
+  "#3949AB": "진한 파랑",
+  "#7E57C2": "연보라",
+  "#EC407A": "진한 분홍",
 };
 const STROKE_WIDTH_LABELS: Record<StrokeWidth, string> = {
   3: "아주 얇게",
@@ -461,6 +485,10 @@ function lessonStepStorageKey(artworkId: string, lessonSlug: string, step: numbe
   return `wiggle:lesson-step:v1:${artworkId}:${lessonSlug}:${step}`;
 }
 
+function guideChoiceStorageKey(artworkId: string, step: number) {
+  return `wiggle:guide-choice:v1:${artworkId}:${step}`;
+}
+
 export function DrawingStudio() {
   const params = useParams<{ id: string }>();
   const search = useSearchParams();
@@ -475,7 +503,7 @@ export function DrawingStudio() {
   // 아이가 고른 그리기 굵기가 말없이 리셋된다.
   const [drawWidth, setDrawWidth] = useState<StrokeWidth>(16);
   const [eraserWidth, setEraserWidth] = useState<StrokeWidth>(48);
-  const [paletteShade, setPaletteShade] = useState<"base" | "light">("base");
+  const [colorsExpanded, setColorsExpanded] = useState(false);
   const [shapeKind, setShapeKind] = useState<ShapeKind>("line");
   const [shapeFilled, setShapeFilled] = useState(false);
   const [moreShapes, setMoreShapes] = useState(false);
@@ -493,9 +521,10 @@ export function DrawingStudio() {
   } | null>(null);
   const [mirror, setMirror] = useState(false);
   const [view, setView] = useState<CanvasView>(IDENTITY_VIEW);
-  const [penMode, setPenMode] = useState(false);
+  const [inputMode, setInputMode] = useState<DrawingInputMode>("pen");
   const [redo, setRedo] = useState<DrawOp[][]>([]);
   const [guidePhase, setGuidePhase] = useState<GuidePhase>("independent");
+  const [guideChoiceOpen, setGuideChoiceOpen] = useState(false);
   const [guideDemoRun, setGuideDemoRun] = useState(0);
   const [guidePracticeTried, setGuidePracticeTried] = useState(false);
   const [lessonStepProgress, setLessonStepProgress] = useState<LessonStepProgress | null>(null);
@@ -503,6 +532,8 @@ export function DrawingStudio() {
   const [saveState, setSaveState] = useState("불러오는 중");
   const [editVersion, setEditVersion] = useState(0);
   const [reflectionOpen, setReflectionOpen] = useState(false);
+  const [completionState, setCompletionState] = useState<"idle" | "saving" | "error">("idle");
+  const [completionError, setCompletionError] = useState("");
   const [favoritePart, setFavoritePart] = useState("");
   const [favoriteReason, setFavoriteReason] = useState("");
   // 선생님 말씀 배너는 고정 오버레이라 닫을 수 없으면 밑의 버튼을 영영 가린다.
@@ -535,8 +566,10 @@ export function DrawingStudio() {
   const activePoints = useRef(new Map<number, Array<{ x: number; y: number; pressure: number }>>());
   const guideTraceLocksRef = useRef(new Map<number, { traceIndex: number; pointIndex: number }>());
   const wrapRef = useRef<HTMLDivElement>(null);
+  const toolPanelRef = useRef<HTMLElement>(null);
   const viewRef = useRef<CanvasView>(IDENTITY_VIEW);
-  const penModeRef = useRef(false);
+  const penModeRef = useRef(true);
+  const redoRef = useRef<DrawOp[][]>([]);
   const lastBrushRef = useRef<BrushTool>("pencil");
   const drawWidthRef = useRef<StrokeWidth>(16);
   const colorModeActiveRef = useRef(false);
@@ -551,8 +584,8 @@ export function DrawingStudio() {
   const shapeSnapshotRef = useRef<ImageData | null>(null);
   const textDragRef = useRef<{ pointerId: number; moved: boolean; startX: number; startY: number } | null>(null);
   const gestureTouches = useRef(new Map<number, { x: number; y: number }>());
-  const gestureStartRef = useRef<{ at: number; moved: boolean } | null>(null);
-  const lastTwoFingerTapRef = useRef(0);
+  const singleTouchTapRef = useRef(new Map<number, { at: number; x: number; y: number; moved: boolean }>());
+  const lastSingleFingerTapRef = useRef(0);
   // 그리기에 참여 중인 포인터의 마지막 화면 좌표. 두 번째 손가락이 오면 첫 손가락을
   // 이 좌표로 핀치 제스처에 승격시켜야 자연스러운 두 손가락 확대가 성립한다.
   const lastClientRef = useRef(new Map<number, { x: number; y: number }>());
@@ -650,6 +683,7 @@ export function DrawingStudio() {
       documentStateRef.current = loadedDocument;
       setArtwork({ ...data.artwork, currentStep: loadedStep });
       setDocumentState(loadedDocument);
+      redoRef.current = [];
       setRedo([]);
       setEditVersion(0);
       conflictDraftRef.current = loadDraft;
@@ -747,6 +781,22 @@ export function DrawingStudio() {
     markCurrentGuideSeen();
     setGuidePhase("practice");
   }, [markCurrentGuideSeen]);
+  const chooseGuideHelp = useCallback(() => {
+    const currentArtwork = artworkRef.current;
+    if (currentArtwork) {
+      try { localStorage.setItem(guideChoiceStorageKey(currentArtwork.id, currentArtwork.currentStep), "help"); } catch {}
+    }
+    setGuideChoiceOpen(false);
+    startGuideDemo();
+  }, [startGuideDemo]);
+  const chooseGuideSolo = useCallback(() => {
+    const currentArtwork = artworkRef.current;
+    if (currentArtwork) {
+      try { localStorage.setItem(guideChoiceStorageKey(currentArtwork.id, currentArtwork.currentStep), "solo"); } catch {}
+    }
+    setGuideChoiceOpen(false);
+    chooseIndependentDrawing();
+  }, [chooseIndependentDrawing]);
 
   useEffect(() => {
     if (currentLessonActivity === "color") {
@@ -772,23 +822,23 @@ export function DrawingStudio() {
   useEffect(() => {
     setGuidePracticeTried(false);
     if (!lessonGuideAvailable) {
+      setGuideChoiceOpen(false);
       setGuidePhase("independent");
       return;
     }
-    if (lesson?.stage === 1 && !aiGuide) {
-      const profile = activeProfile();
-      let seen = true;
-      try {
-        seen = !profile || localStorage.getItem(`wiggle:guide-demo:v1:${profile.studentId}:${guideSourceKey}`) === "seen";
-      } catch {}
-      if (!seen) {
-        setGuidePhase("demo");
-        setGuideDemoRun((value) => value + 1);
-        return;
-      }
+    const currentArtwork = artworkRef.current;
+    if (!currentArtwork || currentLessonActivity === "color" || currentLessonStepStatus.actionCount > 0) {
+      setGuideChoiceOpen(false);
+      setGuidePhase("independent");
+      return;
     }
-    setGuidePhase("independent");
-  }, [aiGuide, guideSourceKey, lesson?.stage, lessonGuideAvailable]);
+    let choice = "";
+    try {
+      choice = localStorage.getItem(guideChoiceStorageKey(currentArtwork.id, currentArtwork.currentStep)) ?? "";
+    } catch {}
+    setGuideChoiceOpen(choice !== "help" && choice !== "solo");
+    setGuidePhase(choice === "help" ? "practice" : "independent");
+  }, [aiGuide, artwork?.currentStep, artwork?.id, currentLessonActivity, currentLessonStepStatus.actionCount, guideSourceKey, lessonGuideAvailable]);
 
   useEffect(() => {
     if (guideAnimationRef.current !== null) cancelAnimationFrame(guideAnimationRef.current);
@@ -865,14 +915,17 @@ export function DrawingStudio() {
       document.removeEventListener("visibilitychange", visible);
     };
   }, []);
-  // 이 기기에서 펜을 한 번이라도 쓰면 펜 모드를 기억한다. 수업 중 첫 터치부터 손바닥이 안전해진다.
+  // 공유 태블릿의 매 작품은 펜 모드로 새로 시작한다. 앞 학생이 손가락 모드를
+  // 골랐더라도 다음 학생에게 손바닥 오입력 위험을 넘기지 않는다.
   useEffect(() => {
-    try {
-      if (localStorage.getItem("wiggle:pen-mode") === "1") {
-        penModeRef.current = true;
-        setPenMode(true);
-      }
-    } catch {}
+    penModeRef.current = true;
+    setInputMode("pen");
+    const syncDetectedPen = () => {
+      penModeRef.current = true;
+      setInputMode("pen");
+    };
+    window.addEventListener(INPUT_MODE_EVENT, syncDetectedPen);
+    return () => window.removeEventListener(INPUT_MODE_EVENT, syncDetectedPen);
   }, []);
 
   useEffect(() => {
@@ -890,7 +943,7 @@ export function DrawingStudio() {
     if (!setup) return;
     setStudioTool(setup.tool);
     lastBrushRef.current = setup.tool;
-    if (setup.shade) setPaletteShade(setup.shade);
+    if (setup.shade === "light") setColorsExpanded(true);
     if (setup.color) setColor(setup.color);
     drawWidthRef.current = setup.width;
     setDrawWidth(setup.width);
@@ -1132,7 +1185,10 @@ export function DrawingStudio() {
   const textObjects = useMemo(() => activeTextObjects(documentState.ops), [documentState.ops]);
   const selectedText = useMemo(() => textObjects.find((op) => op.textObjectId === selectedTextObjectId) ?? null, [selectedTextObjectId, textObjects]);
   const reflectionDialogRef = useRef<HTMLDivElement>(null);
-  const closeReflection = useCallback(() => setReflectionOpen(false), []);
+  const closeReflection = useCallback(() => {
+    if (completionState === "saving") return;
+    setReflectionOpen(false);
+  }, [completionState]);
   useModalDialog(reflectionDialogRef, closeReflection, reflectionOpen);
   const textDialogRef = useRef<HTMLDivElement>(null);
   const closeTextComposer = useCallback(() => {
@@ -1187,6 +1243,7 @@ export function DrawingStudio() {
             documentStateRef.current = draft.document;
             currentStepRef.current = draft.currentStep;
             setDocumentState(draft.document);
+            redoRef.current = [];
             setRedo([]);
             setEditVersion(0);
             setGuidePhase("independent");
@@ -1350,21 +1407,14 @@ export function DrawingStudio() {
     }
   }
   function enablePenMode() {
-    if (penModeRef.current) return;
     penModeRef.current = true;
-    setPenMode(true);
-    try {
-      localStorage.setItem("wiggle:pen-mode", "1");
-    } catch {}
+    setInputMode("pen");
   }
   // 공유 기기에서 펜을 잃어버려도 손가락으로 그릴 수 있어야 한다. 펜이 다시 닿으면
   // pointerDown에서 자동으로 재활성화되므로 해제해도 손바닥 안전은 유지된다.
   function disablePenMode() {
     penModeRef.current = false;
-    setPenMode(false);
-    try {
-      localStorage.removeItem("wiggle:pen-mode");
-    } catch {}
+    setInputMode("finger");
   }
   function resetViewToFit() {
     viewRef.current = IDENTITY_VIEW;
@@ -1394,6 +1444,7 @@ export function DrawingStudio() {
     markEdited();
     documentStateRef.current = nextDocument;
     setDocumentState(documentStateRef.current);
+    redoRef.current = [];
     setRedo([]);
     setEditVersion((value) => value + 1);
     return true;
@@ -1515,7 +1566,12 @@ export function DrawingStudio() {
       x: event.clientX,
       y: event.clientY,
     });
-    if (gestureTouches.current.size === 2) gestureStartRef.current = { at: performance.now(), moved: false };
+    if (penModeRef.current && gestureTouches.current.size === 1) {
+      singleTouchTapRef.current.set(event.pointerId, { at: performance.now(), x: event.clientX, y: event.clientY, moved: false });
+    }
+    if (gestureTouches.current.size === 2) {
+      singleTouchTapRef.current.clear();
+    }
   }
   // 그리기 참여 중인 포인터가 있는가 (스트로크·도형 드래그·채우기 대기).
   function engagedByOther(pointerId: number) {
@@ -1555,11 +1611,12 @@ export function DrawingStudio() {
   }
   function pointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (event.pointerType === "pen") enablePenMode();
-    // 펜 모드: 손 터치는 절대 그리지 않는다(손바닥 안전). 손가락은 확대·이동 제스처 전용이다.
+    // 펜 모드: 손 터치는 절대 편집하지 않는다(손바닥 안전). 한 손가락은 아무 일도 하지 않고,
+    // 두 손가락만 확대/축소한다. 한 손가락 두 번 탭은 화면 맞춤으로만 쓴다.
     // 펜이 없는 기기: 첫 손가락은 그리고, 그리는 중 두 번째 손가락이 오면
     // 진행 중이던 그리기를 폐기하고 두 손가락 모두 핀치 제스처로 전환한다.
     if (event.pointerType === "touch") {
-      if (penModeRef.current && studioTool !== "text") {
+      if (penModeRef.current) {
         startGestureTouch(event);
         return;
       }
@@ -1654,6 +1711,8 @@ export function DrawingStudio() {
     if (gestureTouches.current.has(event.pointerId)) {
       const previous = gestureTouches.current.get(event.pointerId)!;
       const current = { x: event.clientX, y: event.clientY };
+      const singleTap = singleTouchTapRef.current.get(event.pointerId);
+      if (singleTap && Math.hypot(current.x - singleTap.x, current.y - singleTap.y) > 10) singleTap.moved = true;
       if (gestureTouches.current.size >= 2) {
         const other = [...gestureTouches.current.entries()].find(([id]) => id !== event.pointerId);
         const wrap = wrapRef.current;
@@ -1667,7 +1726,6 @@ export function DrawingStudio() {
           viewRef.current = next;
           setView(next);
         }
-        if (gestureStartRef.current && Math.hypot(current.x - previous.x, current.y - previous.y) > 6) gestureStartRef.current.moved = true;
       }
       gestureTouches.current.set(event.pointerId, current);
       event.preventDefault();
@@ -1762,6 +1820,7 @@ export function DrawingStudio() {
   }
   function releaseGesturePointer(event: ReactPointerEvent<HTMLCanvasElement>) {
     gestureTouches.current.delete(event.pointerId);
+    singleTouchTapRef.current.delete(event.pointerId);
     lastClientRef.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
@@ -1771,18 +1830,16 @@ export function DrawingStudio() {
       else updateEraserFootprint(event, false);
     }
     if (gestureTouches.current.has(event.pointerId)) {
+      const touchCount = gestureTouches.current.size;
+      const singleTap = singleTouchTapRef.current.get(event.pointerId);
+      singleTouchTapRef.current.delete(event.pointerId);
       gestureTouches.current.delete(event.pointerId);
-      const started = gestureStartRef.current;
-      if (started && gestureTouches.current.size <= 1) {
-        // 두 손가락 짧은 탭 두 번 = 화면 맞춤. (스케치북 강좌와 같은 제스처)
-        if (!started.moved && performance.now() - started.at < 320) {
-          const now = performance.now();
-          if (now - lastTwoFingerTapRef.current < 500) {
-            resetViewToFit();
-            lastTwoFingerTapRef.current = 0;
-          } else lastTwoFingerTapRef.current = now;
-        }
-        gestureStartRef.current = null;
+      if (touchCount === 1 && singleTap && !singleTap.moved && performance.now() - singleTap.at <= 320) {
+        const now = performance.now();
+        if (now - lastSingleFingerTapRef.current < 500) {
+          resetViewToFit();
+          lastSingleFingerTapRef.current = 0;
+        } else lastSingleFingerTapRef.current = now;
       }
       lastClientRef.current.delete(event.pointerId);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
@@ -1873,7 +1930,6 @@ export function DrawingStudio() {
   function pointerCancel(event: ReactPointerEvent<HTMLCanvasElement>) {
     hideEraserFootprint();
     if (gestureTouches.current.has(event.pointerId)) {
-      gestureStartRef.current = null;
       releaseGesturePointer(event);
       return;
     }
@@ -1898,48 +1954,55 @@ export function DrawingStudio() {
     // 대기 중인 도형 시작점은 지운다. 문서가 바뀐 뒤 보이지 않는 옛 시작점에서 도형이 커밋되는 사고 방지.
     clearShapeStart();
     // 대칭 쌍은 한 번의 되돌리기로 함께 지워진다. 반쪽만 지우면 아이가 이해할 수 없는 상태가 된다.
-    const groupSize = undoGroupSize(documentStateRef.current.ops);
-    if (!groupSize) return;
-    const group = documentStateRef.current.ops.slice(-groupSize);
+    const next = undoDrawing({ document: documentStateRef.current, redo: redoRef.current });
+    if (next.document === documentStateRef.current) return;
     markEdited();
-    setDocumentState((current) => ({
-      ...current,
-      ops: current.ops.slice(0, -groupSize),
-    }));
-    setRedo((items) => [...items, group]);
+    documentStateRef.current = next.document;
+    redoRef.current = next.redo;
+    setDocumentState(next.document);
+    setRedo(next.redo);
     setEditVersion((value) => value + 1);
   }
   function redoLast() {
     if (conflictDraftRef.current) return;
     clearShapeStart();
-    const group = redo.at(-1);
-    if (!group) return;
+    const next = redoDrawing({ document: documentStateRef.current, redo: redoRef.current });
+    if (next.document === documentStateRef.current) return;
     markEdited();
-    setDocumentState((current) => ({
-      ...current,
-      ops: [...current.ops, ...group],
-    }));
-    setRedo((items) => items.slice(0, -1));
+    documentStateRef.current = next.document;
+    redoRef.current = next.redo;
+    setDocumentState(next.document);
+    setRedo(next.redo);
     setEditVersion((value) => value + 1);
   }
   async function complete() {
     if (completingRef.current) return;
     completingRef.current = true;
+    setCompletionState("saving");
+    setCompletionError("");
     window.clearTimeout(saveTimer.current);
-    const ok = await save(documentState, {
-      complete: true,
-      reflection: {
-        favoritePart,
-        favoriteReason,
-        spokenDescription: `${favoritePart}을(를) 그렸어요.`,
-        storyText: "",
-      },
-    });
-    if (ok) {
-      location.href = "/student/archive";
-      return;
+    try {
+      const ok = await save(documentStateRef.current, {
+        complete: true,
+        reflection: {
+          favoritePart,
+          favoriteReason,
+          spokenDescription: `${favoritePart}을(를) 그렸어요.`,
+          storyText: "",
+        },
+      });
+      if (ok) {
+        location.href = "/student/archive";
+        return;
+      }
+      setCompletionState("error");
+      setCompletionError("저장이 끝나지 않았어요. 인터넷을 확인하고 다시 눌러 주세요.");
+    } catch (cause) {
+      setCompletionState("error");
+      setCompletionError(cause instanceof Error ? cause.message : "작품을 저장하지 못했어요. 다시 눌러 주세요.");
+    } finally {
+      completingRef.current = false;
     }
-    completingRef.current = false;
   }
 
   async function saveAsCopy() {
@@ -2197,11 +2260,15 @@ export function DrawingStudio() {
     }
     completeCurrentLessonStep(skip);
     setLessonStepPrompt(null);
+    setCompletionState("idle");
+    setCompletionError("");
     setReflectionOpen(true);
   }
 
   function requestArtworkCompletion() {
     if (!lesson) {
+      setCompletionState("idle");
+      setCompletionError("");
       setReflectionOpen(true);
       return;
     }
@@ -2311,6 +2378,8 @@ export function DrawingStudio() {
       : currentLessonStepStatus.remaining > 1
         ? "점이나 선을 조금 더 그려 볼까?"
         : "점이나 선을 한 번 더 그려 볼까?";
+  const selectedColor = studioTool === "text" && selectedText ? selectedText.color : pendingText?.color ?? color;
+  const visibleColors = colorsExpanded ? [...new Set([...PALETTE, ...MORE_PALETTE])] : PALETTE;
   return (
     <main className="studio">
       <header className="studio-header">
@@ -2575,7 +2644,22 @@ export function DrawingStudio() {
               </div>
             </div>
           )}
-          <div className="canvas-wrap" ref={wrapRef}>
+          <div className="canvas-wrap" ref={wrapRef} onContextMenu={(event) => event.preventDefault()} onDragStart={(event) => event.preventDefault()}>
+            {guideChoiceOpen && (
+              <div className="guide-choice-overlay" role="dialog" aria-modal="true" aria-labelledby="guide-choice-title">
+                <section className="guide-choice-card">
+                  <div className="guide-choice-heading">
+                    <span aria-hidden="true">🖍️</span>
+                    <div><p className="eyebrow">그리기 시작</p><h2 id="guide-choice-title">어떻게 시작할까?</h2></div>
+                    <SpeakButton text="연필 시범과 점선 도움을 받을지, 내 생각대로 먼저 그릴지 골라요." compact />
+                  </div>
+                  <div className="guide-choice-buttons">
+                    <button type="button" onClick={chooseGuideHelp}><span>✏️</span><b>도움받을래</b><small>연필 시범 뒤 점선을 따라 해요</small></button>
+                    <button type="button" onClick={chooseGuideSolo}><span>🎨</span><b>내가 먼저 그릴래</b><small>점선 없이 내 생각대로 시작해요</small></button>
+                  </div>
+                </section>
+              </div>
+            )}
             {!lesson && !aiGuide && !documentState.ops.length && !shapeStartPoint && (
               <div className="canvas-start-hint" role="status">
                 ✏️ 하얀 종이에 그어 봐!
@@ -2624,6 +2708,8 @@ export function DrawingStudio() {
                 onPointerUp={pointerUp}
                 onPointerCancel={pointerCancel}
                 onPointerEnter={(event) => updateEraserFootprint(event)}
+                onContextMenu={(event) => event.preventDefault()}
+                onDragStart={(event) => event.preventDefault()}
                 onPointerLeave={(event) => {
                   if (!event.currentTarget.hasPointerCapture(event.pointerId)) hideEraserFootprint();
                 }}
@@ -2656,8 +2742,11 @@ export function DrawingStudio() {
               </button>
             )}
           </div>
+          <button type="button" className="mobile-tool-peek" onClick={() => toolPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            🎨 색·지우개·되돌리기 <span aria-hidden="true">↓</span>
+          </button>
         </section>
-        <aside className="tool-panel" aria-label="그리기 도구 모음">
+        <aside className="tool-panel" ref={toolPanelRef} aria-label="그리기 도구 모음">
           <p className="tool-section-label tools-label">도구</p>
           <div className="tool-group brush-group" role="group" aria-label="브러시">
             <button type="button" aria-label="연필" title="연필" aria-pressed={studioTool === "pencil"} onClick={() => chooseStudioTool("pencil")}>
@@ -2836,21 +2925,15 @@ export function DrawingStudio() {
             </>
           )}
           <p className="tool-section-label color-label">색</p>
-          <div className="palette-shade" role="group" aria-label="색 밝기">
-            <button type="button" aria-pressed={paletteShade === "base"} onClick={() => setPaletteShade("base")}>
-              기본
-            </button>
-            <button type="button" aria-pressed={paletteShade === "light"} onClick={() => setPaletteShade("light")}>
-              밝게
-            </button>
-          </div>
+          <div className="selected-color" role="status" aria-live="polite"><i style={{ background: selectedColor }} aria-hidden="true" /><span>현재 색 · <b>{COLOR_NAMES[selectedColor] ?? "고른 색"}</b></span></div>
+          <button type="button" className="more-colors-button" aria-expanded={colorsExpanded} onClick={() => setColorsExpanded((value) => !value)}>{colorsExpanded ? "기본 색만 보기" : "🎨 색 더보기"}</button>
           <div className="palette" role="group" aria-label="색 고르기">
-            {(paletteShade === "base" ? PALETTE : LIGHT_PALETTE).map((value) => (
+            {visibleColors.map((value) => (
               <button
                 type="button"
                 aria-label={COLOR_NAMES[value]}
                 title={COLOR_NAMES[value]}
-                aria-pressed={(studioTool === "text" && selectedText ? selectedText.color : pendingText?.color ?? color) === value}
+                aria-pressed={selectedColor === value}
                 onClick={() => {
                   setColor(value);
                   if (studioTool === "text" && selectedText) updateTextObject(selectedText, { color: value });
@@ -2862,17 +2945,16 @@ export function DrawingStudio() {
               />
             ))}
           </div>
-          {penMode && (
-            <button type="button" className="pen-mode-note" onClick={disablePenMode}>
-              ✍️ 펜으로 그려요 · 손가락으로 그리려면 눌러요
-            </button>
-          )}
+          <div className="input-mode-control" role="group" aria-label="그리기 입력 방법">
+            <button type="button" aria-pressed={inputMode === "pen"} onClick={enablePenMode}><span>✍️</span><b>펜 모드</b><small>손바닥은 그려지지 않아요</small></button>
+            <button type="button" aria-pressed={inputMode === "finger"} onClick={disablePenMode}><span>☝️</span><b>손가락 모드</b><small>손가락으로 그려요</small></button>
+          </div>
           <div className="history-row" role="group" aria-label="그리기 기록">
             <button type="button" onClick={undo} disabled={Boolean(conflictDraft) || !documentState.ops.length}>
-              ↶ 되돌리기
+              <span aria-hidden="true">↩</span><b>되돌리기</b>
             </button>
             <button type="button" onClick={redoLast} disabled={Boolean(conflictDraft) || !redo.length}>
-              ↷ 다시하기
+              <span aria-hidden="true">↪</span><b>다시하기</b>
             </button>
           </div>
         </aside>
@@ -2940,7 +3022,7 @@ export function DrawingStudio() {
       {reflectionOpen && (
         <div className="modal-backdrop" ref={reflectionDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="reflection-title">
           <section className="reflection-modal">
-            <button className="modal-close" onClick={() => setReflectionOpen(false)} aria-label="닫기">
+            <button className="modal-close" disabled={completionState === "saving"} onClick={closeReflection} aria-label="닫기">
               ×
             </button>
             <span className="modal-emoji">🌟</span>
@@ -2983,13 +3065,15 @@ export function DrawingStudio() {
               </label>
             </details>
             <div className="modal-actions">
-              <button className="button secondary" onClick={() => setReflectionOpen(false)}>
+              <button className="button secondary" disabled={completionState === "saving"} onClick={closeReflection}>
                 🎨 더 그릴래
               </button>
-              <button className="button primary child-primary-action" disabled={!favoritePart || !favoriteReason} onClick={complete}>
-                <span aria-hidden="true">⭐</span>작품 완성
+              <button className="button primary child-primary-action" aria-busy={completionState === "saving"} disabled={!favoritePart || !favoriteReason || completionState === "saving"} onClick={complete}>
+                <span aria-hidden="true">{completionState === "saving" ? "⏳" : "⭐"}</span>{completionState === "saving" ? "작품을 안전하게 저장 중…" : completionState === "error" ? "다시 저장하기" : "작품 완성"}
               </button>
             </div>
+            {completionState === "saving" && <p className="completion-pending" role="status" aria-live="polite">창을 닫지 않아도 돼요. 그림을 안전하게 보관하고 있어요.</p>}
+            {completionState === "error" && <p className="completion-error" role="alert">{completionError}</p>}
           </section>
         </div>
       )}

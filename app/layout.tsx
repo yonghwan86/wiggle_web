@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import { InputModeTracker } from "./components/InputModeTracker";
 
 const title = "Wiggle — 함께 그리며 생각해요";
 const description =
@@ -44,7 +45,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body><InputModeTracker />{children}</body>
     </html>
   );
 }

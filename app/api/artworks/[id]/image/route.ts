@@ -18,7 +18,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   `).bind(artworkId, student.id).first<ArtworkImage>();
 
   if (!artwork) return jsonError("내 그림을 찾을 수 없어요.", 404);
-  const imageKey = artwork.thumbnailKey ?? artwork.finalImageKey;
+  // 목록 화면은 작은 썸네일을 우선한다. 완성 작품 상세만 명시적으로 원본을 요청해
+  // iPad 보관함에서 수십 장의 대용량 PNG를 한꺼번에 내려받지 않게 한다.
+  const variant = new URL(request.url).searchParams.get("variant");
+  const imageKey = variant === "final"
+    ? artwork.finalImageKey ?? artwork.thumbnailKey
+    : artwork.thumbnailKey ?? artwork.finalImageKey;
   if (!imageKey) return jsonError("아직 그림 미리보기가 없어요.", 404);
 
   const object = await bindings().ARTWORKS.get(imageKey);

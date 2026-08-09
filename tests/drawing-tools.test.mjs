@@ -4,11 +4,13 @@ import test from "node:test";
 
 const compactSource = (text) => text.replace(/\s+/g, " ");
 
-const [studio, css, renderer, messageCenter] = await Promise.all([
+const [studio, css, renderer, messageCenter, drawingHistory, inputMode] = await Promise.all([
   readFile(new URL("../app/components/DrawingStudio.tsx", import.meta.url), "utf8").then(compactSource),
   readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   readFile(new URL("../lib/draw-renderer.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/components/StudentMessageCenter.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../lib/drawing-history.ts", import.meta.url), "utf8").then(compactSource),
+  readFile(new URL("../lib/input-mode.ts", import.meta.url), "utf8").then(compactSource),
 ]);
 
 test("draw width and eraser width are remembered separately", () => {
@@ -58,10 +60,12 @@ test("all tools have recognizable visual icons and child-readable size labels", 
   assert.match(studio, /aria-label=\{COLOR_NAMES\[value\]\}/);
 });
 
-test("palette offers base and light shades without shrinking buttons", () => {
-  assert.match(studio, /paletteShade === "base" \? PALETTE : LIGHT_PALETTE/);
-  assert.match(studio, /aria-pressed=\{paletteShade === "base"\}/);
-  assert.match(css, /\.palette-shade button \{ min-height:44px/);
+test("palette offers named basic and expanded colors without shrinking buttons", () => {
+  assert.match(studio, /const MORE_PALETTE =/);
+  assert.match(studio, /colorsExpanded \? \[\.\.\.new Set\(\[\.\.\.PALETTE, \.\.\.MORE_PALETTE\]\)\] : PALETTE/);
+  assert.match(studio, /className="selected-color"/);
+  assert.match(studio, /aria-expanded=\{colorsExpanded\}/);
+  assert.match(css, /\.palette button \{ min-width:44px; min-height:44px;/);
 });
 
 test("strokes render during pointer input instead of waiting for pointer up", () => {
@@ -80,7 +84,8 @@ test("mirror mode commits the pair together and undo removes it together", () =>
   assert.match(studio, /commitOps\(mirror \? \[op, mirrorOp\(op\)\] : \[op\]\)/);
   // 대칭이 켜지면 같은 획이 두 벌 저장되므로 스트로크 예산을 벌 수로 나눈다.
   assert.match(studio, /fitStrokePoints\(points, mirror \? 2 : 1\)/);
-  assert.match(studio, /undoGroupSize\(documentStateRef\.current\.ops\)/);
+  assert.match(drawingHistory, /undoGroupSize\(history\.document\.ops\)/);
+  assert.match(studio, /undoDrawing\(\{ document: documentStateRef\.current, redo: redoRef\.current \}\)/);
   assert.match(studio, /const \[redo, setRedo\] = useState<DrawOp\[\]\[\]>\(\[\]\)/);
   // 채우기도 대칭 쌍으로 커밋된다 — commitFill 본문이 mirror를 분기해야 한다.
   assert.match(studio, /function commitFill[\s\S]{0,400}commitOps\(mirror \? \[op, mirrorOp\(op\)\] : \[op\]\)/);
@@ -107,14 +112,17 @@ test("saved images render from the document, never from live canvas pixels", () 
 
 test("pen mode keeps touch from drawing, is reversible, and two fingers zoom", () => {
   assert.match(studio, /if \(event\.pointerType === "pen"\) enablePenMode\(\)/);
-  assert.match(studio, /if \(penModeRef\.current && studioTool !== "text"\) \{ startGestureTouch\(event\); return; \}/);
+  assert.match(studio, /if \(penModeRef\.current\) \{ startGestureTouch\(event\); return; \}/);
   // 펜 없는 기기: 두 번째 손가락이 오면 기존 손가락을 제스처로 승격해야 핀치가 실제로 시작된다.
   assert.match(studio, /promoteEngagedToGesture\(event\.currentTarget\); startGestureTouch\(event\); return;/);
   assert.match(studio, /gestureTouches\.current\.set\(pointerId, last\)/);
   assert.match(studio, /pinchView\(viewRef\.current/);
-  // 공유 기기에서 펜을 잃어도 복구할 수 있게 펜 모드는 토글로 해제된다.
-  assert.match(studio, /localStorage\.removeItem\("wiggle:pen-mode"\)/);
+  // 손가락 모드는 현재 작품에서만 명시적으로 켜고, 다음 학생·작품은 다시 펜으로 시작한다.
+  assert.match(studio, /penModeRef\.current = true;\s*setInputMode\("pen"\)/);
   assert.match(studio, /onClick=\{disablePenMode\}/);
+  assert.doesNotMatch(studio, /setItem\(INPUT_MODE_STORAGE_KEY, "finger"\)/);
+  assert.match(inputMode, /if \(pointerType === "touch"\) return mode === "finger"/);
+  assert.match(inputMode, /return "pen"/);
   assert.match(css, /\.canvas-stack \{ position:absolute; inset:0; transform-origin:0 0; \}/);
 });
 

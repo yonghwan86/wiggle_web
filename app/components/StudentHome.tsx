@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { activeProfile, deactivateProfile, flushSaves, studentFetch } from "@/lib/client-session";
 import { lessonBySlug } from "@/lib/lesson-content";
 import { LessonReference } from "./LessonReference";
@@ -9,7 +9,7 @@ import { SpeakButton } from "./SpeakButton";
 import { StudentMessageCenter, StudentTeacherMessage } from "./StudentMessageCenter";
 
 type HomeArtwork = { id: string; title: string; learningMode: string; lessonSlug: string | null; status: string; currentStep: number; updatedAt: string };
-type HomeData = { student: { id: string; nickname: string; animal: string; classroomName: string }; artworks: HomeArtwork[]; messages: StudentTeacherMessage[]; currentActivityKey: string; currentActivityLabel: string };
+type HomeData = { student: { id: string; nickname: string; animal: string; classroomName: string }; artworks: HomeArtwork[]; artworkTotal: number; currentActivityArtwork: HomeArtwork | null; latestUnfinishedArtwork: HomeArtwork | null; messages: StudentTeacherMessage[]; currentActivityKey: string; currentActivityLabel: string };
 
 export function StudentHome() {
   const [data, setData] = useState<HomeData | null>(null);
@@ -56,14 +56,12 @@ export function StudentHome() {
     return () => { clearInterval(timer); window.removeEventListener("online", online); document.removeEventListener("visibilitychange", visible); };
   }, [load]);
 
-  const unfinished = useMemo(() => data?.artworks
-    .filter((artwork) => artwork.status !== "complete")
-    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0], [data?.artworks]);
+  const unfinished = data?.latestUnfinishedArtwork;
 
   if (!data) return <main className="app-shell"><header className="app-header"><Logo /></header><div className="loading-card" role="status">{error || "내 그림을 찾고 있어요…"}</div></main>;
 
   const teacherLesson = data.currentActivityKey.startsWith("lesson:") ? lessonBySlug(data.currentActivityKey.slice(7)) : undefined;
-  const teacherArtwork = data.artworks.find((artwork) => teacherLesson ? artwork.lessonSlug === teacherLesson.slug : artwork.learningMode === "free");
+  const teacherArtwork = data.currentActivityArtwork;
   const teacherDone = teacherArtwork?.status === "complete";
   const teacherActivityPath = teacherArtwork && !teacherDone ? `/student/draw/${teacherArtwork.id}` : teacherLesson ? `/student/draw/new?lesson=${teacherLesson.slug}` : "/student/draw/new?mode=free";
   const teacherStepTotal = teacherLesson?.steps.length ?? 1;
@@ -99,7 +97,7 @@ export function StudentHome() {
         <span aria-hidden="true">✏️</span><div><h2>이어 그리기</h2><p>{unfinished ? `${unfinished.title}을 이어서 그려요.` : "이어 그릴 그림이 없어요. 활동을 골라 시작해요."}</p></div><b>열기 →</b>
       </a>
       <a className="student-menu-card archive" href="/student/archive">
-        <span aria-hidden="true">🖼️</span><div><h2>내 그림</h2><p>내가 그린 그림과 생각을 다시 봐요.</p></div><b>{data.artworks.length}개 →</b>
+        <span aria-hidden="true">🖼️</span><div><h2>내 그림</h2><p>내가 그린 그림과 생각을 다시 봐요.</p></div><b>{data.artworkTotal}개 →</b>
       </a>
       <a className="student-menu-card activities" href="/student/activities">
         <span aria-hidden="true">🎨</span><div><h2>활동 고르기</h2><p>선·도형부터 자유 창작까지 골라요.</p></div><b>고르기 →</b>

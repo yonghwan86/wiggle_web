@@ -1,11 +1,12 @@
 import { bindings } from "@/db/runtime";
 import { MAX_DOCUMENT_BYTES, validateDrawDocument } from "@/lib/drawing-model";
 import { cleanText, id, jsonError, noStoreJson, randomToken, rateLimit, sameOrigin, studentFromRequest } from "@/lib/security";
+import { settleUploadsBeforeCleanup } from "@/lib/settled-uploads";
 
-type Artwork = { id: string; studentId: string; classroomId: string; title: string; topic: string; learningMode: string; lessonSlug: string | null; intent: string; opsJson: string; currentStep: number; revision: number; status: string; versionCount: number; thumbnailKey: string | null; finalImageKey: string | null; updatedAt: string };
+type Artwork = { id: string; studentId: string; classroomId: string; title: string; topic: string; learningMode: string; lessonSlug: string | null; intent: string; opsJson: string; currentStep: number; revision: number; status: string; versionCount: number; thumbnailKey: string | null; finalImageKey: string | null; updatedAt: string; completedAt: string | null };
 
 async function ownedArtwork(artworkId: string, studentId: string) {
-  return bindings().DB.prepare(`SELECT id, student_id AS studentId, classroom_id AS classroomId, title, topic, learning_mode AS learningMode, lesson_slug AS lessonSlug, intent, ops_json AS opsJson, current_step AS currentStep, revision, status, version_count AS versionCount, thumbnail_key AS thumbnailKey, final_image_key AS finalImageKey, updated_at AS updatedAt FROM artworks WHERE id = ? AND student_id = ?`).bind(artworkId, studentId).first<Artwork>();
+  return bindings().DB.prepare(`SELECT id, student_id AS studentId, classroom_id AS classroomId, title, topic, learning_mode AS learningMode, lesson_slug AS lessonSlug, intent, ops_json AS opsJson, current_step AS currentStep, revision, status, version_count AS versionCount, thumbnail_key AS thumbnailKey, final_image_key AS finalImageKey, updated_at AS updatedAt, completed_at AS completedAt FROM artworks WHERE id = ? AND student_id = ?`).bind(artworkId, studentId).first<Artwork>();
 }
 
 function decodeImage(dataUrl: unknown, maxBytes: number) {
@@ -35,6 +36,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   const artworkId = cleanText((await context.params).id, 80); const artwork = await ownedArtwork(artworkId, student.id);
   if (!artwork) return jsonError("내 그림이 아니거나 찾을 수 없어요.", 404);
   const reflection = await bindings().DB.prepare(`SELECT favorite_part AS favoritePart, favorite_reason AS favoriteReason, spoken_description AS spokenDescription, story_text AS storyText, next_suggestion AS nextSuggestion FROM reflections WHERE artwork_id = ?`).bind(artworkId).first();
+  if (new URL(request.url).searchParams.get("summary") === "1") {
+    const { opsJson: _opsJson, ...summary } = artwork;
+    void _opsJson;
+    return noStoreJson({ artwork: summary, reflection });
+  }
   return noStoreJson({ artwork: { ...artwork, document: JSON.parse(artwork.opsJson), opsJson: undefined }, reflection });
 }
 
@@ -70,8 +76,14 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   // 같은 키를 candidate → committed로 두 번 put하면 이미지 인코딩 크기만큼 R2 업로드를
   // 매 저장마다 두 번 기다린다. 객체는 DB가 그 키를 가리키기 전에는 외부에서 발견할 수 없으므로
   // 한 번만 쓰고, DB 커밋 실패 시 아래 보상 삭제로 회수한다.
-  if (thumbnail && thumbnailKey) await bindings().ARTWORKS.put(thumbnailKey, thumbnail, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=60" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "thumbnail" } });
-  if (finalImage && finalKey) await bindings().ARTWORKS.put(finalKey, finalImage, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=300" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "final" } });
+  await settleUploadsBeforeCleanup([
+      thumbnail && thumbnailKey
+        ? bindings().ARTWORKS.put(thumbnailKey, thumbnail, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=60" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "thumbnail" } })
+        : Promise.resolve(),
+      finalImage && finalKey
+        ? bindings().ARTWORKS.put(finalKey, finalImage, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=300" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "final" } })
+        : Promise.resolve(),
+    ], () => removeCandidates([thumbnailKey, finalKey]));
 
   const db = bindings().DB; const versionId = id("version");
   const statements = [
