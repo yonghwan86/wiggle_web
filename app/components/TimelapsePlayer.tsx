@@ -35,10 +35,10 @@ export function TimelapsePlayer({ document, onClose }: { document: DrawDocument;
     }), 160);
     return () => window.clearInterval(timer);
   }, [document.ops.length, playing]);
-  // 처음 열면 마지막 프레임에서 시작하고, 끝까지 본 뒤에도 재생 버튼을 다시 누르면
-  // 아무 일도 안 일어나던 문제: 재생을 누른 시점에 이미 끝(또는 그 이후)이면 0으로 되감고 튼다.
+  // 멈춤(끝까지 봤든, 중간에 일시정지했든, 슬라이더로 옮겼든)에서 재생으로 바뀔 때는
+  // 항상 0프레임부터 다시 튼다. 이미 재생 중이면 그 자리에서 멈춘다.
   function togglePlay() {
-    const next = resolvePlayToggle(playing, frame, document.ops.length);
+    const next = resolvePlayToggle(playing, frame);
     if (next.frame !== frame) setFrame(next.frame);
     setPlaying(next.playing);
   }
