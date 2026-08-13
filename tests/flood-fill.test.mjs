@@ -84,6 +84,80 @@ test("regression: multi-pixel anti-aliased/textured edge no longer leaves white 
   for (let x = 9; x <= 11; x += 1) assert.equal(columnNoneMasked(fixed, size, x, 0, size - 1), true, `x=${x}는 진한 획 본체라 채우면 안 된다`);
 });
 
+test("regression: a one-pixel-thick diagonal dark barrier is not crossed via corner-cutting", () => {
+  // 대각선으로 한 칸씩 이어진 진한 윤곽선(계단 모양)은 8방향 채우기라면 장벽 칸끼리
+  // 대각선으로만 닿아 있는 "모서리"로 반대편에 새어 나갈 수 있다. 4방향 연결에서는
+  // 장벽을 넘으려면 반드시 장벽 칸 자체를 밟아야 하므로 구조적으로 이 누수가 불가능하다.
+  const size = 12;
+  const pixels = makeImage(size, (x, y) => (x === y ? [10, 10, 10] : [255, 255, 255]));
+  const target = sampleRgb(pixels, size, size - 1, 0); // 대각선 위쪽(x>y) 삼각형에서 시작
+  const mask = computeFloodFillMask(pixels, size, size - 1, 0, target);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      if (x > y) assert.equal(mask[y * size + x], 1, `대각선 위쪽 (${x},${y})는 채워져야 한다`);
+      else if (x < y) assert.equal(mask[y * size + x], 0, `대각선 반대편 (${x},${y})은 채워지면 안 된다`);
+      else assert.equal(mask[y * size + x], 0, `대각선 장벽 자체 (${x},${y})는 채우면 안 된다`);
+    }
+  }
+});
+
+test("regression: a uniform pale pastel outline (#F4C4D4) is not consumed by the weak antialias tolerance", () => {
+  // 연분홍(244,196,212)은 흰색과의 색 차가 113으로 안티에일리어싱을 봐주는 약한
+  // 문턱값(200) 안에 들어온다. 하지만 균일한 색이 여러 칸 이어지면(진짜 그라데이션이
+  // 아니라 아이가 고른 파스텔 선이면) "대상 색에서 더 멀어짐" 조건을 만족하지 못해
+  // 첫 한 칸만 옅게 물들고 멈춰야 한다 — 절대 반대편 흰 영역까지 뚫고 들어가면 안 된다.
+  const size = 10;
+  const pink = [244, 196, 212];
+  const pixels = makeImage(size, (x) => {
+    if (x <= 3) return [255, 255, 255];
+    if (x <= 6) return pink;
+    return [255, 255, 255];
+  });
+  const target = sampleRgb(pixels, size, 0, 0);
+  const mask = computeFloodFillMask(pixels, size, 0, 0, target);
+  assert.equal(columnAllMasked(mask, size, 0, 0, size - 1), true);
+  assert.equal(columnAllMasked(mask, size, 3, 0, size - 1), true);
+  // 장벽에 맞닿은 첫 칸(x=4)은 약한 조건으로 옅게 물들 수 있다 — 허용된 가장자리 소프트닝.
+  assert.equal(columnAllMasked(mask, size, 4, 0, size - 1), true, "파스텔 선에 맞닿은 첫 칸은 옅게 물들 수 있다");
+  // 균일한 색이 이어지는 두 칸째부터는 "더 멀어짐" 조건이 깨져 막혀야 한다.
+  assert.equal(columnNoneMasked(mask, size, 5, 0, size - 1), true, "균일한 파스텔 색은 두 칸째부터 막혀야 한다");
+  assert.equal(columnNoneMasked(mask, size, 6, 0, size - 1), true);
+  // 핵심 요구사항: 파스텔 선 반대편의 흰 영역까지 뚫고 들어가면 절대 안 된다.
+  for (let x = 7; x <= 9; x += 1) assert.equal(columnNoneMasked(mask, size, x, 0, size - 1), true, `x=${x}는 파스텔 선 반대편이라 채우면 안 된다`);
+});
+
+test("works the same for a saturated non-white target (sky blue) bounded by a dark outline", () => {
+  const size = 10;
+  const skyBlue = [135, 206, 235];
+  const pixels = makeImage(size, (x) => {
+    if (x <= 3) return skyBlue;
+    if (x <= 6) return [10, 10, 10];
+    return skyBlue;
+  });
+  const target = sampleRgb(pixels, size, 0, 0);
+  assert.deepEqual(target, skyBlue);
+  const mask = computeFloodFillMask(pixels, size, 0, 0, target);
+  assert.equal(columnAllMasked(mask, size, 0, 0, size - 1), true);
+  assert.equal(columnAllMasked(mask, size, 3, 0, size - 1), true);
+  for (let x = 4; x <= 9; x += 1) assert.equal(columnNoneMasked(mask, size, x, 0, size - 1), true, `x=${x}는 장벽이거나 그 반대편이라 채우면 안 된다`);
+});
+
+test("works for a dark target bounded by a bright barrier (a barrier need not be darker than the target)", () => {
+  const size = 10;
+  const navy = [27, 58, 87];
+  const pixels = makeImage(size, (x) => {
+    if (x <= 3) return navy;
+    if (x <= 6) return [255, 255, 255];
+    return navy;
+  });
+  const target = sampleRgb(pixels, size, 0, 0);
+  assert.deepEqual(target, navy);
+  const mask = computeFloodFillMask(pixels, size, 0, 0, target);
+  assert.equal(columnAllMasked(mask, size, 0, 0, size - 1), true);
+  assert.equal(columnAllMasked(mask, size, 3, 0, size - 1), true);
+  for (let x = 4; x <= 9; x += 1) assert.equal(columnNoneMasked(mask, size, x, 0, size - 1), true, `x=${x}는 밝은 장벽이거나 그 반대편이라 채우면 안 된다`);
+});
+
 test("small enclosed target-colored island stays unfilled when disconnected", () => {
   // 왼쪽 큰 배경(x0..4)은 씨앗과 이어져 있다. 오른쪽 섬(x9..11,y5..7)은 같은 흰색이지만
   // 회색 장벽(x5..8)에 막혀 연결되지 않으므로 채워지면 안 된다.
@@ -135,11 +209,19 @@ test("intentional larger closed region (eye) is not bled into from the backgroun
   }
 });
 
-test("same-color refill is a no-op the caller can detect", () => {
+test("filling with the color the region already has is idempotent on the actual pixels", () => {
+  // 이전 버전은 target 배열이 흰색과 같다고만 확인하고 실제 채우기 결과는 검증하지
+  // 않는 공허한 테스트였다. 여기서는 mask 계산과 실제 픽셀 쓰기까지 모두 실행해,
+  // 같은 색으로 다시 칠해도 픽셀 버퍼가 진짜로 변하지 않는지 확인한다.
   const size = 6;
-  const pixels = makeImage(size, () => [255, 255, 255]);
+  const color = [200, 120, 80];
+  const pixels = makeImage(size, () => color);
+  const original = Uint8ClampedArray.from(pixels);
   const target = sampleRgb(pixels, size, 0, 0);
-  assert.deepEqual(target, [255, 255, 255]);
+  const mask = computeFloodFillMask(pixels, size, 0, 0, target);
+  assert.equal(countMasked(mask), size * size, "대상 색과 완전히 같은 영역은 전부 채우기 대상으로 잡혀야 한다");
+  paintFloodFillMask(pixels, mask, color);
+  assert.deepEqual(Array.from(pixels), Array.from(original), "같은 색으로 다시 칠해도 픽셀 값은 그대로여야 한다");
 });
 
 test("paintFloodFillMask writes the fill color only to masked pixels and forces full alpha", () => {
