@@ -77,26 +77,38 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(studio, /className="width-row" role="group" aria-label="선 굵기"/);
   assert.match(studio, /className="palette" role="group" aria-label="색 고르기"/);
   assert.match(studio, /className="history-row" role="group" aria-label="그리기 기록"[\s\S]*<b>되돌리기<\/b>[\s\S]*<b>다시하기<\/b>/);
-  assert.match(finalMobile, /\.tool-panel \{[^}]*display:grid;[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\);[^}]*overflow:hidden;/);
-  assert.match(finalMobile, /\.tool-panel \.tool-group \{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
-  assert.match(finalMobile, /\.tool-panel \.brush-group \{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
-  // shape-options가 make/edit 사이에 끼어들 때 sparse 구멍이 생기지 않게 dense 백필을 쓴다.
-  assert.match(finalMobile, /\.tool-panel \{[^}]*grid-auto-flow:row dense;/);
-  assert.match(finalMobile, /\.tool-panel \.shape-options \{[^}]*grid-column:1\/-1/);
-  assert.match(finalMobile, /\.tool-panel \.shape-kind-row \{[^}]*grid-template-columns:repeat\(5,minmax\(44px,1fr\)\)/);
+  // 캔버스가 화면을 지배하도록, 좁은 세로 화면의 도구 패널은 화면 아래 뜬 compact dock
+  // (도구 선택만 상시 노출)과 ✕/🎨 토글로 여는 tray(부가 컨트롤)로 나뉜다.
+  assert.match(finalMobile, /\.tool-panel \{[^}]*position:fixed; left:0; right:0; bottom:0;[^}]*display:flex; flex-wrap:nowrap;/);
+  assert.match(finalMobile, /\.tool-panel \.tool-tray-toggle \{[^}]*width:48px; min-width:48px; height:48px; min-height:48px;/);
+  assert.match(finalMobile, /\.tool-panel:not\(\.tray-open\)>\.tool-section-label,\.tool-panel:not\(\.tray-open\) \.shape-options,\.tool-panel:not\(\.tray-open\) \.text-options,\.tool-panel:not\(\.tray-open\) \.width-row,\.tool-panel:not\(\.tray-open\) \.selected-color,\.tool-panel:not\(\.tray-open\) \.more-colors-button,\.tool-panel:not\(\.tray-open\) \.palette,/);
+  assert.match(finalMobile, /\.tool-panel \.tool-group \{ flex:0 0 auto; display:flex; gap:6px; \}/);
+  assert.match(finalMobile, /\.tool-tray-backdrop \{ display:block; position:fixed; inset:0; z-index:8;/);
+  // 트레이가 펼쳐지면(.tray-open) 부가 컨트롤이 전부 나타난다.
+  assert.match(finalMobile, /\.tool-panel\.tray-open \{[^}]*flex-direction:column;/);
+  assert.match(finalMobile, /\.tool-panel\.tray-open>\.tool-section-label,\.tool-panel\.tray-open \.shape-options,\.tool-panel\.tray-open \.text-options,\.tool-panel\.tray-open \.width-row,\.tool-panel\.tray-open \.selected-color,\.tool-panel\.tray-open \.more-colors-button,\.tool-panel\.tray-open \.palette,\.tool-panel\.tray-open \.input-mode-control,\.tool-panel\.tray-open \.history-row,\.tool-panel\.tray-open \.pen-mode-note,\.tool-panel\.tray-open \.palette-shade \{ display:block; width:100%;/);
+  assert.match(finalMobile, /\.tool-panel\.tray-open \.shape-kind-row \{[^}]*grid-template-columns:repeat\(5,minmax\(44px,1fr\)\)/);
   // 굵기 5단이 한 줄에 44px 이상으로 들어간다.
-  assert.match(finalMobile, /\.tool-panel \.width-row \{[^}]*grid-template-columns:repeat\(5,minmax\(44px,1fr\)\)/);
-  assert.match(finalMobile, /\.tool-panel \.palette \{[^}]*grid-template-columns:repeat\(6,minmax\(44px,1fr\)\)/);
-  // 가로 모드 블록: 지우개 아이콘 붕괴 방지 + 굵기 5버튼 flex 랩 배치.
+  assert.match(finalMobile, /\.tool-panel\.tray-open \.width-row \{[^}]*grid-template-columns:repeat\(5,minmax\(44px,1fr\)\)/);
+  assert.match(finalMobile, /\.tool-panel\.tray-open \.palette \{[^}]*grid-template-columns:repeat\(6,minmax\(44px,1fr\)\)/);
+  // 가로 모드 블록(폰 랜드스케이프)은 그대로 슬림 사이드 레일을 유지한다 — 지우개 아이콘 붕괴 방지 + 굵기 5버튼 flex 랩 배치.
   const landscapeStart = css.indexOf("@media (max-width:900px) and (max-height:500px) and (orientation:landscape)");
   const landscape = css.slice(landscapeStart, css.indexOf("@media", landscapeStart + 10));
   assert.match(landscape, /\.tool-panel \.edit-group \.eraser-icon \{ width:22px; min-width:22px; \}/);
   assert.match(landscape, /\.tool-panel \.width-row \{[^}]*display:flex; flex-wrap:wrap; justify-content:center;/);
-  assert.match(finalMobile, /\.tool-panel \.history-row \{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-  assert.doesNotMatch(finalMobile, /\.tool-panel \{[^}]*overflow-x:auto|\.tool-panel \{[^}]*display:flex/);
-  assert.match(finalMobile, /\.canvas-zone \{ container-type:size; \}/);
+  assert.doesNotMatch(landscape, /\.tool-panel \{[^}]*position:fixed/);
+  assert.match(finalMobile, /\.tool-panel\.tray-open \.history-row \{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  // 도구 패널이 화면 아래 뜬 dock이 됐으니, 캔버스가 그 뒤에 가려지지 않게 여백을 뺀다.
+  assert.match(finalMobile, /\.canvas-zone \{ container-type:size; padding-bottom:calc\(8px \+ var\(--tool-dock-height,66px\) \+ env\(safe-area-inset-bottom\)\); \}/);
   assert.match(finalMobile, /@supports \(width:1cqh\) \{ \.canvas-zone \.canvas-wrap \{ width:min\(100cqw,100cqh\); height:auto; max-width:100%; max-height:100%; \} \}/);
   assert.match(finalMobile, /@supports not \(width:1cqh\) \{ \.canvas-zone \.canvas-wrap \{ width:auto; height:100%; max-width:100%; max-height:100%; \} \}/);
+  // 예전 "도구 패널로 스크롤" 임시방편은 dock이 상시 보이므로 더는 필요 없다.
+  assert.doesNotMatch(css, /mobile-tool-peek/);
+  assert.doesNotMatch(studio, /mobile-tool-peek/);
+  assert.match(studio, /const \[toolTrayOpen, setToolTrayOpen\] = useState\(false\);/);
+  assert.match(studio, /className=\{`tool-panel\$\{toolTrayOpen \? " tray-open" : ""\}`\}/);
+  assert.match(studio, /className="tool-tray-toggle"[\s\S]{0,200}aria-expanded=\{toolTrayOpen\}[\s\S]{0,300}onClick=\{\(\) => setToolTrayOpen\(\(value\) => !value\)\}/);
+  assert.match(studio, /\{toolTrayOpen && <div className="tool-tray-backdrop" onClick=\{\(\) => setToolTrayOpen\(false\)\}/);
   assert.ok(css.lastIndexOf(".step-panel .choice-chips { display:flex") > css.lastIndexOf(".step-panel .choice-chips,.step-panel .step-actions,.step-panel>.text-button { display:none"));
   // 숨김은 수업 패널에만 적용해야 한다. 범위를 넓히면 그리미 AI 가이드의 이전·다음 버튼까지 사라진다.
   assert.doesNotMatch(css, /,\.step-actions,[^{]*\{ display:none/);
@@ -107,9 +119,11 @@ test("mobile studio and teacher layouts finish in two rows without horizontal te
   assert.match(teacher, /className="modal-close" aria-label="학생 그림 미리보기 닫기" onClick=\{closePreview\}/);
   const ipadStart = css.indexOf("@media (min-width:721px) and (max-width:1024px) and (orientation:portrait)");
   const ipad = css.slice(ipadStart, css.indexOf("@media (max-width:720px)", ipadStart));
-  assert.match(ipad, /\.studio-body,\.studio-body\.without-step-panel,\.studio-body:has\(\.step-panel \.observation-reference\) \{[^}]*grid-template-columns:1fr;[^}]*grid-template-rows:auto minmax\(380px,1fr\) auto/);
-  assert.match(ipad, /\.tool-panel \{[^}]*grid-template-columns:repeat\(12,minmax\(0,1fr\)\)/);
-  assert.match(ipad, /\.tool-panel \.palette \{[^}]*grid-template-columns:repeat\(12,minmax\(44px,1fr\)\)/);
+  // 아이패드 세로도 같은 dock+tray 계약을 쓴다 — 도구 패널이 상시 자리를 차지하지 않는다.
+  assert.match(ipad, /\.studio-body,\.studio-body\.without-step-panel,\.studio-body:has\(\.step-panel \.observation-reference\) \{[^}]*grid-template-columns:1fr;[^}]*grid-template-rows:auto minmax\(380px,1fr\); /);
+  assert.match(ipad, /\.tool-panel \{[^}]*position:fixed; left:0; right:0; bottom:0;[^}]*display:flex;/);
+  assert.match(ipad, /\.tool-panel\.tray-open \.palette \{[^}]*grid-template-columns:repeat\(8,minmax\(44px,1fr\)\)/);
+  assert.match(ipad, /\.canvas-zone \{ grid-row:2; min-height:380px; padding:10px; padding-bottom:calc\(10px \+ var\(--tool-dock-height,74px\)\);/);
 });
 
 test("desktop teacher controls use a compact two-row layout without changing smaller breakpoints", async () => {

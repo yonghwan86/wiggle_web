@@ -324,7 +324,9 @@ code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowr
 .studio { height:100dvh; overscroll-behavior-y:none; }
 .studio-header,.artwork-name { min-width:0; }
 /* 나가기와 로고는 <a>라 button 최소 높이 규칙이 닿지 않는다. */
-.studio-header>.icon-button { min-height:44px; }
+/* 헤더 아이콘 전용 컨트롤은 모두 같은 44px 정사각 박스 + flex 중앙정렬 + line-height:1을
+   쓴다. 이모지/글자 폰트의 기본 baseline에 기대면 컨트롤마다 미묘하게 높이가 어긋난다. */
+.studio-header>.icon-button { display:inline-flex; align-items:center; justify-content:center; width:44px; min-width:44px; height:44px; min-height:44px; padding:0; font-size:20px; line-height:1; }
 .studio-header>.brand { min-width:44px; min-height:44px; justify-content:center; }
 .artwork-name b,.artwork-name small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .studio-header>.button,.studio-header>.icon-button,.step-count { flex:0 0 auto; white-space:nowrap; }
@@ -381,32 +383,51 @@ code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowr
   .studio-header { flex-wrap:nowrap; overflow:hidden; padding-top:calc(6px + env(safe-area-inset-top)); padding-right:max(8px,env(safe-area-inset-right)); padding-left:max(8px,env(safe-area-inset-left)); }
   .studio-body { overflow:hidden; }
   .studio-body.without-step-panel { display:flex; }
-  .canvas-zone { container-type:size; }
+  .canvas-zone { container-type:size; padding-bottom:calc(8px + var(--tool-dock-height,66px) + env(safe-area-inset-bottom)); }
   @supports (width:1cqh) { .canvas-zone .canvas-wrap { width:min(100cqw,100cqh); height:auto; max-width:100%; max-height:100%; } }
   @supports (width:1cqh) { .canvas-zone.has-canvas-status .canvas-wrap { width:min(100cqw,calc(100cqh - 58px)); } }
   @supports not (width:1cqh) { .canvas-zone .canvas-wrap { width:auto; height:100%; max-width:100%; max-height:100%; } }
-  .tool-panel { padding-right:max(7px,env(safe-area-inset-right)); padding-bottom:max(7px,env(safe-area-inset-bottom)); padding-left:max(7px,env(safe-area-inset-left)); display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-auto-flow:row dense; gap:8px; align-items:stretch; overflow:hidden; }
-  .tool-panel>.tool-section-label { display:none; }
-  .tool-panel .tool-group { grid-column:1/-1; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
-  .tool-panel .tool-group button { min-width:0; min-height:48px; justify-content:center; font-size:12px; line-height:1.2; padding:6px; }
-  .tool-panel .tool-group button[aria-pressed=true]:after { right:6px; top:6px; transform:none; font-size:11px; }
-  .tool-panel .tool-group .tool-icon { width:30px; min-width:30px; font-size:25px; }
-  .tool-panel .brush-group { grid-template-columns:repeat(4,minmax(0,1fr)); }
-  .tool-panel .make-group { grid-column:1; grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:0; }
-  .tool-panel .edit-group { grid-column:2; grid-template-columns:1fr 1fr; margin-top:0; }
-  /* shape-options가 make/edit 사이에 조건부로 끼어들면 sparse 배치로 빈 셀 구멍이 생긴다. */
-  .tool-panel .shape-options { grid-column:1/-1; margin-top:0; }
-  .tool-panel .text-options { grid-column:1/-1; margin-top:0; }
-  .tool-panel .shape-kind-row { grid-template-columns:repeat(5,minmax(44px,1fr)); }
-  .tool-panel .palette-shade { grid-column:1/-1; margin:0; }
-  .tool-panel .pen-mode-note { grid-column:1/-1; margin:0; text-align:center; }
-  .tool-panel .width-row { grid-column:1/-1; display:grid; grid-template-columns:repeat(5,minmax(44px,1fr)); gap:6px; margin:0; }
-  .tool-panel .width-row small { display:none; }
-  .tool-panel .palette { grid-column:1/-1; display:grid; grid-template-columns:repeat(6,minmax(44px,1fr)); gap:6px; }
-  .tool-panel .palette button { justify-self:center; }
-  .tool-panel .history-row { grid-column:1/-1; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:0; }
-  .tool-panel .history-row button { min-width:0; min-height:44px; padding:4px; font-size:12px; line-height:1.2; white-space:normal; }
-  .tool-panel .history-row button:first-child:after,.tool-panel .history-row button:last-child:after { content:none; }
+  /* 캔버스가 지배적으로 보이도록, 좁은 세로 화면에서는 도구 패널을 화면 아래 떠 있는
+     compact dock으로 접어 둔다. 기본 도구 선택(브러시·채우기·도형·글씨·지우개·대칭)만
+     한 줄로 늘 보이고, 굵기·색·펼친 팔레트·입력 방법·되돌리기 같은 부가 컨트롤은
+     ✕/🎨 토글로 여는 바텀시트(tray)에서만 나타나 캔버스 높이를 영구히 뺏지 않는다. */
+  .tool-panel {
+    position:fixed; left:0; right:0; bottom:0; z-index:9; margin:0;
+    background:#fff; border:0; border-top:1px solid var(--border); border-radius:18px 18px 0 0;
+    box-shadow:0 -10px 26px rgba(26,59,92,.16);
+    display:flex; flex-wrap:nowrap; align-items:center; gap:6px;
+    padding:7px max(10px,env(safe-area-inset-right)) max(7px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));
+    max-height:var(--tool-dock-height,66px); overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
+  }
+  .tool-panel .tool-tray-toggle { flex:0 0 auto; width:48px; min-width:48px; height:48px; min-height:48px; border:2px solid var(--primary); border-radius:14px; background:#e6f9ff; display:grid; place-items:center; font-size:20px; }
+  /* :not(.tray-open)로 명시해 이 아래 다른 720px 블록들의 낮은 특정성 .tool-panel .palette 류
+     규칙(굳이 순서를 안 따져도 되게)보다 항상 우선하도록 특정성을 올려 둔다. */
+  .tool-panel:not(.tray-open)>.tool-section-label,.tool-panel:not(.tray-open) .shape-options,.tool-panel:not(.tray-open) .text-options,.tool-panel:not(.tray-open) .width-row,.tool-panel:not(.tray-open) .selected-color,.tool-panel:not(.tray-open) .more-colors-button,.tool-panel:not(.tray-open) .palette,.tool-panel:not(.tray-open) .input-mode-control,.tool-panel:not(.tray-open) .history-row,.tool-panel:not(.tray-open) .pen-mode-note,.tool-panel:not(.tray-open) .palette-shade { display:none; }
+  .tool-panel .tool-group { flex:0 0 auto; display:flex; gap:6px; }
+  .tool-panel .tool-group button { min-width:48px; min-height:48px; padding:4px 6px; font-size:0; }
+  .tool-panel .tool-group button[aria-pressed=true]:after { right:4px; top:4px; transform:none; font-size:10px; }
+  .tool-panel .tool-group .tool-icon,.tool-panel .tool-group .text-tool-icon { width:auto; min-width:0; font-size:24px; }
+  /* 지우개 아이콘은 내용 없는 장식용 grid라 width:auto면 테두리 몇 px로 붕괴한다. */
+  .tool-panel .tool-group .eraser-icon { width:22px; min-width:22px; }
+
+  .tool-tray-backdrop { display:block; position:fixed; inset:0; z-index:8; background:rgba(14,40,61,.35); border:0; padding:0; }
+  .tool-panel.tray-open {
+    flex-direction:column; align-items:stretch;
+    max-height:min(72dvh,calc(100dvh - 110px)); overflow-y:auto; overflow-x:hidden;
+    padding-bottom:max(14px,env(safe-area-inset-bottom));
+  }
+  .tool-panel.tray-open .tool-tray-toggle { align-self:flex-end; position:sticky; top:0; }
+  .tool-panel.tray-open>.tool-section-label,.tool-panel.tray-open .shape-options,.tool-panel.tray-open .text-options,.tool-panel.tray-open .width-row,.tool-panel.tray-open .selected-color,.tool-panel.tray-open .more-colors-button,.tool-panel.tray-open .palette,.tool-panel.tray-open .input-mode-control,.tool-panel.tray-open .history-row,.tool-panel.tray-open .pen-mode-note,.tool-panel.tray-open .palette-shade { display:block; width:100%; margin-top:4px; }
+  .tool-panel.tray-open .shape-kind-row { display:grid; grid-template-columns:repeat(5,minmax(44px,1fr)); gap:6px; }
+  .tool-panel.tray-open .width-row { display:grid; grid-template-columns:repeat(5,minmax(44px,1fr)); gap:6px; }
+  .tool-panel.tray-open .width-row small { display:none; }
+  /* max-height:none로 아래쪽 레거시 .tool-panel .palette 규칙의 148px 캡 + 중첩 스크롤을 무효화한다
+     — 트레이 자체가 이미 스크롤되므로 팔레트 안에 또 스크롤이 생기면 안 된다. */
+  .tool-panel.tray-open .palette { display:grid; grid-template-columns:repeat(6,minmax(44px,1fr)); gap:6px; max-height:none; overflow:visible; }
+  .tool-panel.tray-open .palette button { justify-self:center; }
+  .tool-panel.tray-open .history-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+  .tool-panel.tray-open .history-row button { min-width:0; min-height:44px; padding:4px; font-size:12px; line-height:1.2; white-space:normal; }
+  .tool-panel.tray-open .history-row button:first-child:after,.tool-panel.tray-open .history-row button:last-child:after { content:none; }
   .student-footer { bottom:max(8px,env(safe-area-inset-bottom)); width:calc(100% - max(9px,env(safe-area-inset-left)) - max(9px,env(safe-area-inset-right))); }
   .width-row button { width:44px; min-width:44px; height:44px; }
   .palette button { width:44px; min-width:44px; height:44px; }
@@ -578,7 +599,6 @@ code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowr
   .studio-header>.button.ghost.compact:before { content:"⏱"; }
   .studio-header>.grimi-button:before { content:"✨"; }
   .studio-header>.button.primary.compact:before { content:"✓"; }
-  .studio-header>.icon-button { width:44px; min-width:44px; height:44px; min-height:44px; padding:0; display:grid; place-items:center; }
   .studio-header .step-count { display:none; }
 }
 @media (max-width:460px) {
@@ -679,8 +699,10 @@ code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowr
   .studio-header { padding-top:calc(7px + env(safe-area-inset-top)); padding-right:max(10px,env(safe-area-inset-right)); padding-left:max(10px,env(safe-area-inset-left)); gap:7px; }
   .studio-header .brand { display:none; }
   .studio-header .button.compact { min-height:48px; padding:8px 12px; font-size:14px; }
+  /* 더 넉넉한 화면에서는 아이콘 컨트롤도 같이 48px로 키워 텍스트 버튼과 높이를 맞춘다. */
+  .studio-header>.icon-button,.studio-header>.student-message-button.compact { width:48px; min-width:48px; height:48px; min-height:48px; }
   .studio-header .step-count { font-size:16px; }
-  .studio-body,.studio-body.without-step-panel,.studio-body:has(.step-panel .observation-reference) { display:grid; grid-template-columns:1fr; grid-template-rows:auto minmax(380px,1fr) auto; min-height:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; }
+  .studio-body,.studio-body.without-step-panel,.studio-body:has(.step-panel .observation-reference) { display:grid; grid-template-columns:1fr; grid-template-rows:auto minmax(380px,1fr); min-height:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; }
   .step-panel { grid-row:1; display:grid; grid-template-columns:96px minmax(0,1fr); grid-template-rows:auto auto auto auto; gap:10px 14px; align-items:center; padding:12px 16px; border:0; border-bottom:1px solid var(--border); overflow:visible; }
   .step-panel .reference-tile { grid-column:1; grid-row:1/span 2; min-height:88px; margin:0; }
   .step-panel .reference-tile :is(.lesson-illustration,.lesson-finished-illustration) { width:88px; height:88px; }
@@ -700,38 +722,46 @@ code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowr
   .step-panel .step-actions { grid-column:1/-1; grid-row:4; margin:0; gap:10px; }
   .step-panel .step-actions button { min-height:54px; font-size:16px; }
   .step-panel .lesson-step-prompt { grid-column:1/-1; grid-row:5; margin-top:0; }
-  .canvas-zone { grid-row:2; min-height:380px; padding:10px; container-type:size; }
+  .canvas-zone { grid-row:2; min-height:380px; padding:10px; padding-bottom:calc(10px + var(--tool-dock-height,74px)); container-type:size; }
   @supports (width:1cqh) { .canvas-zone .canvas-wrap { width:min(100cqw,100cqh); height:auto; max-width:100%; max-height:100%; } }
   @supports (width:1cqh) { .canvas-zone.has-canvas-status .canvas-wrap { width:min(100cqw,calc(100cqh - 58px)); } }
-  .tool-panel { grid-row:3; max-height:276px; padding:9px max(10px,env(safe-area-inset-right)) calc(9px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)); display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); grid-auto-flow:row dense; gap:7px; overflow-y:auto; border:0; border-top:1px solid var(--border); }
-  .tool-panel>.tool-section-label { display:none; }
-  .tool-panel .tool-group { display:grid; gap:5px; }
+  /* 아이패드 세로에서도 캔버스를 지배적으로 두기 위해 도구 패널을 화면 아래 뜬 compact
+     dock으로 접는다. 기본 도구 선택만 늘 보이고, 부가 컨트롤은 트레이가 열렸을 때만
+     나타나 캔버스 높이를 영구히 차지하지 않는다. (폰 세로 규칙과 같은 tray-open 계약.) */
+  .tool-panel {
+    position:fixed; left:0; right:0; bottom:0; z-index:9; margin:0;
+    background:#fff; border:0; border-top:1px solid var(--border); border-radius:20px 20px 0 0;
+    box-shadow:0 -10px 26px rgba(26,59,92,.16);
+    display:flex; flex-wrap:nowrap; align-items:center; gap:8px;
+    padding:9px max(12px,env(safe-area-inset-right)) max(9px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
+    max-height:var(--tool-dock-height,74px); overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
+  }
+  .tool-panel .tool-tray-toggle { flex:0 0 auto; width:54px; min-width:54px; height:54px; min-height:54px; border:2px solid var(--primary); border-radius:15px; background:#e6f9ff; display:grid; place-items:center; font-size:22px; }
+  .tool-panel:not(.tray-open)>.tool-section-label,.tool-panel:not(.tray-open) .shape-options,.tool-panel:not(.tray-open) .text-options,.tool-panel:not(.tray-open) .width-row,.tool-panel:not(.tray-open) .selected-color,.tool-panel:not(.tray-open) .more-colors-button,.tool-panel:not(.tray-open) .palette,.tool-panel:not(.tray-open) .input-mode-control,.tool-panel:not(.tray-open) .history-row,.tool-panel:not(.tray-open) .pen-mode-note,.tool-panel:not(.tray-open) .palette-shade { display:none; }
+  .tool-panel .tool-group { flex:0 0 auto; display:flex; gap:8px; }
   .tool-panel .tool-group button { min-width:0; min-height:54px; justify-content:center; padding:6px; font-size:12px; }
-  .tool-panel .tool-group .tool-icon { font-size:30px; }
+  .tool-panel .tool-group .tool-icon { width:auto; min-width:0; font-size:28px; }
+  .tool-panel .tool-group .eraser-icon { width:22px; min-width:22px; }
   .tool-panel .tool-group button[aria-pressed=true]:after { right:5px; top:5px; transform:none; font-size:10px; }
-  .tool-panel .brush-group { grid-column:1/7; grid-template-columns:repeat(4,minmax(0,1fr)); }
-  .tool-panel .make-group { grid-column:7/10; grid-template-columns:repeat(3,minmax(0,1fr)); margin:0; }
-  .tool-panel .edit-group { grid-column:10/13; grid-template-columns:repeat(2,minmax(0,1fr)); margin:0; }
-  .tool-panel .shape-options { grid-column:1/13; margin:0; }
-  .tool-panel .text-options { grid-column:1/13; margin:0; }
-  .tool-panel .shape-kind-row { grid-template-columns:repeat(5,minmax(44px,1fr)); }
-  .tool-panel .width-row { grid-column:1/7; display:grid; grid-template-columns:repeat(5,minmax(44px,1fr)); gap:5px; margin:0; }
-  .tool-panel .width-row button { width:auto; min-width:44px; height:46px; }
-  .tool-panel .width-row small { display:none; }
-  .tool-panel .palette-shade { grid-column:7/10; margin:0; }
-  .tool-panel .history-row { grid-column:10/13; display:grid; grid-template-columns:1fr 1fr; gap:5px; margin:0; }
-  .tool-panel .history-row button { min-width:0; min-height:44px; padding:3px; font-size:11px; }
-  .tool-panel .palette { grid-column:1/13; display:grid; grid-template-columns:repeat(12,minmax(44px,1fr)); gap:5px; }
-  .tool-panel .palette button { width:44px; min-width:44px; height:44px; justify-self:center; }
-  .tool-panel .pen-mode-note { grid-column:1/13; margin:0; }
-  .tool-panel .selected-color { grid-column:1/4; margin:0; min-width:0; }
-  .tool-panel .selected-color span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .tool-panel .more-colors-button { grid-column:4/7; width:auto; margin:0; padding:6px; }
-  .tool-panel .input-mode-control { grid-column:7/10; grid-template-columns:1fr 1fr; margin:0; }
-  .tool-panel .input-mode-control button { min-width:0; min-height:54px; padding:4px; grid-template-columns:1fr; justify-items:center; text-align:center; }
-  .tool-panel .input-mode-control button>span { grid-row:auto; font-size:22px; }
-  .tool-panel .input-mode-control button>b { font-size:10px; white-space:nowrap; }
-  .tool-panel .input-mode-control button>small { display:none; }
+
+  .tool-tray-backdrop { display:block; position:fixed; inset:0; z-index:8; background:rgba(14,40,61,.35); border:0; padding:0; }
+  .tool-panel.tray-open {
+    flex-direction:column; align-items:stretch;
+    max-height:min(70dvh,calc(100dvh - 130px)); overflow-y:auto; overflow-x:hidden;
+    padding-bottom:max(16px,env(safe-area-inset-bottom));
+  }
+  .tool-panel.tray-open .tool-tray-toggle { align-self:flex-end; position:sticky; top:0; }
+  .tool-panel.tray-open>.tool-section-label,.tool-panel.tray-open .shape-options,.tool-panel.tray-open .text-options,.tool-panel.tray-open .width-row,.tool-panel.tray-open .selected-color,.tool-panel.tray-open .more-colors-button,.tool-panel.tray-open .palette,.tool-panel.tray-open .input-mode-control,.tool-panel.tray-open .history-row,.tool-panel.tray-open .pen-mode-note,.tool-panel.tray-open .palette-shade { display:block; width:100%; margin-top:6px; }
+  .tool-panel.tray-open .shape-kind-row { display:grid; grid-template-columns:repeat(6,minmax(44px,1fr)); gap:6px; }
+  .tool-panel.tray-open .width-row { display:grid; grid-template-columns:repeat(5,minmax(44px,1fr)); gap:6px; }
+  .tool-panel.tray-open .width-row button { width:auto; min-width:44px; height:52px; }
+  .tool-panel.tray-open .palette { display:grid; grid-template-columns:repeat(8,minmax(44px,1fr)); gap:6px; }
+  .tool-panel.tray-open .palette button { width:44px; min-width:44px; height:44px; justify-self:center; }
+  .tool-panel.tray-open .selected-color { min-width:0; }
+  .tool-panel.tray-open .selected-color span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tool-panel.tray-open .input-mode-control { display:grid; grid-template-columns:1fr 1fr; }
+  .tool-panel.tray-open .history-row { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .tool-panel.tray-open .history-row button { min-width:0; min-height:48px; padding:4px; font-size:12px; }
   .studio-body.grimi-open { display:flex; flex-direction:column; }
 }
 
@@ -821,7 +851,8 @@ code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowr
 .completion-pending,.completion-error { margin:12px 0 0; padding:11px 13px; border-radius:12px; font-weight:800; line-height:1.45; text-align:center; }
 .completion-pending { color:#075e7d; background:#e5f8ff; }.completion-error { color:#a33434; background:#fff0f0; }
 .reflection-modal button:disabled { cursor:not-allowed; }
-.mobile-tool-peek { display:none; }
+/* 도구 트레이 토글·배경은 좁은 세로 화면(도구 패널이 바텀 dock이 되는 구간)에서만 나타난다. */
+.tool-tray-toggle,.tool-tray-backdrop { display:none; }
 
 @media (max-width:720px) {
   .guide-choice-overlay { padding:10px; }.guide-choice-card { padding:16px; border-radius:19px; }
@@ -856,7 +887,6 @@ code,pre,.personal-card code { max-width:100%; overflow-x:auto; white-space:nowr
 }
 @media (max-width:460px) and (max-height:650px) {
   .canvas-zone { position:relative; }
-  .mobile-tool-peek { position:fixed; z-index:30; right:10px; bottom:calc(env(safe-area-inset-bottom, 0px) + 8px); width:max-content; max-width:calc(100vw - 20px); min-height:48px; margin:0; padding:8px 14px; border:2px solid #50b9d9; border-radius:999px; background:#fff9cc; color:var(--ink); box-shadow:0 8px 22px rgba(26,59,92,.2); display:flex; align-items:center; gap:6px; font-weight:900; }
 }
 .archive-card time { display:block; margin-top:6px; color:var(--secondary); font-size:12px; font-weight:800; }
 .archive-more-button { display:flex; min-width:220px; margin:22px auto 0; }

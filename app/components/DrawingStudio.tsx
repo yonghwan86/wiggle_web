@@ -504,6 +504,9 @@ export function DrawingStudio() {
   const [drawWidth, setDrawWidth] = useState<StrokeWidth>(16);
   const [eraserWidth, setEraserWidth] = useState<StrokeWidth>(48);
   const [colorsExpanded, setColorsExpanded] = useState(false);
+  // 좁은 세로 화면에서만 쓰는 도구 트레이 펼침 상태. 넓은 화면에서는 CSS가 이 상태를 무시하고
+  // 도구 패널을 항상 그대로 보여준다.
+  const [toolTrayOpen, setToolTrayOpen] = useState(false);
   const [shapeKind, setShapeKind] = useState<ShapeKind>("line");
   const [shapeFilled, setShapeFilled] = useState(false);
   const [moreShapes, setMoreShapes] = useState(false);
@@ -2742,11 +2745,19 @@ export function DrawingStudio() {
               </button>
             )}
           </div>
-          <button type="button" className="mobile-tool-peek" onClick={() => toolPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-            🎨 색·지우개·되돌리기 <span aria-hidden="true">↓</span>
-          </button>
         </section>
-        <aside className="tool-panel" ref={toolPanelRef} aria-label="그리기 도구 모음">
+        {toolTrayOpen && <div className="tool-tray-backdrop" onClick={() => setToolTrayOpen(false)} aria-hidden="true" />}
+        <aside id="tool-tray-sheet" className={`tool-panel${toolTrayOpen ? " tray-open" : ""}`} ref={toolPanelRef} aria-label="그리기 도구 모음">
+          <button
+            type="button"
+            className="tool-tray-toggle"
+            aria-expanded={toolTrayOpen}
+            aria-controls="tool-tray-sheet"
+            onClick={() => setToolTrayOpen((value) => !value)}
+          >
+            <span aria-hidden="true">{toolTrayOpen ? "✕" : "🎨"}</span>
+            <span className="sr-only">{toolTrayOpen ? "도구 더 보기 닫기" : "색·굵기·되돌리기 더 보기"}</span>
+          </button>
           <p className="tool-section-label tools-label">도구</p>
           <div className="tool-group brush-group" role="group" aria-label="브러시">
             <button type="button" aria-label="연필" title="연필" aria-pressed={studioTool === "pencil"} onClick={() => chooseStudioTool("pencil")}>

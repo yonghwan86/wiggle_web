@@ -1,4 +1,5 @@
 import { drawingTextGraphemes, visibleDrawOperations, type DrawOp } from "@/lib/drawing-model";
+import { computeFloodFillMask, paintFloodFillMask, sampleRgb } from "@/lib/flood-fill";
 
 const STICKER_EMOJI: Record<NonNullable<DrawOp["sticker"]>, string> = {
   star: "⭐", heart: "❤️", leaf: "🍃", cloud: "☁️", sparkle: "✨",
@@ -13,28 +14,10 @@ function floodFill(context: CanvasRenderingContext2D, op: DrawOp, size: number) 
   const image = context.getImageData(0, 0, size, size); const pixels = image.data;
   const sx = Math.max(0, Math.min(size - 1, Math.round(seed.x * (size - 1))));
   const sy = Math.max(0, Math.min(size - 1, Math.round(seed.y * (size - 1))));
-  const start = sy * size + sx; const startOffset = start * 4;
-  const target = [pixels[startOffset], pixels[startOffset + 1], pixels[startOffset + 2]] as const;
+  const target = sampleRgb(pixels, size, sx, sy);
   const fill = rgb(op.color); if (fill.every((channel, index) => channel === target[index])) return;
-  const mask = new Uint8Array(size * size); const stack = [start]; mask[start] = 1;
-  while (stack.length) {
-    const point = stack.pop()!; const x = point % size; const y = Math.floor(point / size);
-    const neighbors = [x > 0 ? point - 1 : -1, x < size - 1 ? point + 1 : -1, y > 0 ? point - size : -1, y < size - 1 ? point + size : -1];
-    for (const neighbor of neighbors) {
-      if (neighbor < 0 || mask[neighbor]) continue; const offset = neighbor * 4;
-      const distance = Math.abs(pixels[offset] - target[0]) + Math.abs(pixels[offset + 1] - target[1]) + Math.abs(pixels[offset + 2] - target[2]);
-      if (distance <= 90) { mask[neighbor] = 1; stack.push(neighbor); }
-    }
-  }
-  const grown = new Uint8Array(mask);
-  for (let point = 0; point < mask.length; point += 1) {
-    if (mask[point]) continue; const x = point % size; const y = Math.floor(point / size);
-    if ((x > 0 && mask[point - 1]) || (x < size - 1 && mask[point + 1]) || (y > 0 && mask[point - size]) || (y < size - 1 && mask[point + size])) grown[point] = 1;
-  }
-  for (let point = 0; point < grown.length; point += 1) {
-    if (!grown[point]) continue; const offset = point * 4;
-    pixels[offset] = fill[0]; pixels[offset + 1] = fill[1]; pixels[offset + 2] = fill[2]; pixels[offset + 3] = 255;
-  }
+  const mask = computeFloodFillMask(pixels, size, sx, sy, target);
+  paintFloodFillMask(pixels, mask, fill);
   context.putImageData(image, 0, 0);
 }
 

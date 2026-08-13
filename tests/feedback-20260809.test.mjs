@@ -225,9 +225,10 @@ test("the UI source keeps completion, archive, palette, help-choice and touch pr
   assert.doesNotMatch(studio, /lastTwoFingerTapRef|두 손가락 짧은 탭 두 번/);
   assert.match(studio, /lastSingleFingerTapRef[\s\S]*resetViewToFit/);
   assert.match(globalCss, /max-height:480px[\s\S]*orientation:landscape[\s\S]*guide-choice-card/);
-  assert.match(globalCss, /\.tool-panel \.selected-color \{ grid-column:1\/4/);
-  assert.match(globalCss, /\.mobile-tool-peek/);
-  assert.match(globalCss, /\.mobile-tool-peek\s*\{[^}]*position:fixed;/s);
+  // 2026-08-13: 도구 패널이 dock+tray로 바뀌면서 12열 grid 배치와 "패널로 스크롤" 임시방편은
+  // 사라졌다. 대신 트레이가 열렸을 때 부가 컨트롤에 폭 100%를 준다.
+  assert.match(globalCss, /\.tool-panel\.tray-open \.selected-color \{ min-width:0; \}/);
+  assert.doesNotMatch(globalCss, /\.mobile-tool-peek/);
   assert.match(globalCss, /\.teacher-history-drawer\s*\{[^}]*position:static/);
   assert.match(teacher, /<TeacherHistoryDrawer[\s\S]*<\/section><\/div>}<\/main>/);
 });
