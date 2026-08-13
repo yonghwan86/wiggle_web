@@ -126,6 +126,44 @@ test("regression: a uniform pale pastel outline (#F4C4D4) is not consumed by the
   for (let x = 7; x <= 9; x += 1) assert.equal(columnNoneMasked(mask, size, x, 0, size - 1), true, `x=${x}는 파스텔 선 반대편이라 채우면 안 된다`);
 });
 
+test("regression: a single-pixel pale barrier does not bridge into the opposite strong region", () => {
+  // 3px 장벽 테스트는 "약한→약한" 단조 조건만으로도 막혔지만, 장벽이 딱 1px면 약한
+  // 다리를 한 칸만 건너도 바로 반대편의 (색만 보면 완전히 "강한") 흰 영역에 닿는다.
+  // 이전 버전은 strongTolerance 안에 드는 이웃을 부모가 약해도 무조건 ring 0으로
+  // 승격시켜, 이 한 칸짜리 다리로 반대편 전체가 뚫렸다. 지금은 약한 부모에서 발견한
+  // 이웃은 색이 강해도 다시 "강한"으로 승격되지 않고 같은 단조 조건을 통과해야 한다.
+  const size = 8;
+  const pink = [244, 196, 212]; // 흰색과의 색 차 113 — 약한 문턱값(200) 안, 강한 문턱값(90) 밖.
+  const pixels = makeImage(size, (x) => {
+    if (x <= 2) return [255, 255, 255];
+    if (x === 3) return pink;
+    return [255, 255, 255];
+  });
+  const target = sampleRgb(pixels, size, 0, 0);
+  const mask = computeFloodFillMask(pixels, size, 0, 0, target);
+  assert.equal(columnAllMasked(mask, size, 0, 0, size - 1), true);
+  assert.equal(columnAllMasked(mask, size, 2, 0, size - 1), true);
+  // 장벽 그 자체(x=3)는 약한 조건으로 한 칸 옅게 물들 수 있다 — 허용된 가장자리 소프트닝.
+  assert.equal(columnAllMasked(mask, size, 3, 0, size - 1), true, "1px 장벽 자체는 옅게 물들 수 있다");
+  // 핵심 요구사항: 장벽 바로 반대편(색만 보면 완전한 강한 흰색)이 뚫려서는 절대 안 된다.
+  for (let x = 4; x <= 7; x += 1) assert.equal(columnNoneMasked(mask, size, x, 0, size - 1), true, `x=${x}는 1px 장벽 반대편이라 채우면 안 된다`);
+});
+
+test("regression: a genuine increasing weak gradient still cannot bridge back into a new strong region", () => {
+  // 진짜 그라데이션처럼 단조 증가하는 약한 사슬(100→140→180)이라도, 그 끝에서 다시
+  // 대상 색(거리 0)으로 뚝 떨어지며 강한 영역이 시작되면 그 다리는 여전히 막혀야 한다 —
+  // 단조 조건을 통과한 사슬이라고 해서 반대편 강한 영역으로 "리셋"되면 안 된다.
+  const size = 12;
+  // 회색조 v에서 흰색까지의 거리는 3*(255-v). x=3,4,5는 99→150→198로 단조 증가(모두
+  // strongTolerance(90) 밖, weakTolerance(200) 안)하다가 x=6에서 다시 흰색(거리 0)으로 뚝 떨어진다.
+  const gray = [255, 255, 255, 222, 205, 189, 255, 255, 255, 255, 255, 255];
+  const pixels = makeImage(size, (x) => { const v = gray[x]; return [v, v, v]; });
+  const target = sampleRgb(pixels, size, 0, 0);
+  const mask = computeFloodFillMask(pixels, size, 0, 0, target);
+  for (let x = 0; x <= 5; x += 1) assert.equal(columnAllMasked(mask, size, x, 0, size - 1), true, `x=${x}는 단조 증가 사슬까지 포함해 채워져야 한다`);
+  for (let x = 6; x <= 11; x += 1) assert.equal(columnNoneMasked(mask, size, x, 0, size - 1), true, `x=${x}는 사슬 반대편의 새로운 강한 영역이라 채우면 안 된다`);
+});
+
 test("works the same for a saturated non-white target (sky blue) bounded by a dark outline", () => {
   const size = 10;
   const skyBlue = [135, 206, 235];

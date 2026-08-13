@@ -37,13 +37,16 @@ function colorDistance(pixels: Uint8ClampedArray | Uint8Array, offset: number, t
 /**
  * 대상 색과 강하게 일치하는 영역을 먼저 채우고(히스테리시스의 "강한" 쪽), 그 경계에서
  * 몇 픽셀 안쪽까지는 더 느슨한 문턱값으로 옅은 가장자리(안티에일리어싱, 수채 번짐)도
- * 끌어들인다("약한" 쪽). 다만 약한 픽셀은 그것을 발견한 픽셀보다 대상 색에서 "더 멀어질
- * 때"만 인정한다 — 실제 알파 블렌딩 가장자리는 강한 영역에서 멀어질수록 대상 색과의
- * 거리가 점점 커지는 진짜 그라데이션이지만, 아이가 그은 균일한 파스텔 윤곽선은 몇 픽셀이
- * 이어져도 거리 값이 그대로다. 이 "단조 증가" 조건 덕분에 균일한 연한 색 선(예: 연분홍)은
- * 첫 한 칸만 살짝 물들고 그 다음 칸부터 막혀, 약한 다리를 타고 반대편의 새 강한 영역까지
- * 이어지지 않는다. 진한 윤곽선이나 의도적으로 분리된 영역(눈, 말풍선)은 약한 문턱값보다
- * 색 차가 훨씬 커서 애초에 약한 조건도 통과하지 못한다.
+ * 끌어들인다("약한" 쪽). "강한" 자격(ring 0, 제한 없는 자유 확산)은 오직 강한 부모를
+ * 통해서만 이어진다 — 약한 다리로 발견한 이웃은 그 색이 strongTolerance 안에 들어와도
+ * 다시 "강한"으로 승격시키지 않고, 반드시 같은 "더 멀어짐" 조건을 통과해야만 인정한다.
+ * 그러지 않으면 1px짜리 파스텔 윤곽선 하나만으로도 약한 다리를 타고 반대편의 완전히
+ * 분리된 흰 영역 전체가 뚫려 버린다. 실제 알파 블렌딩 가장자리는 강한 영역에서
+ * 멀어질수록 대상 색과의 거리가 점점 커지는 진짜 그라데이션이라 이 조건을 자연히
+ * 통과하지만, 아이가 그은 균일한 파스텔 윤곽선은 몇 픽셀이 이어져도 거리 값이 그대로이고
+ * 반대편에서 다시 대상 색으로(거리가 줄어듦) 돌아오므로, 첫 한 칸만 살짝 물들고 그
+ * 다음부터는 항상 막힌다. 진한 윤곽선이나 의도적으로 분리된 영역(눈, 말풍선)은 약한
+ * 문턱값보다 색 차가 훨씬 커서 애초에 약한 조건도 통과하지 못한다.
  */
 export function computeFloodFillMask(
   pixels: Uint8ClampedArray | Uint8Array,
@@ -80,12 +83,15 @@ export function computeFloodFillMask(
       const neighbor = ny * size + nx;
       if (mask[neighbor]) continue;
       const distance = colorDistance(pixels, neighbor * 4, target);
-      if (distance <= strongTolerance) {
+      if (pointRing === 0 && distance <= strongTolerance) {
+        // 강한 부모에서 강한 이웃으로: 제한 없이 자유롭게 이어진다(원래 알고리즘과 동일).
         mask[neighbor] = 1;
         ring[neighbor] = 0;
         distanceAt[neighbor] = distance;
         queue.push(neighbor);
       } else if (distance <= weakTolerance && pointRing < maxWeakRing && distance > pointDistance) {
+        // 약한 부모에서 발견된 이웃은, 설령 색이 strongTolerance 안에 들어와도 ring 0으로
+        // 승격하지 않는다 — 항상 같은 "부모보다 더 멀어짐" 조건을 통과해야만 인정한다.
         mask[neighbor] = 1;
         ring[neighbor] = pointRing + 1;
         distanceAt[neighbor] = distance;
