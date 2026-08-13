@@ -50,7 +50,13 @@ test("guide controls and notices remain touch friendly on mobile", () => {
   assert.match(css, /\.guide-notice \{[^}]*pointer-events:none/);
   assert.match(css, /@media \(max-width:720px\)[\s\S]*\.guide-actions \{[^}]*grid-template-columns:1fr 1fr/);
   assert.match(css, /\.guide-actions button \{[^}]*min-height:44px/);
-  assert.match(css, /@media \(max-width:460px\) and \(orientation:portrait\)[\s\S]*min-height:min\(calc\(100vw - 16px\),320px\)/);
+  // 2026-08-13: 320px 고정 도화지 캡을 지워 390x844 같은 화면에서 남는 세로 공간을
+  // 그대로 도화지에 준다. 대신 이 구간에서는 레슨 패널을 더 압축해 여전히 도화지가
+  // dock에 가리지 않고 초기 화면 안에 온전히 보이게 한다.
+  const narrowPortraitIndex = css.indexOf("@media (max-width:460px) and (orientation:portrait)");
+  const compactStepPanelIndex = css.indexOf(".step-panel { padding:6px 8px; }", narrowPortraitIndex);
+  assert.ok(narrowPortraitIndex >= 0 && compactStepPanelIndex > narrowPortraitIndex, "압축된 레슨 패널 규칙이 좁은 세로 화면 구간 안에 있어야 한다");
+  assert.doesNotMatch(css, /min-height:min\(calc\(100vw - 16px\),320px\)/);
   assert.match(css, /@media \(max-width:900px\) and \(max-height:500px\) and \(orientation:landscape\)[\s\S]*grid-template-columns:180px minmax\(0,1fr\) 200px/);
   assert.ok(css.indexOf("@media (max-width:900px) and (max-height:500px) and (orientation:landscape)") > css.indexOf(".tool-panel { padding-right:max(7px,env(safe-area-inset-right))"), "landscape rules must win the mobile cascade");
   assert.match(css, /\.step-panel \{ display:block; order:initial; grid-column:1;/);
