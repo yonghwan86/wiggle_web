@@ -147,6 +147,11 @@ async function studentPost(request: Request) {
       return noStoreJson({ error: "같은 별명과 동물의 프로필이 이미 있어요.", code: "PROFILE_EXISTS" }, { status: 409 });
     }
     if (allowDuplicate && duplicateCandidates.results.length) {
+      // 이 분기는 기존 프로필의 그림 비밀번호와 대조한다. 재입장(recover)과 같은 대상
+      // 버킷을 소비하지 않으면, 복구 경로의 8회/15분 상한을 두고도 여기로 60회/10분씩
+      // 비밀번호 일치 여부를 확인(409 오라클)한 뒤 마지막 한 번만 recover를 부르면 된다.
+      // 신규 생성 성공은 본인 증명이 아니므로 성공해도 카운터를 비우지 않는다.
+      if (!(await targetAllowed(`recover:${classroom.id}:${nickname.toLocaleLowerCase("ko-KR")}:${animal}`))) return jsonError("여러 번 틀렸어요. 선생님께 도움을 요청해 주세요.", 429);
       const exactMatches = await Promise.all(duplicateCandidates.results.map((candidate) => verifySecret(picture, candidate.pictureSalt, candidate.pictureHash)));
       if (exactMatches.some(Boolean)) {
         return noStoreJson({ error: "같은 동물, 별명, 그림 비밀번호로 만든 프로필이 이미 있어요.", code: "PROFILE_CREDENTIALS_EXIST" }, { status: 409 });
