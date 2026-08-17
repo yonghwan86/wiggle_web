@@ -15,11 +15,13 @@ export default function Home() {
         </a>
       </nav>
       <section className="landing-hero">
-        <p className="eyebrow landing-eyebrow">AI 그림 학습 · 교실 창작 코칭</p>
-        <h1 className="landing-headline">오늘은 어떤 생각을 그려볼까요?</h1>
-        <p className="landing-subtitle">함께 그리고, 서로의 생각을 발견하는 교실.</p>
         <div className="landing-illustration-wrap">
-          <img className="landing-illustration" src="/brand/landing-classroom.png" alt="교실에서 함께 그림을 그리는 아이들" />
+          <img className="landing-illustration" src="/brand/landing-scene-v2.png" alt="교실에서 함께 그림을 그리는 아이들" />
+          <div className="landing-copy">
+            <p className="eyebrow landing-eyebrow">AI 그림 학습 · 교실 창작 코칭</p>
+            <h1 className="landing-headline"><span>오늘은</span> <strong>어떤 생각을 그려볼까요?</strong></h1>
+            <p className="landing-subtitle">함께 그리고, 서로의 생각을 발견하는 교실.</p>
+          </div>
           <div className="landing-student-tag">
             <b>학생</b>
             <span>수업 코드로 바로 참여해요</span>
@@ -28,8 +30,8 @@ export default function Home() {
             <h2 className="landing-code-card-title">수업 코드 입력</h2>
             <LandingCodeForm />
           </div>
+          <p className="landing-trust-note">학생 이메일 · 실명 없이 안전하게</p>
         </div>
-        <p className="landing-trust-note">학생 이메일 · 실명 없이 안전하게</p>
       </section>
     </main>
   );

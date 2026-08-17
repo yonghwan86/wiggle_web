@@ -82,31 +82,45 @@ export function StudentHome() {
       <div className="student-header-actions"><StudentMessageCenter messages={data.messages} floating compact /><button className="small-button" onClick={() => void leaveClass()} disabled={leaving}>🐾 학생 바꾸기</button><button className="small-button finish-class-button" onClick={() => void leaveClass()} disabled={leaving}>🚪 수업 마치기</button></div>
     </header>
     {error && <p className="error-box" role="alert">{error}</p>}
-    <section className="student-home-hero">
-      <img className="grimi-home-character" src="/brand/grimi-mascot.png" alt="붓과 팔레트를 든 그림 친구 그리미" />
-      <div className="student-home-hero-copy">
-        <p className="eyebrow">그리미와 함께</p>
+    <section className="student-home-intro">
+      <div>
         <h1>오늘은 무엇을 그릴까?</h1>
         <p>선생님이 고른 활동부터 시작해 봐요.</p>
-        <SpeakButton text="오늘은 무엇을 그릴까? 선생님이 고른 활동부터 시작해 봐요." />
+      </div>
+      <SpeakButton text="오늘은 무엇을 그릴까? 선생님이 고른 활동부터 시작해 봐요." />
+    </section>
+
+    <section className="teacher-activity-book" aria-labelledby="today-activity-title">
+      <div className="book-page book-copy-page">
+        <span className="book-tape" aria-hidden="true" />
+        <div className="teacher-activity-copy">
+          <p className="teacher-activity-pill">⭐ 선생님이 선택한 오늘 활동</p>
+          <h2 id="today-activity-title">{data.currentActivityLabel}</h2>
+          <p>{teacherLesson?.description ?? "내 생각을 그리고, 필요할 때 그리미를 불러요."}</p>
+          <a className="button primary child-primary-action" href={teacherActivityPath}><span aria-hidden="true">▶️</span>{teacherDone ? "한 번 더 그리기" : teacherArtwork ? "이어 그리기" : "그림 시작하기"}</a>
+        </div>
+      </div>
+      <div className="book-binding" aria-hidden="true">{Array.from({ length: 6 }, (_, index) => <i key={index} />)}</div>
+      <div className="book-page book-visual-page">
+        <span className="book-tape" aria-hidden="true" />
+        <div className="teacher-activity-visual">{teacherLesson ? <LessonReference lesson={teacherLesson} /> : <img src="/brand/grimi-mascot.png" alt="자유 창작을 안내하는 그리미" />}</div>
+        <div className="teacher-pencil-progress" aria-label={`오늘 활동 ${teacherStep}/${teacherStepTotal}단계, ${teacherProgress}% 진행`}>
+          <div aria-hidden="true">{Array.from({ length: teacherStepTotal }, (_, index) => <span className={index < teacherStep ? "done" : ""} key={index}>✏️</span>)}</div>
+          <b>{teacherStep}/{teacherStepTotal}</b>
+        </div>
       </div>
     </section>
 
-    <nav className="student-primary-menu" aria-label="내 그림 메뉴">
+    <nav className="student-primary-menu student-tool-shelf" aria-label="내 그림 메뉴">
       <a className="student-menu-card resume" href={unfinished ? `/student/draw/${unfinished.id}` : "/student/activities"}>
-        <span aria-hidden="true">✏️</span><div><h2>이어 그리기</h2><p>{unfinished ? `${unfinished.title}을 이어서 그려요.` : "이어 그릴 그림이 없어요. 활동을 골라 시작해요."}</p></div><b>열기 →</b>
+        <span aria-hidden="true">✏️</span><div><h2>이어 그리기</h2><p>{unfinished ? unfinished.title : "이어 그릴 그림 없음"}</p></div><b>{unfinished ? "열기" : "없음"}</b>
       </a>
       <a className="student-menu-card archive" href="/student/archive">
-        <span aria-hidden="true">🖼️</span><div><h2>내 그림</h2><p>내가 그린 그림과 생각을 다시 봐요.</p></div><b>{data.artworkTotal}개 →</b>
+        <span aria-hidden="true">🖼️</span><div><h2>내 그림</h2><p>그린 그림 다시 보기</p></div><b>{data.artworkTotal}개</b>
       </a>
       <a className="student-menu-card activities" href="/student/activities">
-        <span aria-hidden="true">🎨</span><div><h2>활동 고르기</h2><p>선·도형부터 자유 창작까지 골라요.</p></div><b>고르기 →</b>
+        <span aria-hidden="true">🎨</span><div><h2>활동 고르기</h2><p>다른 활동 찾아보기</p></div><b>열기</b>
       </a>
     </nav>
-
-    <section className="teacher-selected-activity">
-      <div className="teacher-activity-copy"><p className="teacher-activity-pill">⭐ 선생님이 선택한 오늘 활동</p><h2>{data.currentActivityLabel}</h2><p>{teacherLesson?.description ?? "내 생각을 그리고, 필요할 때 그리미를 불러요."}</p><a className="button primary child-primary-action" href={teacherActivityPath}><span aria-hidden="true">▶️</span>{teacherDone ? "한 번 더 그리기" : teacherArtwork ? "이어 그리기" : "그림 시작하기"}</a></div>
-      <div className="teacher-activity-visual">{teacherLesson ? <LessonReference lesson={teacherLesson} /> : <img src="/brand/grimi-mascot.png" alt="자유 창작을 안내하는 그리미" />}<span>{teacherStep}/{teacherStepTotal}</span><div className="teacher-activity-progress" aria-label={`오늘 활동 ${teacherProgress}% 진행`}><i style={{ width: `${teacherProgress}%` }} /></div></div>
-    </section>
   </main>;
 }

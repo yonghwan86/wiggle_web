@@ -37,6 +37,11 @@ test("teacher link uses the exact copy with a hidden person icon", async () => {
   assert.doesNotMatch(page, />교사 입장</);
 });
 
+test("landing headline separates the navy lead phrase from the blue question", async () => {
+  const page = await read("../app/page.tsx");
+  assert.match(page, /<h1 className="landing-headline"><span>오늘은<\/span> <strong>어떤 생각을 그려볼까요\?<\/strong><\/h1>/);
+});
+
 test("/join accepts exactly four digits and rejects everything else", async () => {
   const joinPage = await read("../app/join/page.tsx");
   const patternSource = joinPage.match(/\/\^\\d\{4\}\$\/\.test\(rawCode\)/);
@@ -108,4 +113,13 @@ test("desktop (min-width:900px) landing typography reads as a strong headline wi
   const tagLabelSize = desktop.match(/\.landing-student-tag b \{ font-size:(\d+)px; \}/);
   assert.ok(tagLabelSize, "expected an explicit desktop .landing-student-tag b font-size");
   assert.ok(Number(tagLabelSize[1]) >= 20, `expected 학생 label size >= 20px, got ${tagLabelSize[1]}px`);
+});
+
+test("wide picture-book screens keep short landing and join copy on one line", async () => {
+  const css = await read("../app/globals.css");
+  const wide = css.match(/@media \(min-width:901px\) \{\n  \.landing-headline,\.landing-subtitle,\.entry-card\.join-card h1,\.entry-card\.join-card \.join-subtitle \{([\s\S]*?)\n  \}/)?.[1] ?? "";
+  assert.match(wide, /width:auto;/);
+  assert.match(wide, /max-width:none;/);
+  assert.match(wide, /white-space:nowrap;/);
+  assert.match(wide, /text-wrap:nowrap;/);
 });

@@ -6,7 +6,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("ships the Wiggle product home without starter metadata", async () => {
   const [page, layout, logo] = await Promise.all([read("../app/page.tsx"), read("../app/layout.tsx"), read("../app/components/Logo.tsx")]);
-  assert.match(page, /<Logo \/>/); assert.match(logo, /Wiggle/); assert.match(page, /오늘은 어떤 생각을 그려볼까요\?/); assert.match(page, /수업 코드 입력/); assert.match(page, /교사 수업 열기/);
+  assert.match(page, /<Logo \/>/); assert.match(logo, /Wiggle/); assert.match(page, /오늘은<\/span> <strong>어떤 생각을 그려볼까요\?/); assert.match(page, /수업 코드 입력/); assert.match(page, /교사 수업 열기/);
   assert.match(layout, /Wiggle — 함께 그리며 생각해요/); assert.match(layout, /lang="ko"/);
   assert.doesNotMatch(page + layout, /codex-preview|Your site is taking shape|react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));

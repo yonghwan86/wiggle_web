@@ -9,6 +9,7 @@ const compactSource = (text) => text.replace(/\s+/g, " ");
 test("Korean text wraps by word while code, passwords, emoji and canvas surfaces stay intact", async () => {
   const css = await read("../app/globals.css");
   assert.match(css, /body \{ word-break:keep-all; overflow-wrap:break-word; word-wrap:break-word; \}/);
+  assert.match(css, /\.landing-headline,\.landing-subtitle,[\s\S]*?\.student-tool-shelf \.student-menu-card h2 \{[\s\S]*?word-break:keep-all;[\s\S]*?overflow-wrap:break-word;[\s\S]*?word-wrap:break-word;[\s\S]*?text-wrap:balance;/);
   assert.match(css, /code,pre,\.personal-card code \{[^}]*white-space:nowrap;[^}]*word-break:normal;[^}]*overflow-wrap:normal;[^}]*word-wrap:normal;/);
   assert.match(css, /\.password-preview,\.emoji-chip,\.picture-chip,\.class-code strong,\.qr-panel strong,\.large-qr-code strong,\.draw-canvas,\.guide-canvas \{ word-break:normal; overflow-wrap:normal; word-wrap:normal; \}/);
   assert.match(css, /\.password-preview \{ overflow-x:auto; white-space:nowrap; \}/);
@@ -43,6 +44,11 @@ test("mobile lesson cards keep the picture, copy and start action readable", asy
   assert.match(mobile, /\.lesson-card>\.observation-reference \{ grid-column:1; grid-row:1\/span 2;/);
   assert.match(mobile, /\.lesson-card>div:not\(\.lesson-finished-illustration\):not\(\.observation-reference\) \{ grid-column:2; grid-row:1;/);
   assert.match(mobile, /\.lesson-card>b \{ grid-column:2; grid-row:2;/);
+});
+
+test("portrait tablets size the PNG activity book from available width instead of forcing horizontal overflow", async () => {
+  const css = await read("../app/globals.css");
+  assert.match(css, /\.teacher-activity-book \{\n    width:100%;\n    min-height:0;\n    aspect-ratio:1560\/690;/);
 });
 
 test("mobile studio and teacher layouts finish in two rows without horizontal text overflow", async () => {
