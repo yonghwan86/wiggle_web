@@ -85,7 +85,7 @@ test("mirror mode commits the pair together and undo removes it together", () =>
   // 대칭이 켜지면 같은 획이 두 벌 저장되므로 스트로크 예산을 벌 수로 나눈다.
   assert.match(studio, /fitStrokePoints\(points, mirror \? 2 : 1\)/);
   assert.match(drawingHistory, /undoGroupSize\(history\.document\.ops\)/);
-  assert.match(studio, /undoDrawing\(\{ document: documentStateRef\.current, redo: redoRef\.current \}\)/);
+  assert.match(studio, /undoDrawing\(\{\s*document: documentStateRef\.current,\s*redo: redoRef\.current,\s*clearedOps: clearedOpsRef\.current,\s*clearRedoReady: clearRedoReadyRef\.current,\s*\}\)/);
   assert.match(studio, /const \[redo, setRedo\] = useState<DrawOp\[\]\[\]>\(\[\]\)/);
   // 채우기도 대칭 쌍으로 커밋된다 — commitFill 본문이 mirror를 분기해야 한다.
   assert.match(studio, /function commitFill[\s\S]{0,400}commitOps\(mirror \? \[op, mirrorOp\(op\)\] : \[op\]\)/);
@@ -192,7 +192,7 @@ test("lesson guides use a pencil demo before dotted practice without leaving the
   assert.match(studio, /type GuidePhase = "independent" \| "demo" \| "practice"/);
   assert.match(studio, /function drawPencil\(/);
   assert.match(studio, /✏️ 먼저 보여줘/);
-  assert.match(studio, /이제 네 차례야\. 초록 ① 가까운 점선에서 시작해 봐\./);
+  assert.match(studio, /이제 네 차례야\. 아무 점선이나 골라서 시작해 봐\./);
   assert.match(studio, /점선만 보기/);
   assert.match(studio, /className=\{guidePhase !== "independent" && lessonGuideAvailable \? "guide-canvas" : "guide-canvas hidden"\}/);
 });

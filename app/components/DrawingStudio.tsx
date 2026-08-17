@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { activeTextObjects, DrawDocument, DrawOp, drawingTextGraphemes, emptyDocument, estimateDocumentBytes, estimateStrokeBytes, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, MAX_TEXT_GRAPHEMES, MAX_TEXT_OBJECTS, normalizeDrawingText, roundUnit, ShapeKind, STROKE_WIDTHS, StrokeWidth, TextKind, TEXT_SIZES, TextSize, validateDrawDocument } from "@/lib/drawing-model";
 import { renderDrawDocument, renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
 import { mirrorOp } from "@/lib/symmetry";
-import { redoDrawing, undoDrawing } from "@/lib/drawing-history";
+import { clearAllDrawing, redoDrawing, undoDrawing } from "@/lib/drawing-history";
 import { DrawingInputMode, INPUT_MODE_EVENT } from "@/lib/input-mode";
 import { CanvasView, IDENTITY_VIEW, pinchView } from "@/lib/canvas-view";
 import { lessonBySlug, Lesson } from "@/lib/lesson-content";
@@ -332,38 +332,6 @@ function drawTrace(context: CanvasRenderingContext2D, trace: GuideTrace, distanc
   return { point, previous };
 }
 
-function drawStartMarker(context: CanvasRenderingContext2D, trace: GuideTrace) {
-  const start = trace[0];
-  const next = trace[Math.min(4, trace.length - 1)];
-  const angle = Math.atan2(next.y - start.y, next.x - start.x);
-  const markerDistance = 34;
-  const markerRadius = 14;
-  const normal = { x: -Math.sin(angle), y: Math.cos(angle) };
-  const candidates = [
-    { x: start.x + normal.x * markerDistance, y: start.y + normal.y * markerDistance },
-    { x: start.x - normal.x * markerDistance, y: start.y - normal.y * markerDistance },
-  ];
-  const edgeRoom = (point: TracePoint) => Math.min(point.x, point.y, context.canvas.width - point.x, context.canvas.height - point.y);
-  const marker = edgeRoom(candidates[0]) >= edgeRoom(candidates[1]) ? candidates[0] : candidates[1];
-  context.save();
-  context.setLineDash([]);
-  context.globalAlpha = 1;
-  // 안내 레이어가 학생 선을 덮지 않도록 시작 표시는 점선 옆에 둔다.
-  context.fillStyle = "rgba(255,255,255,.94)";
-  context.strokeStyle = "#2E9B45";
-  context.lineWidth = 5;
-  context.beginPath();
-  context.arc(marker.x, marker.y, markerRadius, 0, Math.PI * 2);
-  context.fill();
-  context.stroke();
-  context.fillStyle = "#43A047";
-  context.font = "900 18px system-ui, sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText("1", marker.x, marker.y + 1);
-  context.restore();
-}
-
 function drawPencil(context: CanvasRenderingContext2D, point: TracePoint, previous: TracePoint) {
   const angle = Math.atan2(point.y - previous.y, point.x - previous.x);
   context.save();
@@ -415,9 +383,8 @@ function renderGuideFrame(canvas: HTMLCanvasElement, traces: GuideTrace[], phase
   context.lineCap = "round";
   context.lineJoin = "round";
   if (phase === "demo") context.globalAlpha = 0.58;
-  for (const [traceIndex, trace] of traces.entries()) {
+  for (const trace of traces) {
     drawTrace(context, trace);
-    if (traceIndex === 0) drawStartMarker(context, trace);
   }
   if (phase === "demo") {
     const lengths = traces.map(traceLength);
@@ -504,9 +471,6 @@ export function DrawingStudio() {
   const [drawWidth, setDrawWidth] = useState<StrokeWidth>(16);
   const [eraserWidth, setEraserWidth] = useState<StrokeWidth>(48);
   const [colorsExpanded, setColorsExpanded] = useState(false);
-  // 좁은 세로 화면에서만 쓰는 도구 트레이 펼침 상태. 넓은 화면에서는 CSS가 이 상태를 무시하고
-  // 도구 패널을 항상 그대로 보여준다.
-  const [toolTrayOpen, setToolTrayOpen] = useState(false);
   const [shapeKind, setShapeKind] = useState<ShapeKind>("line");
   const [shapeFilled, setShapeFilled] = useState(false);
   const [moreShapes, setMoreShapes] = useState(false);
@@ -526,6 +490,11 @@ export function DrawingStudio() {
   const [view, setView] = useState<CanvasView>(IDENTITY_VIEW);
   const [inputMode, setInputMode] = useState<DrawingInputMode>("pen");
   const [redo, setRedo] = useState<DrawOp[][]>([]);
+  // 전체 지우기는 도구 패널의 되돌리기/다시하기와 같은 버튼을 그대로 쓴다. 이 두 상태는
+  // "복원 가능한 지우기가 대기 중인지"만 렌더에 반영해 되돌리기/다시하기 disabled를 맞춘다.
+  const [hasClearToUndo, setHasClearToUndo] = useState(false);
+  const [hasClearToRedo, setHasClearToRedo] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [guidePhase, setGuidePhase] = useState<GuidePhase>("independent");
   const [guideChoiceOpen, setGuideChoiceOpen] = useState(false);
   const [guideDemoRun, setGuideDemoRun] = useState(0);
@@ -573,6 +542,9 @@ export function DrawingStudio() {
   const viewRef = useRef<CanvasView>(IDENTITY_VIEW);
   const penModeRef = useRef(true);
   const redoRef = useRef<DrawOp[][]>([]);
+  const clearedOpsRef = useRef<DrawOp[] | null>(null);
+  const clearRedoReadyRef = useRef(false);
+  const clearConfirmDialogRef = useRef<HTMLDivElement>(null);
   const lastBrushRef = useRef<BrushTool>("pencil");
   const drawWidthRef = useRef<StrokeWidth>(16);
   const colorModeActiveRef = useRef(false);
@@ -615,6 +587,19 @@ export function DrawingStudio() {
   const unsavedRef = useRef(false);
   const editSeqRef = useRef(0);
   const artworkRef = useRef<ArtworkPayload | null>(null);
+
+  // 서버 로드나 충돌 초안 복구처럼 문서를 통째로 교체할 때, 이전 작품의 되돌리기/다시하기/
+  // 전체 지우기 대기 상태가 그대로 남아 있으면 되돌리기가 새 작품 위에 이전 작품의 편집을
+  // 되살릴 수 있다. 문서를 바꾸는 모든 지점에서 이 함수로 히스토리를 함께 초기화한다.
+  function resetDocumentHistory() {
+    redoRef.current = [];
+    setRedo([]);
+    clearedOpsRef.current = null;
+    clearRedoReadyRef.current = false;
+    setHasClearToUndo(false);
+    setHasClearToRedo(false);
+    setClearConfirmOpen(false);
+  }
 
   const createOrLoad = useCallback(async () => {
     const loadKey = params.id === "new" ? `new:${search.toString()}` : params.id;
@@ -686,8 +671,7 @@ export function DrawingStudio() {
       documentStateRef.current = loadedDocument;
       setArtwork({ ...data.artwork, currentStep: loadedStep });
       setDocumentState(loadedDocument);
-      redoRef.current = [];
-      setRedo([]);
+      resetDocumentHistory();
       setEditVersion(0);
       conflictDraftRef.current = loadDraft;
       setConflictDraft(loadDraft);
@@ -1199,6 +1183,8 @@ export function DrawingStudio() {
     setEditingTextObjectId(null);
   }, []);
   useModalDialog(textDialogRef, closeTextComposer, textComposerOpen);
+  const closeClearConfirm = useCallback(() => setClearConfirmOpen(false), []);
+  useModalDialog(clearConfirmDialogRef, closeClearConfirm, clearConfirmOpen);
   const artworkId = artwork?.id;
   const flushCurrentArtwork = useCallback(() => {
     if (!artworkId) return;
@@ -1246,8 +1232,7 @@ export function DrawingStudio() {
             documentStateRef.current = draft.document;
             currentStepRef.current = draft.currentStep;
             setDocumentState(draft.document);
-            redoRef.current = [];
-            setRedo([]);
+            resetDocumentHistory();
             setEditVersion(0);
             setGuidePhase("independent");
             setArtwork((current) => (current ? { ...current, currentStep: draft.currentStep } : current));
@@ -1449,8 +1434,41 @@ export function DrawingStudio() {
     setDocumentState(documentStateRef.current);
     redoRef.current = [];
     setRedo([]);
+    // 새 편집은 지우기 되돌리기/다시하기 대기 상태도 무효화한다 — 이미 지나간 지우기다.
+    clearedOpsRef.current = null;
+    clearRedoReadyRef.current = false;
+    setHasClearToUndo(false);
+    setHasClearToRedo(false);
     setEditVersion((value) => value + 1);
     return true;
+  }
+  // 전체 지우기는 원본 작품 레코드나 서버 메타데이터를 건드리지 않고 op 배열만 비운다.
+  // 되돌리기/다시하기 버튼과 그대로 맞물리는 한 번의 원자적 편집이다.
+  function clearAllOps() {
+    if (conflictDraftRef.current) return;
+    if (!documentStateRef.current.ops.length) return;
+    clearShapeStart();
+    const next = clearAllDrawing({
+      document: documentStateRef.current,
+      redo: redoRef.current,
+      clearedOps: clearedOpsRef.current,
+      clearRedoReady: clearRedoReadyRef.current,
+    });
+    if (next.document === documentStateRef.current) return;
+    markEdited();
+    documentStateRef.current = next.document;
+    redoRef.current = next.redo;
+    clearedOpsRef.current = next.clearedOps ?? null;
+    clearRedoReadyRef.current = Boolean(next.clearRedoReady);
+    setDocumentState(next.document);
+    setRedo(next.redo);
+    setHasClearToUndo(Boolean(next.clearedOps));
+    setHasClearToRedo(Boolean(next.clearRedoReady));
+    setEditVersion((value) => value + 1);
+  }
+  function confirmClearAll() {
+    clearAllOps();
+    setClearConfirmOpen(false);
   }
   // meta는 획이 시작된 시점의 도구·색·굵기다. 커밋 시점의 state를 읽으면
   // 획 도중 다른 손이 도구 버튼을 눌렀을 때 획이 통째로 폐기되거나 잘못된 도구로 커밋된다.
@@ -1957,25 +1975,44 @@ export function DrawingStudio() {
     // 대기 중인 도형 시작점은 지운다. 문서가 바뀐 뒤 보이지 않는 옛 시작점에서 도형이 커밋되는 사고 방지.
     clearShapeStart();
     // 대칭 쌍은 한 번의 되돌리기로 함께 지워진다. 반쪽만 지우면 아이가 이해할 수 없는 상태가 된다.
-    const next = undoDrawing({ document: documentStateRef.current, redo: redoRef.current });
+    // 전체 지우기 직후라면(clearedOpsRef) 그 지우기 하나를 한 번에 복원한다.
+    const next = undoDrawing({
+      document: documentStateRef.current,
+      redo: redoRef.current,
+      clearedOps: clearedOpsRef.current,
+      clearRedoReady: clearRedoReadyRef.current,
+    });
     if (next.document === documentStateRef.current) return;
     markEdited();
     documentStateRef.current = next.document;
     redoRef.current = next.redo;
+    clearedOpsRef.current = next.clearedOps ?? null;
+    clearRedoReadyRef.current = Boolean(next.clearRedoReady);
     setDocumentState(next.document);
     setRedo(next.redo);
+    setHasClearToUndo(Boolean(next.clearedOps));
+    setHasClearToRedo(Boolean(next.clearRedoReady));
     setEditVersion((value) => value + 1);
   }
   function redoLast() {
     if (conflictDraftRef.current) return;
     clearShapeStart();
-    const next = redoDrawing({ document: documentStateRef.current, redo: redoRef.current });
+    const next = redoDrawing({
+      document: documentStateRef.current,
+      redo: redoRef.current,
+      clearedOps: clearedOpsRef.current,
+      clearRedoReady: clearRedoReadyRef.current,
+    });
     if (next.document === documentStateRef.current) return;
     markEdited();
     documentStateRef.current = next.document;
     redoRef.current = next.redo;
+    clearedOpsRef.current = next.clearedOps ?? null;
+    clearRedoReadyRef.current = Boolean(next.clearRedoReady);
     setDocumentState(next.document);
     setRedo(next.redo);
+    setHasClearToUndo(Boolean(next.clearedOps));
+    setHasClearToRedo(Boolean(next.clearRedoReady));
     setEditVersion((value) => value + 1);
   }
   async function complete() {
@@ -2369,7 +2406,7 @@ export function DrawingStudio() {
 
   if (!artwork) return <main className="drawing-loading">{saveState}</main>;
   const step = lesson ? Math.min(artwork.currentStep, lesson.steps.length - 1) : 0;
-  const guideNotice = guidePhase === "demo" ? "연필이 먼저 보여줄게!" : guidePhase === "practice" ? (guidePracticeTried ? "한 번 따라 했어! 이제 점선 없이도 해볼까?" : "이제 네 차례야. 초록 ① 가까운 점선에서 시작해 봐.") : "";
+  const guideNotice = guidePhase === "demo" ? "연필이 먼저 보여줄게!" : guidePhase === "practice" ? (guidePracticeTried ? "한 번 따라 했어! 이제 점선 없이도 해볼까?" : "이제 네 차례야. 아무 점선이나 골라서 시작해 봐.") : "";
   const choiceFeedback = childChoice ? CHOICE_DRAWING_SETUP[childChoice]?.feedback ?? "고른 모습을 그림에 직접 더해요." : "";
   const canvasGuideStatus = guideNotice || (currentLessonActivity === "color" ? choiceFeedback || "색을 고르면 크레용도 함께 준비해 줄게요." : "");
   const nextStepLabel = lesson ? (step === lesson.steps.length - 1 ? "완성하기" : "다음") : "다음";
@@ -2745,19 +2782,11 @@ export function DrawingStudio() {
               </button>
             )}
           </div>
-        </section>
-        {toolTrayOpen && <div className="tool-tray-backdrop" onClick={() => setToolTrayOpen(false)} aria-hidden="true" />}
-        <aside id="tool-tray-sheet" className={`tool-panel${toolTrayOpen ? " tray-open" : ""}`} ref={toolPanelRef} aria-label="그리기 도구 모음">
-          <button
-            type="button"
-            className="tool-tray-toggle"
-            aria-expanded={toolTrayOpen}
-            aria-controls="tool-tray-sheet"
-            onClick={() => setToolTrayOpen((value) => !value)}
-          >
-            <span aria-hidden="true">{toolTrayOpen ? "✕" : "🎨"}</span>
-            <span className="sr-only">{toolTrayOpen ? "도구 더 보기 닫기" : "색·굵기·되돌리기 더 보기"}</span>
+          <button type="button" className="mobile-tool-peek" onClick={() => toolPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            🎨 색·지우개·되돌리기 <span aria-hidden="true">↓</span>
           </button>
+        </section>
+        <aside className="tool-panel" ref={toolPanelRef} aria-label="그리기 도구 모음">
           <p className="tool-section-label tools-label">도구</p>
           <div className="tool-group brush-group" role="group" aria-label="브러시">
             <button type="button" aria-label="연필" title="연필" aria-pressed={studioTool === "pencil"} onClick={() => chooseStudioTool("pencil")}>
@@ -2961,15 +2990,36 @@ export function DrawingStudio() {
             <button type="button" aria-pressed={inputMode === "finger"} onClick={disablePenMode}><span>☝️</span><b>손가락 모드</b><small>손가락으로 그려요</small></button>
           </div>
           <div className="history-row" role="group" aria-label="그리기 기록">
-            <button type="button" onClick={undo} disabled={Boolean(conflictDraft) || !documentState.ops.length}>
+            <button type="button" onClick={undo} disabled={Boolean(conflictDraft) || (!documentState.ops.length && !hasClearToUndo)}>
               <span aria-hidden="true">↩</span><b>되돌리기</b>
             </button>
-            <button type="button" onClick={redoLast} disabled={Boolean(conflictDraft) || !redo.length}>
+            <button type="button" onClick={redoLast} disabled={Boolean(conflictDraft) || (!redo.length && !hasClearToRedo)}>
               <span aria-hidden="true">↪</span><b>다시하기</b>
             </button>
           </div>
+          <button
+            type="button"
+            className="clear-all-button"
+            disabled={Boolean(conflictDraft) || !documentState.ops.length}
+            onClick={() => setClearConfirmOpen(true)}
+          >
+            <span aria-hidden="true">🗑️</span><b>전체 지우기</b>
+          </button>
         </aside>
       </div>
+      {clearConfirmOpen && (
+        <div className="modal-backdrop" ref={clearConfirmDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="clear-confirm-title">
+          <section className="reflection-modal clear-confirm-modal">
+            <p className="modal-emoji" aria-hidden="true">🗑️</p>
+            <h2 id="clear-confirm-title">정말 다 지울까요?</h2>
+            <p>지금까지 그린 그림이 모두 사라져요. 지우고 나서도 되돌리기를 누르면 다시 가져올 수 있어요.</p>
+            <div className="modal-actions">
+              <button type="button" className="button secondary" onClick={() => setClearConfirmOpen(false)}>아니요</button>
+              <button type="button" className="button primary" onClick={confirmClearAll}>네, 다 지울래요</button>
+            </div>
+          </section>
+        </div>
+      )}
       {timelapseOpen && <TimelapsePlayer document={documentState} onClose={() => setTimelapseOpen(false)} />}
       {textComposerOpen && (
         <div className="modal-backdrop" ref={textDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="text-composer-title">

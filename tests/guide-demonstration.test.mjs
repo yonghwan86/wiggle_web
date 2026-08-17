@@ -15,7 +15,7 @@ test("children choose help before the pencil demonstration and dotted practice",
   assert.match(studio, /requestAnimationFrame\(animate\)/);
   assert.match(studio, /drawPencil\(context, pencil\.point, pencil\.previous\)/);
   assert.match(studio, /"연필이 먼저 보여줄게!"/);
-  assert.match(studio, /"이제 네 차례야\. 초록 ① 가까운 점선에서 시작해 봐\."/);
+  assert.match(studio, /"이제 네 차례야\. 아무 점선이나 골라서 시작해 봐\."/);
 });
 
 test("guide demonstrations are replayable, skippable and student scoped", () => {
@@ -50,13 +50,15 @@ test("guide controls and notices remain touch friendly on mobile", () => {
   assert.match(css, /\.guide-notice \{[^}]*pointer-events:none/);
   assert.match(css, /@media \(max-width:720px\)[\s\S]*\.guide-actions \{[^}]*grid-template-columns:1fr 1fr/);
   assert.match(css, /\.guide-actions button \{[^}]*min-height:44px/);
-  // 2026-08-13: 320px 고정 도화지 캡을 지워 390x844 같은 화면에서 남는 세로 공간을
-  // 그대로 도화지에 준다. 대신 이 구간에서는 레슨 패널을 더 압축해 여전히 도화지가
-  // dock에 가리지 않고 초기 화면 안에 온전히 보이게 한다.
+  // 2026-08-13: 레슨 패널을 압축해 도화지가 dock에 가리지 않고 초기 화면 안에 온전히
+  // 보이게 한다. 2026-08-17: 320px 고정 도화지 최소 높이는 되살아났다 — .studio-body는
+  // flex-column이고 .canvas-zone은 flex:1(basis 0%)이라, 도구 패널 내용이 studio-body
+  // 높이에 육박하면 캔버스 성장분이 몇 px로 짜부라진다(자유그리기 320x568에서 실측
+  // 재현). 명시적 최소 높이로 캔버스를 flex 성장 경쟁에서 먼저 빼내야 한다.
   const narrowPortraitIndex = css.indexOf("@media (max-width:460px) and (orientation:portrait)");
   const compactStepPanelIndex = css.indexOf(".step-panel { padding:6px 8px; }", narrowPortraitIndex);
   assert.ok(narrowPortraitIndex >= 0 && compactStepPanelIndex > narrowPortraitIndex, "압축된 레슨 패널 규칙이 좁은 세로 화면 구간 안에 있어야 한다");
-  assert.doesNotMatch(css, /min-height:min\(calc\(100vw - 16px\),320px\)/);
+  assert.match(css, /min-height:min\(calc\(100vw - 16px\),320px\)/);
   assert.match(css, /@media \(max-width:900px\) and \(max-height:500px\) and \(orientation:landscape\)[\s\S]*grid-template-columns:180px minmax\(0,1fr\) 200px/);
   assert.ok(css.indexOf("@media (max-width:900px) and (max-height:500px) and (orientation:landscape)") > css.indexOf(".tool-panel { padding-right:max(7px,env(safe-area-inset-right))"), "landscape rules must win the mobile cascade");
   assert.match(css, /\.step-panel \{ display:block; order:initial; grid-column:1;/);
@@ -65,13 +67,10 @@ test("guide controls and notices remain touch friendly on mobile", () => {
   assert.match(css, /\.tool-panel \{ display:flex; order:initial; grid-column:3;/);
 });
 
-test("the start badge stays beside the trace instead of covering the child's line", () => {
-  const marker = studio.match(/function drawStartMarker[\s\S]*?\n\}/)?.[0] ?? "";
-  assert.match(marker, /markerDistance = 34/);
-  assert.match(marker, /context\.arc\(marker\.x, marker\.y, markerRadius/);
-  assert.doesNotMatch(marker, /context\.arc\(start\.x, start\.y/);
-  assert.match(marker, /context\.fillText\("1", marker\.x/);
-  assert.match(studio, /if \(traceIndex === 0\) drawStartMarker\(context, trace\)/);
+test("no trace has a numbered or ordered start marker", () => {
+  assert.doesNotMatch(studio, /drawStartMarker/);
+  assert.doesNotMatch(studio, /traceIndex === 0/);
+  assert.doesNotMatch(studio, /①/);
 });
 
 test("practice pencil locks to one dotted trace and fills skipped curve samples", () => {
@@ -87,6 +86,37 @@ test("practice pencil locks to one dotted trace and fills skipped curve samples"
   assert.equal(moved.lock.traceIndex, 0, "nearby details must not steal an active stroke");
   assert.deepEqual(moved.points.map((point) => Math.round(point.x * 1024)), [200, 300, 400]);
   assert.equal(lockGuideTrace(traces, { x: 0.9, y: 0.9 }), null, "drawing away from dots stays the child's free stroke");
+});
+
+test("the child can start at the middle or end of a trace, not just the head", () => {
+  const trace = [{ x: 100, y: 100 }, { x: 200, y: 100 }, { x: 300, y: 100 }, { x: 400, y: 100 }];
+  const middle = lockGuideTrace([trace], { x: 0.2, y: 0.1 });
+  assert.ok(middle);
+  assert.equal(middle.lock.traceIndex, 0);
+  assert.equal(middle.lock.pointIndex, 1);
+  const end = lockGuideTrace([trace], { x: 0.39, y: 0.1 });
+  assert.ok(end);
+  assert.equal(end.lock.pointIndex, 3);
+});
+
+test("tracing in reverse fills the skipped points backwards", () => {
+  const traces = [[{ x: 100, y: 100 }, { x: 200, y: 100 }, { x: 300, y: 100 }, { x: 400, y: 100 }]];
+  const start = lockGuideTrace(traces, { x: 0.39, y: 0.1 });
+  assert.ok(start);
+  assert.equal(start.lock.pointIndex, 3);
+  const moved = snapGuideTrace(traces, start.lock, { x: 0.1, y: 0.102 });
+  assert.ok(moved);
+  assert.deepEqual(moved.points.map((point) => Math.round(point.x * 1024)), [300, 200, 100]);
+});
+
+test("the child may pick the second trace before ever touching the first", () => {
+  const traces = [
+    [{ x: 100, y: 100 }, { x: 200, y: 100 }, { x: 300, y: 100 }],
+    [{ x: 100, y: 300 }, { x: 200, y: 300 }, { x: 300, y: 300 }],
+  ];
+  const start = lockGuideTrace(traces, { x: 0.2, y: 0.3 });
+  assert.ok(start);
+  assert.equal(start.lock.traceIndex, 1, "starting near trace 2 must lock to trace 2, not force trace 1 first");
 });
 
 test("guide status no longer covers the paper and cat choices change the actual drawing setup", () => {
