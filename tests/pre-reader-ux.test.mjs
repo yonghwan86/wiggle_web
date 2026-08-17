@@ -37,7 +37,7 @@ test("entry can be completed with pictures and a generated nickname instead of r
   assert.match(join, /className="password-slots"/);
   assert.match(join, /pictures\[index\] \? pictureFor\(pictures\[index\]\) : "\?"/);
   assert.match(join, /function suggestNickname\(\)/);
-  assert.match(join, /🎲 별명 골라줘/);
+  assert.match(join, /🎲 다른 별명/);
   assert.match(join, /className="button primary full child-primary-action"/);
   assert.match(join, /<span aria-hidden="true">▶️<\/span>/);
   assert.match(join, /내 동물을 찾아서 눌러요/);

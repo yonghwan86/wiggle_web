@@ -51,15 +51,36 @@ test("/join accepts exactly four digits and rejects everything else", async () =
   }
 });
 
-test("/join query prefill does not hide the normal code field (that's QR-only behavior)", async () => {
+test("/join never renders a visible classroom-code field; the class code is only supplied via the landing page or QR", async () => {
   const [joinPage, joinClient] = await Promise.all([
     read("../app/join/page.tsx"),
     read("../app/components/JoinClient.tsx"),
   ]);
-  assert.match(joinPage, /isQrEntry=\{false\}/);
-  assert.match(joinClient, /const qrFlow = Boolean\(initialEntry\) && !recoveryToken && isQrEntry;/);
-  assert.match(joinClient, /const hideCodeField = qrFlow && mode === "join";/);
-  assert.match(joinClient, /\{!hideCodeField && <label><span>/);
+  assert.doesNotMatch(joinPage, /isQrEntry/);
+  assert.doesNotMatch(joinClient, /isQrEntry/);
+  assert.match(joinPage, /<JoinClient initialEntry=\{sanitizedCode\} \/>/);
+  assert.doesNotMatch(joinClient, /수업 코드<\/span>/);
+  assert.doesNotMatch(joinClient, /placeholder="수업 코드"/);
+});
+
+test("/join never redirects server-side; it always hands the sanitized code to JoinClient, which decides what to show client-side", async () => {
+  const joinPage = await read("../app/join/page.tsx");
+  assert.doesNotMatch(joinPage, /redirect\(/);
+  assert.doesNotMatch(joinPage, /next\/navigation/);
+});
+
+test("the join/recover control card numbers exactly 1 animal, 2 nickname, 3 picture password, and does not duplicate the picture-password slots already shown in the left preview", async () => {
+  const joinClient = await read("../app/components/JoinClient.tsx");
+  assert.match(joinClient, /<legend>1️⃣ 내 동물<\/legend>/);
+  assert.match(joinClient, /<span>2️⃣ 그림 별명<\/span>/);
+  assert.match(joinClient, /picturePasswordPicker\(\{ numbered: true, showSlots: false \}\)/);
+  assert.match(joinClient, /const legendLabel = numbered \? "3️⃣ 그림 비밀번호" : /);
+  assert.match(joinClient, /\{showSlots && <div className="password-slots"/);
+});
+
+test("the join preview card keeps the live picture-password slots so the right column doesn't need to repeat them", async () => {
+  const joinClient = await read("../app/components/JoinClient.tsx");
+  assert.match(joinClient, /className="join-preview-slots"/);
 });
 
 test("landing subtitle has an explicit width so it wraps instead of overflowing as a centered flex item", async () => {

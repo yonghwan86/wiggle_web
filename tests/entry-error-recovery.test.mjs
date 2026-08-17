@@ -39,9 +39,8 @@ test("one big reset clears every picked picture and highlights after a wrong pas
   assert.match(join, /🔄<\/span> 다시 골라요/);
 });
 
-test("the first correction clears the previous error for code, nickname, animal and pictures", () => {
-  assert.match(join, /setEntry\(event\.target\.value\.replace\(\/\\s\/g, ""\)\); setDuplicateWarning\(false\); clearEntryError\(\);/);
-  assert.match(join, /setNickname\(event\.target\.value\); setDuplicateWarning\(false\); clearEntryError\(\);/);
+test("the first correction clears the previous error for nickname, animal and pictures (the classroom code has no visible field to correct — it comes from the landing page or QR)", () => {
+  assert.match(join, /setNickname\(event\.target\.value\); setNicknameAuto\(false\); setDuplicateWarning\(false\); clearEntryError\(\);/);
   assert.match(join, /setAnimal\(value\); setDuplicateWarning\(false\); clearEntryError\(\);/);
   assert.match(join, /function appendPicture\(value: string\) \{\s*clearEntryError\(\);/);
   assert.match(join, /function removeLastPicture\(\) \{\s*clearEntryError\(\);/);
@@ -53,20 +52,18 @@ test("existing students hear an unlock instruction, not a creation instruction",
   assert.match(join, /const creating = mode === "join";/);
 });
 
-test("a wrong class code highlights the code field and offers calling the teacher", () => {
-  assert.match(join, /className=\{errorKind === "code" \? "input-error" : ""\}/);
+test("a wrong class code offers calling the teacher (there is no visible code field to highlight since the code is entered only on the landing page or via QR)", () => {
+  assert.match(join, /errorKind === "code" && !teacherCallOpen/);
   assert.match(join, /🙋<\/span>선생님 불러요/);
   assert.match(join, /손을 들고 선생님을 불러요\./);
 });
 
-test("qr entry uses the single form and only skips the class-code field", () => {
+test("join/recover never renders a stepper or a visible class-code field — the hidden entry alone carries the code", () => {
   // 별도 스테퍼를 남겨 두면 유지보수 중 실수로 다시 켜질 수 있다. 입장은 항상 한 화면이다.
   assert.doesNotMatch(join, /QR_STEPPER_ENABLED|qrStep|step-progress/);
-  // QR 입장(단일 폼)에서는 수업 코드 칸이 숨고 번호가 별명부터 매겨진다.
-  assert.match(join, /const hideCodeField = qrFlow && mode === "join"/);
-  assert.match(join, /\{!hideCodeField && <label><span>1️⃣ 수업 코드<\/span>/);
-  assert.match(join, /\{hideCodeField \? "1️⃣" : "2️⃣"\} 그림 별명/);
-  assert.match(join, /\{hideCodeField \? "2️⃣" : "3️⃣"\} 내 동물/);
+  assert.doesNotMatch(join, /1️⃣ 수업 코드/);
+  assert.match(join, /<legend>1️⃣ 내 동물<\/legend>/);
+  assert.match(join, /<span>2️⃣ 그림 별명<\/span>/);
 });
 
 test("animal buttons carry Korean names for assistive tech", () => {
