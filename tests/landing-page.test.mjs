@@ -61,3 +61,30 @@ test("/join query prefill does not hide the normal code field (that's QR-only be
   assert.match(joinClient, /const hideCodeField = qrFlow && mode === "join";/);
   assert.match(joinClient, /\{!hideCodeField && <label><span>/);
 });
+
+test("landing subtitle has an explicit width so it wraps instead of overflowing as a centered flex item", async () => {
+  const css = await read("../app/globals.css");
+  // .landing-hero is a column flex container with align-items:center; a subtitle with only
+  // max-width (no width) can shrink-to-fit past the hero's visible box on some renderers and
+  // get clipped by .landing's overflow:hidden. An explicit width keeps it reliably constrained.
+  assert.match(css, /\.landing-subtitle \{[^}]*width:min\(100%,420px\);[^}]*max-width:420px;/);
+});
+
+test("desktop (min-width:900px) landing typography reads as a strong headline with an emphasized student card", async () => {
+  const css = await read("../app/globals.css");
+  const desktop = css.match(/@media \(min-width:900px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.ok(desktop, "expected a @media (min-width:900px) landing block");
+
+  const headlineSize = desktop.match(/\.landing-headline \{ font-size:clamp\((\d+)px,[^,]+,(\d+)px\);/);
+  assert.ok(headlineSize, "expected a clamped desktop headline font-size");
+  assert.ok(Number(headlineSize[2]) >= 48, `expected desktop headline max size >= 48px, got ${headlineSize[2]}px`);
+
+  const tagWidth = desktop.match(/\.landing-student-tag \{[^}]*width:(\d+)px;/);
+  assert.ok(tagWidth, "expected an explicit desktop .landing-student-tag width");
+  const width = Number(tagWidth[1]);
+  assert.ok(width >= 210 && width <= 240, `expected student card width in 210-240px, got ${width}px`);
+
+  const tagLabelSize = desktop.match(/\.landing-student-tag b \{ font-size:(\d+)px; \}/);
+  assert.ok(tagLabelSize, "expected an explicit desktop .landing-student-tag b font-size");
+  assert.ok(Number(tagLabelSize[1]) >= 20, `expected 학생 label size >= 20px, got ${tagLabelSize[1]}px`);
+});
