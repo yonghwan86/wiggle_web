@@ -8,7 +8,7 @@ const executableJavaScript = ts.transpileModule(speechSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const speech = await import(`data:text/javascript;base64,${Buffer.from(executableJavaScript).toString("base64")}`);
-const { createSpeechSpeaker, SPEECH_START_TIMEOUT_MS, speechDurationCapMs } = speech;
+const { createSpeechSpeaker, selectKoreanVoice, SPEECH_START_TIMEOUT_MS, speechDurationCapMs } = speech;
 
 // 실제 speechSynthesis처럼 전역 발화 하나만 유지하고, cancel 시 진행 중이던
 // utterance에 interrupted 오류 이벤트를 비동기로 흉내 낼 수 있는 가짜 환경.
@@ -75,6 +75,26 @@ test("a completed utterance returns the button to idle", () => {
   fake.startCurrent();
   fake.endCurrent();
   assert.equal(last(), "idle");
+});
+
+test("speech keeps the scenario text and uses natural Korean playback defaults", () => {
+  const fake = fakeEnvironment();
+  const { speaker } = trackedSpeaker(fake);
+  speaker.speak("  동물을 고르고,   그림 비밀번호를 골라요.  ");
+  assert.equal(fake.speakingNow()?.text, "동물을 고르고, 그림 비밀번호를 골라요.");
+  assert.equal(fake.speakingNow()?.lang, "ko-KR");
+  assert.equal(fake.speakingNow()?.rate, 0.96);
+  assert.equal(fake.speakingNow()?.pitch, 1);
+  assert.equal(fake.speakingNow()?.voice?.name, "가짜 한국어 음성");
+});
+
+test("the preferred Korean voice is chosen instead of the first arbitrary Korean voice", () => {
+  const voices = [
+    { lang: "en-US", name: "English" },
+    { lang: "ko-KR", name: "Old Korean Network Voice", localService: false },
+    { lang: "ko-KR", name: "Microsoft SunHi", localService: true },
+  ];
+  assert.equal(selectKoreanVoice(voices)?.name, "Microsoft SunHi");
 });
 
 test("rapid re-taps keep the newest utterance speaking even when the old cancellation lands late", () => {

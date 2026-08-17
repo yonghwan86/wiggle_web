@@ -13,7 +13,7 @@ function studentHeaders(ip) {
   return { origin: "http://localhost", "content-type": "application/json", "cf-connecting-ip": ip };
 }
 
-test("duplicate entry is explicit and teacher deletion safely archives, revokes, and restores a student", async (context) => {
+test("class status, duplicate credentials, cross-device re-entry, archive and restore stay safe", async (context) => {
   const miniflare = new Miniflare({
     modules: true,
     modulesRoot: "./dist/server",
@@ -34,6 +34,12 @@ test("duplicate entry is explicit and teacher deletion safely archives, revokes,
   assert.equal(createdClass.status, 201);
   const classroom = (await createdClass.json()).classroom;
 
+  const emptyStatus = await miniflare.dispatchFetch("http://localhost/api/student", {
+    method: "POST", headers: studentHeaders("203.0.113.100"), body: JSON.stringify({ action: "entryStatus", entry: classroom.classCode }),
+  });
+  assert.equal(emptyStatus.status, 200);
+  assert.deepEqual(await emptyStatus.json(), { classroomName: "중복 점검반", hasProfiles: false });
+
   const joinBody = {
     action: "join",
     entry: classroom.classCode,
@@ -46,6 +52,13 @@ test("duplicate entry is explicit and teacher deletion safely archives, revokes,
   });
   assert.equal(joined.status, 201);
   const joinedProfile = await joined.json();
+  assert.equal(joinedProfile.personalQrToken, undefined);
+
+  const occupiedStatus = await miniflare.dispatchFetch("http://localhost/api/student", {
+    method: "POST", headers: studentHeaders("203.0.113.105"), body: JSON.stringify({ action: "entryStatus", entry: classroom.classCode }),
+  });
+  assert.equal(occupiedStatus.status, 200);
+  assert.deepEqual(await occupiedStatus.json(), { classroomName: "중복 점검반", hasProfiles: true });
 
   const duplicate = await miniflare.dispatchFetch("http://localhost/api/student", {
     method: "POST", headers: studentHeaders("203.0.113.102"), body: JSON.stringify(joinBody),
@@ -90,17 +103,30 @@ test("duplicate entry is explicit and teacher deletion safely archives, revokes,
   const recovered = await miniflare.dispatchFetch("http://localhost/api/student", {
     method: "POST",
     headers: studentHeaders("203.0.113.103"),
-    body: JSON.stringify({ action: "recover", classCode: classroom.classCode, nickname: "토끼화가", animal: "🐰", picturePassword: ["⭐", "⭐", "⭐"] }),
+    body: JSON.stringify({ action: "recover", entry: classroom.joinToken, nickname: "토끼화가", animal: "🐰", picturePassword: ["⭐", "⭐", "⭐"] }),
   });
   assert.equal(recovered.status, 200);
   assert.equal((await recovered.json()).student.id, joinedProfile.student.id);
 
-  const explicitlyNew = await miniflare.dispatchFetch("http://localhost/api/student", {
+  const exactDuplicate = await miniflare.dispatchFetch("http://localhost/api/student", {
     method: "POST",
     headers: studentHeaders("203.0.113.104"),
     body: JSON.stringify({ ...joinBody, allowDuplicate: true }),
   });
+  assert.equal(exactDuplicate.status, 409);
+  assert.deepEqual(await exactDuplicate.json(), { error: "같은 동물, 별명, 그림 비밀번호로 만든 프로필이 이미 있어요.", code: "PROFILE_CREDENTIALS_EXIST" });
+
+  const explicitlyNew = await miniflare.dispatchFetch("http://localhost/api/student", {
+    method: "POST",
+    headers: studentHeaders("203.0.113.106"),
+    body: JSON.stringify({ ...joinBody, picturePassword: ["🍎", "🌈", "⚽"], allowDuplicate: true }),
+  });
   assert.equal(explicitlyNew.status, 201);
   assert.equal((await DB.prepare("SELECT COUNT(*) AS count FROM student_profiles WHERE archived_at IS NULL").first()).count, 2);
-});
 
+  const roomWithDuplicateNicknames = await miniflare.dispatchFetch(`http://localhost/api/teacher?classroomId=${classroom.id}`, { headers: teacherHeaders });
+  assert.equal(roomWithDuplicateNicknames.status, 200);
+  const duplicateNicknameStudents = (await roomWithDuplicateNicknames.json()).students;
+  assert.equal(duplicateNicknameStudents.length, 2);
+  assert.ok(duplicateNicknameStudents.every((student) => student.duplicateNickname === true));
+});

@@ -12,11 +12,13 @@ const [speak, speech, join, home, studio, css, messageCenter] = await Promise.al
   read("../app/globals.css"),
   read("../app/components/StudentMessageCenter.tsx"),
 ]);
+const animalPortraits = await readFile(new URL("../public/brand/animal-portraits-v2.png", import.meta.url));
 
 test("important child prompts can be heard on demand without automatic classroom audio", () => {
   assert.match(speech, /new SpeechSynthesisUtterance/);
   assert.match(speech, /utterance\.lang = "ko-KR"/);
-  assert.match(speech, /utterance\.rate = 0\.82/);
+  assert.match(speech, /utterance\.rate = 0\.96/);
+  assert.match(speech, /selectKoreanVoice\(window\.speechSynthesis\.getVoices\(\)\)/);
   assert.match(speak, /onClick=\{handleClick\}/);
   // 음성 미지원·실패 시에도 버튼을 비활성화하지 않고 접근 가능한 대체 행동을 남긴다.
   assert.doesNotMatch(speak, /disabled=/);
@@ -40,7 +42,26 @@ test("entry can be completed with pictures and a generated nickname instead of r
   assert.match(join, /🎲 다른 별명/);
   assert.match(join, /className="button primary full child-primary-action"/);
   assert.match(join, /<span aria-hidden="true">▶️<\/span>/);
-  assert.match(join, /내 동물을 찾아서 눌러요/);
+  assert.match(join, /새로 시작하려면 새로 시작하기를 눌러요/);
+  assert.match(join, /전에 그린 그림이 있다면 내 그림 이어가기를 눌러요/);
+  assert.match(join, /내 동물을 고르고, 그림 별명을 정한 다음, 그림 비밀번호 세 개를 순서대로 골라요/);
+  assert.doesNotMatch(join, /이 기기에 저장된 내 동물 고르기/);
+  assert.match(join, /className="animal-choice-portrait" data-animal-index=\{index\}/);
+  assert.match(join, /className="join-preview-animal" data-animal-index=\{ANIMALS\.indexOf\(animal\)\}/);
+  assert.match(join, /className="join-preview-password-title" aria-hidden="true">그림 비밀번호<\/span>/);
+  assert.match(join, /<span className=\{pictures\[index\] \? "filled" : ""\} key=\{index\}><i>/);
+  assert.match(css, /background-image:url\('\/brand\/animal-portraits-v2\.png'\)/);
+  assert.match(css, /\.entry-join-shell>\.join-card \.join-preview-card>b \{[\s\S]*?display:grid;[\s\S]*?place-items:center;/);
+  assert.match(css, /\.entry-join-shell>\.join-card \.join-preview-slots span \{[\s\S]*?border:0;[\s\S]*?background:transparent;/);
+  assert.match(css, /\.entry-join-shell>\.join-card \.join-preview-slots span>i \{[\s\S]*?place-items:center;[\s\S]*?transform:none;/);
+  assert.match(css, /\.entry-join-shell \.join-controls \.picture-password-picker \{[\s\S]*?position:static;[\s\S]*?display:grid;/);
+  assert.match(css, /\.entry-join-shell \.join-controls \.join-step-2::before,[\s\S]*?\.join-step-3::before \{[\s\S]*?background:#cbdde7;/);
+  assert.match(css, /\.entry-join-shell \.join-controls \.picture-password-picker \.password-actions \{[\s\S]*?position:static;[\s\S]*?grid-column:2;[\s\S]*?grid-row:2;/);
+  const portraitSheetWidth = animalPortraits.readUInt32BE(16);
+  const portraitSheetHeight = animalPortraits.readUInt32BE(20);
+  assert.equal(portraitSheetWidth, 2560);
+  assert.equal(portraitSheetHeight, 1024);
+  assert.equal(portraitSheetWidth / 5, portraitSheetHeight / 2, "each animal sprite cell must stay square");
 });
 
 test("drawing, navigation and reflection retain familiar visual actions when text is not understood", () => {

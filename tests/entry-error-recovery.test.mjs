@@ -27,10 +27,11 @@ test("a wrong class code is classified for code-field recovery, wrong pictures f
   assert.equal(classifyEntryError({ status: 500, action: "join", hasPersonalQrToken: false }), "general");
 });
 
-test("errors are shown with a warning picture and can be heard aloud", () => {
+test("errors are shown with a warning picture while the page keeps one top voice guide", () => {
   assert.match(join, /className="error-box child-error" role="alert"/);
   assert.match(join, /child-error-icon" aria-hidden="true">⚠️/);
-  assert.match(join, /<SpeakButton text=\{error\} label="오류 들어 보기" compact \/>/);
+  assert.doesNotMatch(join, /<SpeakButton text=\{error\}/);
+  assert.match(join, /<SpeakButton text=\{pageInstruction\} \/>/);
 });
 
 test("one big reset clears every picked picture and highlights after a wrong password", () => {
@@ -47,8 +48,8 @@ test("the first correction clears the previous error for nickname, animal and pi
 });
 
 test("existing students hear an unlock instruction, not a creation instruction", () => {
-  assert.match(join, /그림 비밀번호를 만들어요\. 같은 그림을 여러 번 골라도 돼요\./);
-  assert.match(join, /내 그림 비밀번호를 눌러요\. 만들 때 골랐던 그림/);
+  assert.match(join, /같은 그림도 괜찮아요\. 순서대로/);
+  assert.match(join, /만들 때 고른 순서 그대로 눌러요\./);
   assert.match(join, /const creating = mode === "join";/);
 });
 
@@ -58,9 +59,9 @@ test("a wrong class code offers calling the teacher (there is no visible code fi
   assert.match(join, /손을 들고 선생님을 불러요\./);
 });
 
-test("join/recover never renders a stepper or a visible class-code field — the hidden entry alone carries the code", () => {
-  // 별도 스테퍼를 남겨 두면 유지보수 중 실수로 다시 켜질 수 있다. 입장은 항상 한 화면이다.
-  assert.doesNotMatch(join, /QR_STEPPER_ENABLED|qrStep|step-progress/);
+test("join/recover keeps the code hidden and only the approved phone/short-screen step guide is rendered", () => {
+  assert.match(join, /className="mobile-entry-progress"/);
+  assert.match(join, /data-mobile-step=\{mobileStep\}/);
   assert.doesNotMatch(join, /1️⃣ 수업 코드/);
   assert.match(join, /<legend>1️⃣ 내 동물<\/legend>/);
   assert.match(join, /<span>2️⃣ 그림 별명<\/span>/);

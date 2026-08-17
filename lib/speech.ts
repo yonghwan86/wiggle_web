@@ -31,6 +31,28 @@ export type SpeechSpeaker = {
 
 export const SPEECH_START_TIMEOUT_MS = 4_000;
 
+type BrowserVoiceLike = {
+  lang: string;
+  name?: string;
+  default?: boolean;
+  localService?: boolean;
+};
+
+// 브라우저가 돌려주는 첫 한국어 음성은 기계음이 강한 구형 음성일 수 있다.
+// 운영체제별 이름 차이를 허용하면서 자연스러운 한국어 음성을 우선한다.
+export function selectKoreanVoice<T extends BrowserVoiceLike>(voices: readonly T[]): T | null {
+  const preferredNames = ["sunhi", "heami", "yuna", "google 한국", "microsoft", "한국", "korean"];
+  const koreanVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith("ko"));
+  return koreanVoices
+    .map((voice, index) => {
+      const name = (voice.name ?? "").toLowerCase();
+      const preference = preferredNames.findIndex((candidate) => name.includes(candidate));
+      const nameScore = preference < 0 ? 0 : preferredNames.length - preference;
+      return { voice, index, score: nameScore * 10 + (voice.localService ? 2 : 0) + (voice.default ? 1 : 0) };
+    })
+    .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.voice ?? null;
+}
+
 export function speechDurationCapMs(text: string) {
   return Math.min(20_000, Math.max(2_500, text.length * 180));
 }
@@ -90,8 +112,8 @@ export function createSpeechSpeaker(env: SpeechEnvironment, onStatus: (status: S
       let started = false;
       const utterance = env.createUtterance(text.replace(/\s+/g, " ").trim());
       utterance.lang = "ko-KR";
-      utterance.rate = 0.82;
-      utterance.pitch = 1.05;
+      utterance.rate = 0.96;
+      utterance.pitch = 1;
       const voice = env.koreanVoice();
       if (voice) utterance.voice = voice;
       utterance.onstart = () => {
@@ -137,7 +159,7 @@ export function browserSpeechEnvironment(): SpeechEnvironment | null {
     createUtterance: (text) => new SpeechSynthesisUtterance(text) as unknown as SpeechUtteranceLike,
     speak: (utterance) => window.speechSynthesis.speak(utterance as SpeechSynthesisUtterance),
     cancel: () => window.speechSynthesis.cancel(),
-    koreanVoice: () => window.speechSynthesis.getVoices().find((voice) => voice.lang.toLowerCase().startsWith("ko")) ?? null,
+    koreanVoice: () => selectKoreanVoice(window.speechSynthesis.getVoices()),
     setTimeout: (handler, ms) => window.setTimeout(handler, ms),
     clearTimeout: (id) => window.clearTimeout(id),
   };

@@ -118,6 +118,18 @@ async function studentPost(request: Request) {
     return noStoreJson({ ok: true, acknowledged: messageIds.length });
   }
 
+  if (action === "entryStatus") {
+    if (!(await ipAllowed(request))) return jsonError("입장 확인이 많아요. 잠시 후 다시 해 주세요.", 429);
+    const entry = cleanText(payload.entry, 80);
+    const classroom = await classroomForEntry(entry);
+    if (!classroom) return jsonError("수업 코드를 다시 확인해 주세요.", 404);
+    if (!classroom.admissionOpen) return jsonError("선생님이 입장을 열 때까지 기다려 주세요.", 403);
+    const existing = await bindings().DB.prepare(`SELECT 1 FROM student_profiles WHERE classroom_id = ? AND archived_at IS NULL LIMIT 1`).bind(classroom.id).first();
+    // 학급 인원이나 프로필 목록은 노출하지 않고, 신규/기존 입장 화면을 고르는 데 필요한
+    // 최소 상태만 돌려준다. 수업 코드와 QR은 모두 classroomForEntry에서 같은 방식으로 처리한다.
+    return noStoreJson({ classroomName: classroom.displayName, hasProfiles: Boolean(existing) });
+  }
+
   if (action === "join") {
     if (!(await ipAllowed(request))) return jsonError("입장 시도가 많아요. 잠시 후 다시 해 주세요.", 429);
     const entry = cleanText(payload.entry, 80); const classroom = await classroomForEntry(entry);
@@ -130,9 +142,15 @@ async function studentPost(request: Request) {
     // 이 상한은 명단 존재 여부를 캐내는 409 오라클 반복과 가짜 프로필 누적을 제한한다.
     if (!(await rateLimit(`student-join-class:${classroom.id}:${requestIp(request)}`, CLASSROOM_JOIN_LIMIT, IP_ENTRY_WINDOW_SECONDS))) return jsonError("이 수업의 입장 시도가 많아요. 선생님께 알려 주세요.", 429);
     const db = bindings().DB;
-    if (!allowDuplicate) {
-      const existing = await db.prepare(`SELECT 1 FROM student_profiles WHERE classroom_id = ? AND nickname = ? COLLATE NOCASE AND animal = ? AND archived_at IS NULL LIMIT 1`).bind(classroom.id, nickname, animal).first();
-      if (existing) return noStoreJson({ error: "같은 별명과 동물의 프로필이 이미 있어요.", code: "PROFILE_EXISTS" }, { status: 409 });
+    const duplicateCandidates = await db.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id JOIN recovery_credentials r ON r.student_id = s.id WHERE s.classroom_id = ? AND s.nickname = ? COLLATE NOCASE AND s.animal = ? AND s.archived_at IS NULL ORDER BY s.id`).bind(classroom.id, nickname, animal).all<RecoveredStudent>();
+    if (duplicateCandidates.results.length && !allowDuplicate) {
+      return noStoreJson({ error: "같은 별명과 동물의 프로필이 이미 있어요.", code: "PROFILE_EXISTS" }, { status: 409 });
+    }
+    if (allowDuplicate && duplicateCandidates.results.length) {
+      const exactMatches = await Promise.all(duplicateCandidates.results.map((candidate) => verifySecret(picture, candidate.pictureSalt, candidate.pictureHash)));
+      if (exactMatches.some(Boolean)) {
+        return noStoreJson({ error: "같은 동물, 별명, 그림 비밀번호로 만든 프로필이 이미 있어요.", code: "PROFILE_CREDENTIALS_EXIST" }, { status: 409 });
+      }
     }
     const studentId = id("student"); const salt = randomToken(16); const personalQrToken = randomToken(28); const now = new Date().toISOString();
     const [pictureHash, personalQrHash, device] = await Promise.all([
@@ -152,7 +170,7 @@ async function studentPost(request: Request) {
       }
       return jsonError("입장이 닫혔어요. 선생님께 확인해 주세요.", 403);
     }
-    return noStoreJson({ student: { id: studentId, nickname, animal, classroomName: classroom.displayName }, deviceToken: device.token, expiresAt: device.expiresAt, personalQrToken }, { status: 201 });
+    return noStoreJson({ student: { id: studentId, nickname, animal, classroomName: classroom.displayName }, deviceToken: device.token, expiresAt: device.expiresAt }, { status: 201 });
   }
 
   if (action === "switchProfile") {
@@ -178,15 +196,17 @@ async function studentPost(request: Request) {
       if (!(await targetAllowed(qrTarget))) return jsonError("복구 시도가 많아요. 선생님께 도움을 요청해 주세요.", 429);
       student = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM recovery_credentials r JOIN student_profiles s ON s.id = r.student_id JOIN classrooms c ON c.id = s.classroom_id WHERE r.personal_qr_hash = ? AND s.archived_at IS NULL AND c.active = 1`).bind(qrTarget.slice(3)).first<RecoveredStudent>();
     } else {
-      const classCode = cleanText(payload.classCode, 12); const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
+      const entry = cleanText(payload.entry ?? payload.classCode, 80); const nickname = cleanText(payload.nickname, 16); const animal = cleanText(payload.animal, 12); const pictureLength = picturePasswordLength(payload.picturePassword); const picture = normalizePicturePassword(payload.picturePassword);
       if (pictureLength !== 3) return jsonError("그림 비밀번호 세 개를 골라 주세요.");
-      const recoverTarget = `recover:${classCode}:${nickname}:${animal}`;
+      const classroom = await classroomForEntry(entry);
+      if (!classroom) return jsonError("수업 코드를 다시 확인해 주세요.", 404);
+      const recoverTarget = `recover:${classroom.id}:${nickname.toLocaleLowerCase("ko-KR")}:${animal}`;
       if (!(await targetAllowed(recoverTarget))) return jsonError("여러 번 틀렸어요. 선생님께 도움을 요청해 주세요.", 429);
-      const candidates = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id JOIN recovery_credentials r ON r.student_id = s.id WHERE c.class_code = ? AND s.nickname = ? AND s.animal = ? AND s.archived_at IS NULL AND c.active = 1 ORDER BY s.id`).bind(classCode, nickname, animal).all<RecoveredStudent>();
+      const candidates = await bindings().DB.prepare(`SELECT s.id, s.nickname, s.animal, c.display_name AS classroomName, r.picture_hash AS pictureHash, r.picture_salt AS pictureSalt FROM student_profiles s JOIN classrooms c ON c.id = s.classroom_id JOIN recovery_credentials r ON r.student_id = s.id WHERE s.classroom_id = ? AND s.nickname = ? COLLATE NOCASE AND s.animal = ? AND s.archived_at IS NULL AND c.active = 1 ORDER BY s.id`).bind(classroom.id, nickname, animal).all<RecoveredStudent>();
       const checks = await Promise.all(candidates.results.map((candidate) => verifySecret(picture, candidate.pictureSalt, candidate.pictureHash)));
       if (!candidates.results.length) await deriveSecret(picture, "missing-recovery-salt");
       const matches = candidates.results.filter((_, index) => checks[index]);
-      if (matches.length > 1) return jsonError("같은 프로필이 있어요. 개인 QR이나 선생님 도움으로 찾아 주세요.", 409);
+      if (matches.length > 1) return jsonError("같은 정보의 프로필이 둘 이상이에요. 선생님에게 어떤 프로필인지 확인해 달라고 말해 주세요.", 409);
       student = matches[0] ?? null;
       if (!student) return jsonError("프로필이나 그림 비밀번호를 다시 확인해 주세요.", 401);
       await clearRateLimit(targetKey(recoverTarget));

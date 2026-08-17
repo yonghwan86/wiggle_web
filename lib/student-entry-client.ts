@@ -1,6 +1,8 @@
 export type StudentEntryResponse = {
   error?: string;
-  code?: "PROFILE_EXISTS";
+  code?: "PROFILE_EXISTS" | "PROFILE_CREDENTIALS_EXIST";
+  classroomName?: string;
+  hasProfiles?: boolean;
   student?: { id: string; nickname: string; animal: string; classroomName: string };
   deviceToken?: string;
   expiresAt?: string;

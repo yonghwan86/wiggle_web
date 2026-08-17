@@ -5,16 +5,21 @@ import test from "node:test";
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("hosted teachers require SIWC and fixed demo credentials are absent", async () => {
-  const [security, api, page, classPage, ui, readme] = await Promise.all([read("../lib/security.ts"), read("../app/api/teacher/route.ts"), read("../app/teacher/page.tsx"), read("../app/teacher/class/[id]/page.tsx"), read("../app/components/TeacherApp.tsx"), read("../README.md")]);
+  const [security, api, demoSeed, page, classPage, ui, readme] = await Promise.all([read("../lib/security.ts"), read("../app/api/teacher/route.ts"), read("../lib/demo-seed.ts"), read("../app/teacher/page.tsx"), read("../app/teacher/class/[id]/page.tsx"), read("../app/components/TeacherApp.tsx"), read("../README.md")]);
   assert.match(security, /getChatGPTUser/); assert.match(security, /process\.env\.NODE_ENV === "production"/); assert.match(security, /localhost/); assert.match(api, /isLocalDemoRequest\(request\)/);
   assert.match(page + classPage, /requireChatGPTUser/); assert.match(page + classPage, /NODE_ENV === "production"/);
   assert.doesNotMatch(api + ui + readme, /teacher@wiggle\.local|\/ 2841|DEMO_TEACHER|ensureDemoSeed/);
+  assert.equal((api.match(/await requireTeacher\(\) \?\? await localAutoTeacher\(request\)/g) ?? []).length, 2);
+  assert.match(api, /async function localAutoTeacher\(request: Request\) \{\s*if \(!isLocalDemoRequest\(request\)\) return null;/);
+  const autoTeacher = demoSeed.slice(demoSeed.indexOf("export async function ensureLocalAutoTeacher"), demoSeed.indexOf("export async function ensureLocalTeacher"));
+  assert.match(autoTeacher, /@localhost\.invalid/);
+  assert.doesNotMatch(autoTeacher, /pin|deriveSecret|verifySecret/);
 });
 
 test("shared tablet profiles never reactivate a stored raw token", async () => {
   const [session, join, studentApi] = await Promise.all([read("../lib/client-session.ts"), read("../app/components/JoinClient.tsx"), read("../app/api/student/route.ts")]);
   assert.match(session, /sessionStorage\.setItem\(ACTIVE_SESSION_KEY/); assert.match(session, /LEGACY_PROFILES_KEY/); assert.doesNotMatch(session, /function activateProfile/);
-  assert.match(join, /switchProfile/); assert.match(join, /picturePassword/); assert.doesNotMatch(join, /activateProfile/);
+  assert.match(join, /picturePassword/); assert.doesNotMatch(join, /switchProfile|deviceProfiles|activeProfile|activateProfile/);
   assert.match(studentApi, /action === "switchProfile"/); assert.match(studentApi, /verifySecret\(picture/); assert.match(studentApi, /2 \* 60 \* 60 \* 1000/);
 });
 
@@ -52,7 +57,7 @@ test("P1 operational safeguards are wired", async () => {
   const [init, schema, teacherApi, teacherUi, studio] = await Promise.all([read("../scripts/init-local-db.mjs"), read("../db/schema.ts"), read("../app/api/teacher/route.ts"), read("../app/components/TeacherApp.tsx"), read("../app/components/DrawingStudio.tsx")]);
   assert.match(init, /CREATE TABLE IF NOT EXISTS/); assert.match(init, /readdirSync/);
   assert.match(schema, /primaryKey\(\{ columns: \[table\.messageId, table\.studentId\]/); assert.match(schema, /teacherViews/);
-  assert.match(teacherApi, /action === "viewStudent"/); assert.match(teacherApi, /action === "resetStudentRecovery"/); assert.match(teacherUi, /복구 카드 재발급/);
+  assert.match(teacherApi, /action === "viewStudent"/); assert.match(teacherApi, /action === "resetStudentRecovery"/); assert.doesNotMatch(teacherUi, /복구 카드 재발급/);
   assert.match(studio, /new Map<number/); assert.match(studio, /event\.pointerId/);
 });
 
