@@ -55,7 +55,19 @@ const worker = {
       headers.set("content-security-policy", "default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
       return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     }
-    return response;
+
+    // 나머지 경로에도 최소 방어선을 둔다. MIME sniffing과 참조 주소 유출은 어느 화면에서도
+    // 이득이 없고, 학생·교사 화면을 iframe에 올릴 이유도 없다(clickjacking 차단).
+    // 공개 랜딩(`/`)만 프레임 허용으로 남겨 호스팅 미리보기가 깨지지 않게 한다.
+    // frame-ancestors 하나만 담은 CSP라 스크립트·스타일 로딩 정책은 건드리지 않는다.
+    const secured = new Response(response.body, response);
+    secured.headers.set("x-content-type-options", "nosniff");
+    secured.headers.set("referrer-policy", "strict-origin-when-cross-origin");
+    if (url.pathname !== "/") {
+      secured.headers.set("x-frame-options", "DENY");
+      secured.headers.set("content-security-policy", "frame-ancestors 'none'");
+    }
+    return secured;
   },
 };
 

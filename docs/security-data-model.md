@@ -29,6 +29,13 @@
 - R2 후보 object key는 revision, request ID, nonce를 포함한다. CAS 승자만 D1 metadata에 연결하고 committed metadata로 다시 기록하며 패자는 자신의 후보만 삭제한다.
 - 오프라인 요청은 IndexedDB에 학생별 token과 함께 격리하며 공유 태블릿 전환 시 활성 token을 섞지 않는다.
 
+## 응답 헤더
+
+- `worker/index.ts`가 모든 응답에 `x-content-type-options: nosniff`와 `referrer-policy: strict-origin-when-cross-origin`을 붙인다.
+- 공개 랜딩(`/`)을 제외한 모든 경로에 `x-frame-options: DENY`와 `content-security-policy: frame-ancestors 'none'`을 붙여 학생·교사 화면의 clickjacking을 막는다. 랜딩만 남긴 이유는 호스팅 미리보기가 사이트 루트를 iframe으로 여는 경우를 깨지 않기 위해서다.
+- 가족 공유 경로(`/family/*`, `/api/family/*`)는 그대로 더 강한 전용 헤더 묶음(no-store, no-referrer, 전체 CSP, noindex)을 유지한다.
+- 아직 남은 과제: 앱 전체에 script/style/connect까지 제한하는 완전한 CSP는 Next 인라인 스크립트 정책을 정한 뒤 적용한다.
+
 ## 보존 원칙
 
 - 작품 D1 기록과 R2 이미지는 학급 사용 기간과 학교 계약의 보존 정책을 따른다. 실제 운영 전 삭제·내보내기 작업을 구현한다.

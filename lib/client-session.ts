@@ -163,11 +163,6 @@ export function storeProfile(profile: ActiveDeviceProfile) {
   sessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ studentId: profile.studentId, deviceToken: profile.deviceToken, expiresAt: profile.expiresAt } satisfies ActiveSession));
 }
 
-export function setActiveSession(studentId: string, deviceToken: string, expiresAt: string) {
-  if (!deviceProfiles().some((profile) => profile.studentId === studentId)) throw new Error("저장된 학생 프로필이 아니에요.");
-  sessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ studentId, deviceToken, expiresAt } satisfies ActiveSession));
-}
-
 export function leaveActiveProfile() { sessionStorage.removeItem(ACTIVE_SESSION_KEY); }
 
 export async function deactivateProfile() {

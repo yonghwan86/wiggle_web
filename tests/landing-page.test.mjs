@@ -117,7 +117,9 @@ test("desktop (min-width:900px) landing typography reads as a strong headline wi
 
 test("wide picture-book screens keep short landing and join copy on one line", async () => {
   const css = await read("../app/globals.css");
-  const wide = css.match(/@media \(min-width:901px\) \{\n  \.landing-headline,\.landing-subtitle,\.entry-card\.join-card h1,\.entry-card\.join-card \.join-subtitle \{([\s\S]*?)\n  \}/)?.[1] ?? "";
+  // 개행을 `\n`으로 고정하면 CRLF 체크아웃(Windows)에서 이 블록을 영영 찾지 못해
+  // CSS가 멀쩡해도 실패한다. 줄바꿈은 개행 종류와 무관하게 본다.
+  const wide = css.match(/@media \(min-width:901px\) \{\s*\.landing-headline,\.landing-subtitle,\.entry-card\.join-card h1,\.entry-card\.join-card \.join-subtitle \{([\s\S]*?)\}/)?.[1] ?? "";
   assert.match(wide, /width:auto;/);
   assert.match(wide, /max-width:none;/);
   assert.match(wide, /white-space:nowrap;/);

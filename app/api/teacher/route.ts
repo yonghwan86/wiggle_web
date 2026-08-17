@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { bindings } from "@/db/runtime";
+import { bytesToDataUrl } from "@/lib/image-data";
 import { ensureLocalTeacher, issueTeacherSession } from "@/lib/demo-seed";
 import { cleanText, id, isLocalDemoRequest, jsonError, noStoreJson, randomToken, rateLimit, requireTeacher, revokeTeacherSession, sameOrigin, sha256 } from "@/lib/security";
 import { prepareTeacherMessageInsert, validateTeacherMessageTarget } from "@/lib/teacher-messages";
@@ -38,9 +39,9 @@ async function toDataUrl(key: string | null) {
   const object = await bindings().ARTWORKS.get(key);
   if (!object) return null;
   const bytes = new Uint8Array(await object.arrayBuffer());
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return `data:${object.httpMetadata?.contentType ?? "image/png"};base64,${btoa(binary)}`;
+  // 바이트마다 문자열을 이어 붙이면 썸네일 한 장에 수십만 번의 재할당이 생긴다.
+  // 학생 수만큼 6초마다 반복되는 경로라 청크 변환(bytesToDataUrl)으로 CPU 시간을 줄인다.
+  return bytesToDataUrl(bytes, object.httpMetadata?.contentType === "image/jpeg" ? "image/jpeg" : "image/png");
 }
 
 export async function GET(request: Request) {

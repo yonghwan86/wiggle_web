@@ -66,7 +66,7 @@ test("speaker, picture slots and choice controls remain large and visible on sma
   assert.match(css, /\.student-message-button \.teacher-message-icon \{[^}]*font-size:26px/);
   assert.match(css, /\.password-slots span \{[^}]*width:52px; height:52px/);
   assert.match(css, /\.reflection-choice-grid button \{[^}]*min-height:84px/);
-  assert.match(css, /@media \(max-width:720px\)[\s\S]*\.welcome-title-row \{ grid-template-columns:48px minmax\(0,1fr\) 52px/);
+  // `.welcome-title-row` 규칙은 어떤 화면도 렌더링하지 않는 죽은 CSS라 함께 제거했다.
   assert.match(css, /@media \(max-width:460px\) and \(orientation:portrait\)[\s\S]*\.lesson-spoken-prompt \{ grid-column:1; grid-row:1; grid-template-columns:minmax\(0,1fr\) 48px/);
   assert.match(css, /\.reflection-choice-grid \{ display:grid; grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(home, /className="student-home-intro"[\s\S]*<SpeakButton text="오늘은 무엇을 그릴까\? 선생님이 고른 활동부터 시작해 봐요\."/);

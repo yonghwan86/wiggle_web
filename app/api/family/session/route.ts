@@ -1,6 +1,7 @@
 import { bindings } from "@/db/runtime";
 import { familyCookieToken, familyJson, resolveFamilySession } from "@/lib/family-sharing";
 import { buildWeeklyGrowthReport } from "@/lib/growth-reports";
+import { bytesToDataUrl } from "@/lib/image-data";
 import { validateDrawDocument } from "@/lib/drawing-model";
 import { rateLimit, sha256 } from "@/lib/security";
 
@@ -12,9 +13,8 @@ async function imageDataUrl(key: string) {
   const object = await bindings().ARTWORKS.get(key);
   if (!object || object.size > 3_500_000) return null;
   const bytes = new Uint8Array(await object.arrayBuffer());
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return `data:image/png;base64,${btoa(binary)}`;
+  // 바이트 단위 문자열 결합 대신 청크 변환을 쓴다. 가족 화면은 최대 12장을 한 번에 싣는다.
+  return bytesToDataUrl(bytes, "image/png");
 }
 
 function publicTimelapseOps(serialized: string) {
