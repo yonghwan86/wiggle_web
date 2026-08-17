@@ -37,7 +37,7 @@ const NICKNAME_IDEAS: Record<string, string[]> = {
 
 type Mode = "profiles" | "unlock" | "join" | "recover" | "done";
 
-export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialEntry?: string; recoveryToken?: string }) {
+export function JoinClient({ initialEntry = "", recoveryToken = "", isQrEntry = true }: { initialEntry?: string; recoveryToken?: string; isQrEntry?: boolean }) {
   const [profiles, setProfiles] = useState<DeviceProfile[]>([]);
   const [mode, setMode] = useState<Mode>(recoveryToken ? "recover" : "join");
   const [entry, setEntry] = useState(initialEntry);
@@ -51,7 +51,7 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   const [personalQrToken, setPersonalQrToken] = useState("");
   const [selectedProfile, setSelectedProfile] = useState<DeviceProfile | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState(false);
-  const qrFlow = Boolean(initialEntry) && !recoveryToken;
+  const qrFlow = Boolean(initialEntry) && !recoveryToken && isQrEntry;
   // QR로 들어왔으면 수업 코드는 QR이 대신하므로 코드 칸을 숨기고 번호를 별명부터 매긴다.
   const hideCodeField = qrFlow && mode === "join";
 
