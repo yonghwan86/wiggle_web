@@ -45,14 +45,15 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 - `PRAGMA table_info`·`sqlite_master` 조회(ensureSchema 업그레이드 경로) 동작 확인.
 - PBKDF2 고정 벡터: workerd 테스트를 Node crypto 벡터로 포팅(같은 파라미터, 같은 결과).
 
-## 운영 데이터 (가정 금지 — 조사 필수)
+## 운영 데이터 (조사 완료 — 이전 필수)
 
-전환 전에 Codex(Sites 도구 접근 가능)로 실제 운영 D1/R2를 조사한다:
+2026-08-19 Codex 실측(`docs/agent-handoff/operational-data-audit-20260819.md`): **실사용 데이터 있음.**
 
-1. D1: teachers·classrooms·student_profiles·artworks 행 수.
-2. R2: 객체 수·총 용량, D1 image key와의 대응.
-3. 배포된 인쇄물·QR이 기존 Sites 도메인을 가리키는지, 도메인 전환 안내 필요 여부.
-4. D1에 실데이터가 있으면 export → Turso import 절차 추가. R2는 유지하므로 이미지 이전은 없음.
+- D1: teachers 2 · classrooms 9 · student_profiles 27 · artworks 32 (완료 7, artwork_versions 1). 보수적 표식 제외 후에도 학생 22·작품 29가 남고, 과거 인수인계 기록이 특정 프로필을 실제 학생으로 명시 — **이름 패턴만으로 삭제·제외 금지.**
+- 따라서 6단계에서 **D1 전체 테이블 export → Turso import가 필수다** (핵심 4개만이 아니라 recovery_credentials 포함 전부 — 그림 비밀번호 재입장이 걸려 있다).
+- R2: D1이 참조하는 고유 키 31개. 실제 객체 수·용량은 **미확인** — Sites 읽기 전용 도구가 R2 목록을 제공하지 않고 S3 자격증명도 없음.
+- **미해결: Sites 관리 R2에서 객체 31개를 꺼낼 경로.** 후보: ① Sites가 임시 읽기 전용 자격증명·목록 기능 제공 ② 마지막 Sites 배포로 교사 인증 임시 export 엔드포인트 추가 ③ 31개면 앱 화면에서 수동 회수. 6단계 전에 확정한다.
+- 인쇄된 QR·링크가 기존 Sites 도메인을 가리키는 문제: 새 도메인 전환 시 수업 코드 재안내 필요(4자리 코드는 새 도메인에서 그대로 유효).
 
 ## 테스트 전환
 
