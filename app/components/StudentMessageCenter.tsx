@@ -45,8 +45,10 @@ export function StudentMessageCenter({ messages, floating = false, compact = fal
       <b>👩‍🏫 선생님</b><p>{latestUnread.body}</p><SpeakButton text={`선생님이 말했어요. ${latestUnread.body}`} compact />
       <button type="button" className="canvas-message-close" onClick={dismissUnread} aria-label="새 선생님 말씀 모두 닫기">×</button>
     </aside>}
-    <button type="button" className={`student-message-button${floating ? " floating" : ""}${compact ? " compact" : ""}`} onClick={openHistory} aria-label={`선생님 말씀 ${unread.length ? `${unread.length}개 새로 옴` : "이력 보기"}`}>
-      <span className="teacher-message-icon" aria-hidden="true">👩‍🏫</span>{compact ? <span className="sr-only">선생님 말씀</span> : " 선생님 말씀"}{unread.length > 0 && <b>{unread.length}</b>}
+    {/* .floating은 비컴팩트 버튼에서는 화면 고정(fixed) 배치 규칙이라, 헤더 안 인라인 버튼에는
+        배너 스타일(floating prop)만 적용하고 버튼의 .floating 클래스는 컴팩트일 때만 붙인다. */}
+    <button type="button" className={`student-message-button${floating && compact ? " floating" : ""}${compact ? " compact" : ""}`} onClick={openHistory} aria-label={`선생님 말씀 ${unread.length ? `${unread.length}개 새로 옴` : "이력 보기"}`}>
+      <span className="teacher-message-icon" aria-hidden="true">💌</span>{compact ? <span className="sr-only">선생님 말씀</span> : <span className="student-message-label">선생님 말씀</span>}{unread.length > 0 && <b>{unread.length}</b>}
     </button>
     {open && <div className="modal-backdrop" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="student-message-title">
       <section className="student-message-history">

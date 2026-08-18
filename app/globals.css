@@ -957,6 +957,16 @@ code,pre { max-width:100%; overflow-x:auto; white-space:nowrap; word-break:norma
 .student-home-header { gap:12px; border-bottom:1px solid var(--border); }
 .student-home-header .student-identity { margin-left:0; margin-right:auto; }
 .student-header-actions { display:flex; gap:10px; }
+.student-header-actions .student-message-button { margin:0; min-height:44px; padding:7px 12px; }
+/* 폰 폭에서는 라벨을 붙이면 옆의 학생 바꾸기·수업 마치기가 짓눌린다 — 아이콘 44px 정사각으로 접고
+   안 읽음 배지는 컴팩트 버튼과 같은 모서리 배지로 옮긴다. */
+@media (max-width:720px) {
+  /* :not(.compact)은 의미가 아니라 특이도용 — 뒤쪽의 회귀 보호 규칙
+     `.student-message-button:not(.compact) { width:100%; }`(그리기 화면 하단 배너용)보다 이겨야 한다. */
+  .student-header-actions .student-message-button:not(.compact) { position:relative; width:44px; min-width:44px; padding:0; justify-content:center; }
+  .student-header-actions .student-message-button .student-message-label { display:none; }
+  .student-header-actions .student-message-button b { position:absolute; top:-6px; right:-6px; min-width:20px; width:20px; height:20px; font-size:10px; box-shadow:0 2px 5px rgba(26,59,92,.2); }
+}
 .finish-class-button { border-color:#e9cf77; background:#fff9dc; }
 .student-home-intro { margin:22px 22px 14px; display:flex; align-items:center; gap:24px; }
 .student-home-intro>div { min-width:0; }
@@ -1307,7 +1317,9 @@ code,pre { max-width:100%; overflow-x:auto; white-space:nowrap; word-break:norma
 .student-tool-shelf {
   aspect-ratio:1560/170;
   margin-top:8px;
-  padding:13px 72px;
+  /* 좌우 패딩은 배경 선반 PNG의 색연필 장식 폭(약 4.8%)을 따라간다 — 고정 72px이면
+     좁은 화면에서 장식은 줄어드는데 카드 폭만 깎여 내용이 카드 밖으로 넘친다. */
+  padding:13px clamp(30px,4.8vw,72px);
   border:0;
   border-radius:0;
   background:transparent url('/brand/student-home-shelf-v2.png') center/100% 100% no-repeat;
@@ -1327,11 +1339,19 @@ code,pre { max-width:100%; overflow-x:auto; white-space:nowrap; word-break:norma
 .student-tool-shelf .student-menu-card p { display:none; }
 .student-tool-shelf .student-menu-card h2 { white-space:nowrap; }
 
+/* 확정 시안처럼 아이콘·제목·칩을 한 덩어리로 칸 중앙에 모은다.
+   ≤720px 휴대전화 레이아웃(2열·세로 스택)은 기존 규칙을 그대로 쓴다. */
+@media (min-width:1101px) {
+  .student-tool-shelf .student-menu-card { display:flex; align-items:center; justify-content:center; gap:14px; }
+  .student-tool-shelf .student-menu-card>span { font-size:52px; }
+  .student-tool-shelf .student-menu-card h2 { margin:0; }
+}
+
 @media (min-width:721px) and (max-width:1100px) {
-  .student-tool-shelf .student-menu-card { padding:5px 8px; gap:6px; grid-template-columns:40px minmax(0,1fr) auto; }
-  .student-tool-shelf .student-menu-card>span { font-size:30px; }
-  .student-tool-shelf .student-menu-card h2 { font-size:20px; }
-  .student-tool-shelf .student-menu-card>b { grid-column:auto; justify-self:stretch; min-width:46px; padding:6px; font-size:12px; }
+  .student-tool-shelf .student-menu-card { display:flex; align-items:center; justify-content:center; gap:clamp(6px,1vw,10px); padding:5px 4px; }
+  .student-tool-shelf .student-menu-card>span { font-size:clamp(28px,3.8vw,34px); }
+  .student-tool-shelf .student-menu-card h2 { margin:0; font-size:clamp(16px,2.2vw,20px); }
+  .student-tool-shelf .student-menu-card>b { min-width:42px; padding:5px 6px; font-size:12px; }
 }
 
 @media (min-width:721px) and (max-width:1024px) and (orientation:portrait) {

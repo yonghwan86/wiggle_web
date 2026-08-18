@@ -79,7 +79,7 @@ export function StudentHome() {
     <header className="app-header student-home-header">
       <Logo />
       <div className="student-identity"><span aria-hidden="true">{data.student.animal}</span><div><b>{data.student.nickname}</b><small>{data.student.classroomName}</small></div></div>
-      <div className="student-header-actions"><StudentMessageCenter messages={data.messages} floating compact /><button className="small-button" onClick={() => void leaveClass()} disabled={leaving}>🐾 학생 바꾸기</button><button className="small-button finish-class-button" onClick={() => void leaveClass()} disabled={leaving}>🚪 수업 마치기</button></div>
+      <div className="student-header-actions"><StudentMessageCenter messages={data.messages} floating /><button className="small-button" onClick={() => void leaveClass()} disabled={leaving}>🐾 학생 바꾸기</button><button className="small-button finish-class-button" onClick={() => void leaveClass()} disabled={leaving}>🚪 수업 마치기</button></div>
     </header>
     {error && <p className="error-box" role="alert">{error}</p>}
     <section className="student-home-intro">
@@ -119,7 +119,7 @@ export function StudentHome() {
         <span aria-hidden="true">🖼️</span><div><h2>내 그림</h2><p>그린 그림 다시 보기</p></div><b>{data.artworkTotal}개</b>
       </a>
       <a className="student-menu-card activities" href="/student/activities">
-        <span aria-hidden="true">🎨</span><div><h2>활동 고르기</h2><p>다른 활동 찾아보기</p></div><b>열기</b>
+        <span aria-hidden="true">🎨</span><div><h2>활동 고르기</h2><p>다른 활동 찾아보기</p></div>
       </a>
     </nav>
   </main>;

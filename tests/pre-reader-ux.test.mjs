@@ -26,7 +26,10 @@ test("important child prompts can be heard on demand without automatic classroom
   assert.match(speak, /선생님과 같이 읽어요/);
   assert.match(home, /SpeakButton text="오늘은 무엇을 그릴까\? 선생님이 고른 활동부터 시작해 봐요\."/);
   assert.match(messageCenter, /선생님이 말했어요/);
-  assert.match(messageCenter, /className="teacher-message-icon" aria-hidden="true">👩‍🏫<\/span>/);
+  // 2026-08-18 사용자 결정: 열기 버튼 아이콘은 💌 — 👩‍🏫 ZWJ 시퀀스는 Windows에서 깨져 보이고
+  // "무엇을 여는 버튼인지"가 읽히지 않았다. 배너·이력 안의 👩‍🏫(말하는 주체 표시)는 유지한다.
+  assert.match(messageCenter, /className="teacher-message-icon" aria-hidden="true">💌<\/span>/);
+  assert.match(messageCenter, /<b>👩‍🏫 선생님<\/b>/);
   assert.doesNotMatch(messageCenter, /📬/);
   assert.match(studio, /SpeakButton text=\{`\$\{lesson\.steps\[step\]\.instruction\}/);
   assert.match(studio, /SpeakButton text=\{`\$\{coaching\.question\}/);
