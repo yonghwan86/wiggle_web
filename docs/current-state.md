@@ -10,7 +10,7 @@
 - 공개 Sites: `https://wiggle-classroom-web.chan1940.chatgpt.site`
 - 마지막으로 확인된 `main` 커밋: `1cafeed4c2d82ddbc602248f8985879eed642b04`
 - 마지막으로 확인된 공개 배포: 위 커밋을 사용한 Sites v30
-- 로컬 브랜치 `codex/student-entry-ui-20260818`는 `main`보다 4커밋 앞선다 (아래 로컬 커밋 상태 참조). GitHub·Sites에는 반영하지 않았다.
+- 로컬 브랜치 `claude/entry-redesign-cleanup-20260818`(구 codex/student-entry-ui-20260818)는 `main`보다 앞선다 (아래 로컬 커밋 상태 참조). GitHub·Sites에는 반영하지 않았다.
 
 ## 매우 중요한 작업 폴더 상태
 
@@ -20,6 +20,8 @@
 2. `feat: redesign student entry with classroom-scoped re-entry` — 학생 입장 재설계 본체와 지속 컨텍스트 문서
 3. `fix: rate-limit duplicate-credential probing in student join` — 중복 생성 분기의 비밀번호 오라클을 복구 경로와 같은 대상별 한도로 차단
 4. `chore: trim dead CSS from legacy entry flow` — 옛 입장 흐름(프로필 그리드·QR 위저드·학생 푸터 등)의 죽은 CSS 제거와 이 문서 갱신
+5. `fix: update browser-check for new entry flow and close 44px gaps` — 실측 검증 스크립트를 새 입장 흐름으로 재작성, 플로팅 도구 버튼 가림과 44px 미달 5종 수정 (3뷰포트 실패 0)
+6. `docs:`·`chore:` — Codex 인계 보고서(docs/agent-handoff/latest.md)와 ready marker
 
 - 커밋되지 않은 파일은 사용자 소유 참고 자료(`examples/*.jpg`, 시안 원본)와 로컬 도구 설정(`.claude/`)뿐이다. 임의로 삭제하지 않는다.
 - `git reset --hard`, `git checkout --`, 광범위한 삭제를 사용하지 않는다.
@@ -87,7 +89,7 @@
 
 ## 2026-08-18 로컬 구현·검증 상태
 
-- 작업 브랜치: `codex/student-entry-ui-20260818` (base `1cafeed`, 로컬 4커밋)
+- 작업 브랜치: `claude/entry-redesign-cleanup-20260818` (base `1cafeed`)
 - push·Sites 배포는 하지 않았다. 공개 사이트는 계속 기존 Sites v30이다.
 - 관련 API 통합 테스트에서 빈 학급 상태, 학생 생성, 동일 자격정보 중복 차단, 다른 비밀번호의 동명 프로필, 학급 코드/QR 토큰 재입장, 동일 학생 ID 복귀를 확인한다.
 - 실제 로컬 브라우저에서 신규 입장, 잘못된 비밀번호, 올바른 재입장, 학생 A 종료 뒤 학생 B 전환, 교사 읽기 전용 프로필 정보를 확인했다.
