@@ -50,8 +50,9 @@ next-env.d.ts
 *.sqlite-shm
 *.sqlite-wal
 
-# local agent settings
-/.claude/settings.local.json
+# local agent settings and user-owned design references (kept out of GitHub)
+/.claude/
+/examples/
 
 # 교사 평가 자료 (루브릭 등) — 저장소에 실수로 커밋되지 않게 루트의 엑셀 파일은 제외
 /*.xlsx
