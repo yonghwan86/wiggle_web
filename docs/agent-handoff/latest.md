@@ -5,7 +5,7 @@
 - 작업: 학생 입장 재설계 통합 + 죽은코드·보안 정리 + browser-check 재작성
 - 브랜치: `claude/entry-redesign-cleanup-20260818` (base: `main` = `1cafeed`)
 - 기준 커밋: `1cafeed`
-- 코드·보고서 커밋: `4eb95a1` → `48ecadb` → `c0c8cfc` → `10e4c0f` → `2df4509` (코드 5개), 이 문서 커밋
+- 코드·보고서 커밋: `4eb95a1` → `48ecadb` → `c0c8cfc` → `10e4c0f` → `2df4509` (코드 5개) → 1차 보고서·marker → Codex 1차 FAIL 게이트 수정 1개(이번 후보)
 
 ## 수정한 문제
 
@@ -17,8 +17,11 @@
 4. **구 흐름 죽은 CSS 정리** (`10e4c0f`) — 재설계로 고아가 된 CSS 14종(profile-grid/button/unlock, qr-step/dots, password-preview, personal-card, saved-profile-notice, success-mark, input-error, student-footer, entry-card.wide, qr-code-personal, welcome-title-row 조각) 제거. 동적 조립 클래스(stage-1~4, qr-code-teacher/large)는 사용처 확인 후 유지.
 5. **browser-check 재작성 + 실측 결함 수정** (`2df4509`) — 스크립트가 구 UI 전제로 크래시하던 것을 새 흐름(대문 코드 4칸 → 선택 화면 → 3단계 폼 → 이어가기 오류 복구 → 잘못된 코드 → 겹침 검사)으로 재작성. 실측으로 드러난 결함 수정: mobile-tool-peek이 도구·그리미 위를 가림(도구 보이면/그리미 열리면 숨김, observer는 artwork 로드 후 attach), 44px 미달 5종(교사 링크 42, 입장 방법 다시 고르기 38/42, 가로 코드 칸 40, 가로 전체 지우기 40).
 
+6. **Codex 1차 게이트 결함 수정** (2차 후보 커밋) — 1차 독립 검증 FAIL 2건을 수정. ① base→후보 범위 `git diff --check`에서 걸린 문서 3종(current-state·pending-decisions·product-decisions) 3행 끝 공백 제거. ② `animal-portraits-v1/v2.png`를 `asset-manifest.json`에 sha256과 함께 등재 — v1은 2026-08-18 입장 재설계에서 생성된 1536×1024 RGBA 원본 시트(48ecadb 도입, wiggle_draw·제3자 소재 아님, 앱 코드 미참조), v2는 `scripts/repack_animal_portraits.py`가 v1에서 재구성한 파생본으로 입장 UI가 사용. 재발 방지로 CLAUDE.md·AGENTS.md 최소 검증에 `git diff --check main...HEAD` 추가.
+
 ## 원인
 
+- 게이트 실패: 로컬 최소 검증의 `git diff --check`가 작업 트리만 검사해 base→후보 누적 범위를 커버하지 않았고, 생성 자산 등재가 "남은 위험"으로 미뤄진 채 후보에 포함됨.
 - 오라클: 새 분기가 recover와 같은 비밀을 검증하면서 rate-limit 키 체계에 편입되지 않음.
 - browser-check 크래시: UI 재설계와 검증 스크립트가 같은 커밋에서 함께 갱신되지 않음.
 - peek 가림: 플로팅 버튼에 "목적지가 이미 보이면 숨김" 조건이 없었고, 로딩 분기 때문에 mount 시 ref가 비어 관찰이 시작되지 않는 함정이 있었음.
@@ -56,6 +59,7 @@ npm.cmd run typecheck: 통과
 npm.cmd run lint: 통과
 npm.cmd test: 243/243 통과 (빌드 포함, Miniflare 실동작 테스트 포함)
 git diff --check: 통과
+git diff --check 1cafeed HEAD: 통과 (base→후보 전체 범위, Codex 1차 FAIL 항목 재검)
 node scripts/browser-check.mjs http://localhost:3001: 모든 브라우저 검증 통과 (실패 0)
 ```
 
@@ -79,14 +83,13 @@ node scripts/browser-check.mjs http://localhost:3001: 모든 브라우저 검증
 
 ## 남은 위험
 
-- `public/brand/animal-portraits-v1/v2.png`(3.6MB)가 `asset-manifest.json` 출처 정책에 미등재. 출처 확인 후 등재 필요.
 - browser-check가 로컬 D1에 만든 `브라우저 점검반` 학급이 실행마다 누적(로컬 전용, 운영 무관).
 - `--ipad`·`--desktop` 모드는 이번에 재실행하지 않음(기본 3뷰포트만 통과 확인). 넓은 화면 검증은 codex 세션이 7뷰포트 좌표 검증으로 수행했다고 `docs/current-state.md`에 기록돼 있음.
 - 실기기(iOS Safari·Android Chrome)와 실제 아동 검증은 여전히 미실행 — 출시 판정 기준은 그대로 NO-GO 유지.
 
 ## Codex가 독립적으로 재현할 항목
 
-1. `npm.cmd run typecheck && npm.cmd run lint && npm.cmd test && git diff --check`
+1. `npm.cmd run typecheck && npm.cmd run lint && npm.cmd test`, 이어서 `git diff --check 1cafeed <후보>` (전체 범위)
 2. `npm.cmd run dev` 후 `node scripts/browser-check.mjs http://localhost:<포트>` — 실패 0 확인
 3. 오라클 회귀: `tests/classroom-entry-flow.test.mjs`의 "duplicate-credential probing" 테스트가 실동작(Miniflare)인지, 문자열 검사가 아닌지 확인
 4. `/join?code=<유효코드>`에서 새로 시작→3단계 생성→학생 홈, 이어가기→틀린 비밀번호→🔄 다시 골라요 복구를 실제 브라우저로 재현

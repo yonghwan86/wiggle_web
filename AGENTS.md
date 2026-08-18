@@ -47,6 +47,7 @@ npm.cmd run typecheck
 npm.cmd run lint
 npm.cmd test
 git diff --check
+git diff --check main...HEAD
 ```
 
 - base와 후보 사이 전체 diff, 권한 경계, 비밀값, migration을 검토한다.

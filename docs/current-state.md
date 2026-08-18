@@ -1,6 +1,6 @@
 # Wiggle Web 현재 상태
 
-> 마지막 갱신: 2026-08-18  
+> 마지막 갱신: 2026-08-18
 > 목적: 긴 대화가 압축되거나 담당 AI가 바뀌어도 실제 구현·검증·배포 상태를 잃지 않기 위한 기준 문서
 
 ## 상태 기준
@@ -21,7 +21,8 @@
 3. `fix: rate-limit duplicate-credential probing in student join` — 중복 생성 분기의 비밀번호 오라클을 복구 경로와 같은 대상별 한도로 차단
 4. `chore: trim dead CSS from legacy entry flow` — 옛 입장 흐름(프로필 그리드·QR 위저드·학생 푸터 등)의 죽은 CSS 제거와 이 문서 갱신
 5. `fix: update browser-check for new entry flow and close 44px gaps` — 실측 검증 스크립트를 새 입장 흐름으로 재작성, 플로팅 도구 버튼 가림과 44px 미달 5종 수정 (3뷰포트 실패 0)
-6. `docs:`·`chore:` — Codex 인계 보고서(docs/agent-handoff/latest.md)와 ready marker
+6. `docs:`·`chore:` — Codex 인계 보고서(docs/agent-handoff/latest.md)와 1차 ready marker
+7. `fix: register animal portrait provenance and strip doc whitespace` — Codex 1차 독립 검증 FAIL 2건 수정과 2차 ready marker
 
 - 커밋되지 않은 파일은 사용자 소유 참고 자료(`examples/*.jpg`, 시안 원본)와 로컬 도구 설정(`.claude/`)뿐이다. 임의로 삭제하지 않는다.
 - `git reset --hard`, `git checkout --`, 광범위한 삭제를 사용하지 않는다.
@@ -100,6 +101,8 @@
 - 모든 확인 크기에서 가로 넘침이 없고, 메인 핵심 버튼·입장 단계·태블릿 한 화면 입력·학생 홈의 기준 그림 구성이 유지되는 것을 확인했다.
 - `880×834`, 기준 캡처와 같은 `896×634`를 포함한 태블릿·일반 화면에서는 상단 내비게이션부터 하단 안전 문구까지를 `1488×1057` 한 무대로 함께 축소한다. 교실 그림·학생 카드·수업 코드 카드가 세로 목록으로 분리되지 않고 확정 시안처럼 한 장면 안에 겹쳐진다. 휴대전화만 터치 크기와 가독성을 위해 세로 흐름을 사용한다.
 - 로컬 전체 자동화 테스트 `243/243` 통과(중복 자격정보 대입 차단 실동작 테스트 포함), typecheck·lint·diff check 통과.
+- 2026-08-18 Codex 1차 독립 검증은 FAIL: ① base(`1cafeed`)→후보(`c22371a`) 범위 `git diff --check`에서 문서 3종 3행 끝 공백 ② `animal-portraits-v1/v2.png`의 `asset-manifest.json` 미등재. 나머지 게이트(테스트 243/243, browser-check 3뷰포트 실패 0, 실브라우저 재현, 보안 헤더·rate limit 실동작, 비밀값·hosting.json 무변경)는 통과로 보고됐다.
+- 두 결함을 수정했다: 끝 공백 제거, 두 PNG를 프로젝트 생성 자산으로 sha256과 함께 등재(v1은 1536×1024 RGBA 생성 원본 시트로 앱 미참조, v2는 `repack_animal_portraits.py` 파생본으로 입장 UI 사용), 재발 방지로 CLAUDE.md·AGENTS.md 최소 검증에 `git diff --check main...HEAD`를 추가.
 
 ## 다음 작업 시작 전 확인
 

@@ -45,6 +45,7 @@ npm.cmd run typecheck
 npm.cmd run lint
 npm.cmd test
 git diff --check
+git diff --check main...HEAD
 ```
 
 5. 모바일 UI는 최소 `320×568`, `390×844`, `844×390`에서 실제 브라우저로 확인한다.

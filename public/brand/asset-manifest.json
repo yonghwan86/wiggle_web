@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "policy": "Only reviewed brand assets may be copied from the read-only Flutter reference.",
+  "policy": "Only reviewed assets ship: brand assets copied from the read-only Flutter reference, and assets generated for this project that are reviewed and registered here.",
   "assets": [
     {
       "path": "/brand/logo.png",
@@ -15,6 +15,20 @@
       "sourceRole": "read-only reference",
       "sha256": "9F028F6C5A55786BED046AE5C9F2187F743453E8ECC9D548A7817D7592A084F4",
       "approvedFor": ["favicon", "installed web shortcut"]
+    },
+    {
+      "path": "/brand/animal-portraits-v1.png",
+      "source": "project-generated: AI-generated 1536x1024 RGBA sprite sheet created for the 2026-08-18 student entry redesign (introduced in commit 48ecadb; no wiggle_draw or third-party source material)",
+      "sourceRole": "project-generated original",
+      "sha256": "4C54C087C5E436C70DC34122E9F9A296F52B5B2C2AB39EA991AE72E06CEAAA33",
+      "approvedFor": ["repack source for /brand/animal-portraits-v2.png via scripts/repack_animal_portraits.py; not referenced by app code"]
+    },
+    {
+      "path": "/brand/animal-portraits-v2.png",
+      "source": "derived from /brand/animal-portraits-v1.png by scripts/repack_animal_portraits.py (5x2 square-cell repack, 2560x1024)",
+      "sourceRole": "project-generated derivative",
+      "sha256": "FEDC65E53ED7EC05425B38CE3714199BC2CF6D427915D2C97A1ED4C6237ACDBC",
+      "approvedFor": ["student entry animal picker and student ID card portraits (app/globals.css)"]
     }
   ],
   "notApproved": "All other wiggle_draw assets remain outside wiggle_web until provenance and service-use permission are reviewed."
