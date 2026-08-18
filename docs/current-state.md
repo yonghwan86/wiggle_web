@@ -8,9 +8,9 @@
 - 로컬 저장소: `C:\Users\user\Desktop\Project\wiggle_web`
 - GitHub: `https://github.com/yonghwan86/wiggle_web`
 - 공개 Sites: `https://wiggle-classroom-web.chan1940.chatgpt.site`
-- 마지막으로 확인된 `main` 커밋: `1cafeed4c2d82ddbc602248f8985879eed642b04`
-- 마지막으로 확인된 공개 배포: 위 커밋을 사용한 Sites v30
-- 로컬 브랜치 `claude/entry-redesign-cleanup-20260818`(구 codex/student-entry-ui-20260818)는 `main`보다 앞선다 (아래 로컬 커밋 상태 참조). GitHub·Sites에는 반영하지 않았다.
+- 마지막으로 확인된 `main` 커밋: `266a25159163aabbb5178a7d014969730a806ef8` (entry-redesign 브랜치와 Codex 릴리스 검증 기록까지 병합됨)
+- 마지막으로 SHA까지 확인한 공개 배포: `1cafeed` 기반 Sites v30. `266a251` 릴리스의 Sites 버전 번호는 이 문서 기준으로 별도 확인하지 않았다.
+- 현재 작업 브랜치: `claude/nickname-spacing-20260818` (base `266a251`). GitHub push·Sites 배포는 하지 않았다.
 
 ## 매우 중요한 작업 폴더 상태
 
@@ -38,6 +38,8 @@
 - 수업 코드와 QR 모두 서버의 같은 학급 상태 확인을 거쳐 동일한 입장 흐름 사용
 - 학생이 없는 새 학급은 신규 프로필 생성 화면을 바로 열고, 학생이 있는 학급은 `새로 시작하기`와 `내 그림 이어가기`를 표시
 - 동물·별명·그림 비밀번호 3개로 익명 프로필 생성 및 어느 태블릿에서나 기존 익명 학생 ID 재입장
+- 별명 표시는 띄어쓰기를 유지하되, 신규 중복 검사·동일 자격정보 검사·재입장·관련 rate-limit 대상 키는 모든 공백 차이를 무시한다 (`lib/nickname.ts`)
+- 그림 별명 후보는 동물별 10개(전체 100개, 공백 무시 기준으로도 중복 없음)이며 `다른 별명` 주사위는 현재 별명을 반복하지 않는다 (`lib/nickname-ideas.ts`)
 - 공유 태블릿 학생 전환 시 기존 활성 세션을 해지하고, 최근 학생 목록은 입장 화면에 표시하지 않음
 - 기초 → 따라 그리기 → 관찰 그리기 → 자유 창작의 4단계 활동
 - 터치·스타일러스 캔버스, 자동 저장, 오프라인 임시 보존, 작품 보관함
@@ -105,6 +107,14 @@
 - 로컬 전체 자동화 테스트 `243/243` 통과(중복 자격정보 대입 차단 실동작 테스트 포함), typecheck·lint·diff check 통과.
 - 2026-08-18 Codex 1차 독립 검증은 FAIL: ① base(`1cafeed`)→후보(`c22371a`) 범위 `git diff --check`에서 문서 3종 3행 끝 공백 ② `animal-portraits-v1/v2.png`의 `asset-manifest.json` 미등재. 나머지 게이트(테스트 243/243, browser-check 3뷰포트 실패 0, 실브라우저 재현, 보안 헤더·rate limit 실동작, 비밀값·hosting.json 무변경)는 통과로 보고됐다.
 - 두 결함을 수정했다: 끝 공백 제거, 두 PNG를 프로젝트 생성 자산으로 sha256과 함께 등재(v1은 1536×1024 RGBA 생성 원본 시트로 앱 미참조, v2는 `repack_animal_portraits.py` 파생본으로 입장 UI 사용), 재발 방지로 CLAUDE.md·AGENTS.md 최소 검증에 `git diff --check main...HEAD`를 추가.
+
+## 2026-08-18 별명 후보 확대·공백 무시 매칭 (claude/nickname-spacing-20260818)
+
+- 그림 별명 후보를 동물별 2개에서 10개로 확대했다 (`lib/nickname-ideas.ts`, 전체 100개, 한글 낱말, 공백 무시 기준 중복 없음). `다른 별명` 주사위는 현재 별명을 제외한 후보 전체에서 고른다.
+- 별명 비교 규칙을 도입했다 (`lib/nickname.ts`): 표시는 띄어쓰기 유지, 신규 중복 검사·동일 자격정보 검사·재입장·관련 rate-limit 대상 키는 모든 공백 차이 무시. D1 migration 없이 조회 시점 SQL 식으로 기존 행을 매칭하며, 다른 한글 문자는 합치지 않는다. 교사 화면의 중복 별명 표시도 같은 규칙을 쓴다.
+- 검증: typecheck·lint 통과, 전체 자동화 테스트 249/249 통과(신규 Miniflare 실동작 6건 포함 — 공백 변형 재입장 동일 student ID, 공백 변형 신규 생성 409, API를 거치지 않고 직접 삽입한 기존 행 검색, 공백 변형이 같은 brute-force 버킷 공유), `git diff --check`·`git diff --check main...HEAD` 통과.
+- 레이아웃·CSS 무변경이라 3뷰포트 브라우저 재검증은 생략했다. Codex 독립 검증에서 입장 화면 실동작 확인을 권장한다.
+- 커밋 후 ready_for_codex 후보를 만들었고, GitHub push·Sites 배포는 하지 않았다.
 
 ## 다음 작업 시작 전 확인
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { storeProfile } from "@/lib/client-session";
+import { FALLBACK_NICKNAME, NICKNAME_IDEAS, pickDifferentNickname } from "@/lib/nickname-ideas";
 import { PICTURE_PASSWORD_LENGTH } from "@/lib/picture-password";
 import { classifyEntryError, EntryErrorKind, readStudentEntryResponse, StudentEntryResponseError } from "@/lib/student-entry-client";
 import { Logo } from "./Logo";
@@ -21,19 +22,6 @@ const PICTURES = [
   { value: "로켓", picture: "🚀", name: "로켓" },
   { value: "풍선", picture: "🎈", name: "풍선" },
 ] as const;
-const NICKNAME_IDEAS: Record<string, string[]> = {
-  "🐰": ["토끼 화가", "깡총 별"],
-  "🐻": ["곰돌 화가", "꿀별"],
-  "🦊": ["여우별", "주황 화가"],
-  "🐯": ["씩씩 호랑이", "줄무늬 별"],
-  "🐼": ["판다 화가", "대나무 별"],
-  "🐶": ["멍멍 화가", "꼬리별"],
-  "🐱": ["고양이 화가", "수염별"],
-  "🐨": ["코알라 화가", "나무별"],
-  "🦁": ["사자 화가", "햇살별"],
-  "🐸": ["개굴 화가", "연못별"],
-};
-
 type Mode = "checking" | "choice" | "join" | "recover" | "legacyRecover";
 type MobileStep = 1 | 2 | 3;
 
@@ -142,9 +130,8 @@ export function JoinClient({ initialEntry = "", recoveryToken = "" }: { initialE
   }
 
   function suggestNickname() {
-    const ideas = NICKNAME_IDEAS[animal] ?? ["꼬마 화가"];
-    const pool = ideas.filter((idea) => idea !== nickname);
-    setNickname(pool[Math.floor(Math.random() * pool.length)] ?? "꼬마 화가");
+    const ideas = NICKNAME_IDEAS[animal] ?? [FALLBACK_NICKNAME];
+    setNickname(pickDifferentNickname(ideas, nickname, Math.random()));
     setNicknameAuto(true);
     setDuplicateWarning(false);
     clearEntryError();

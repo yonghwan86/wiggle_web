@@ -2,96 +2,87 @@
 
 ## 식별 정보
 
-- 작업: 학생 입장 재설계 통합 + 죽은코드·보안 정리 + browser-check 재작성
-- 브랜치: `claude/entry-redesign-cleanup-20260818` (base: `main` = `1cafeed`)
-- 기준 커밋: `1cafeed`
-- 코드·보고서 커밋: `4eb95a1` → `48ecadb` → `c0c8cfc` → `10e4c0f` → `2df4509` (코드 5개) → 1차 보고서·marker → Codex 1차 FAIL 게이트 수정 1개(이번 후보)
+- 작업: 그림 별명 후보 동물별 10개 확대 + 별명 공백 무시 매칭(중복·자격정보·재입장·rate-limit)
+- 브랜치: `claude/nickname-spacing-20260818` (base: `main` = `266a251`)
+- 기준 커밋: `266a25159163aabbb5178a7d014969730a806ef8`
+- 코드·보고서 커밋: 이 보고서를 포함한 단일 커밋 (marker 커밋의 부모, 정확한 SHA는 `latest.json`의 `candidateCommit`)
 
 ## 수정한 문제
 
-이 브랜치는 서로 다른 두 세션의 작업을 검증 가능한 순서로 통합했다. `48ecadb`(입장 재설계)는 로컬 codex 세션이 개발했고, 나머지는 Claude가 감사·정리·수정했다.
-
-1. **죽은 코드·보안 헤더·핫패스** (`4eb95a1`) — 미사용 코드·에셋 삭제(examples/d1, getDb, 스타터 svg, 1.6MB PNG, CSS 클래스 22종), drizzle-orm·@types/qrcode를 devDependencies로, 전 경로 `nosniff`+`referrer-policy` 및 랜딩 제외 `X-Frame-Options DENY`+`frame-ancestors 'none'`, teacher/family 이미지 base64 청크 변환, student GET 쿼리 병렬화.
-2. **학생 입장 재설계** (`48ecadb`, codex 세션 개발분) — 기기 프로필 그리드·입장 시 개인 QR 노출·QR 3단계 위저드 제거. 모든 기기에서 학급 코드/QR → `entryStatus`(명단 비노출, hasProfiles만) → 새로 시작/이어가기 선택 → 동물·별명·그림 비밀번호 3개로 생성·재입장. 교사 카드에 작품 수·중복 별명 읽기 전용 표시. localhost 한정 교사 자동 로그인. 지속 컨텍스트 문서 3종 도입.
-3. **비밀번호 확인 오라클 차단** (`c0c8cfc`) — 재설계의 `allowDuplicate` 중복 생성 분기가 기존 프로필 비밀번호와 대조하면서 대상별 한도를 소비하지 않아, 복구 경로의 8회/15분 상한을 우회해 IP·학급 한도(60회/10분)로 409 오라클 확인이 가능했다. 같은 대상 버킷(`recover:학급ID:소문자별명:동물`)을 소비하게 하고 Miniflare 실동작 회귀 테스트 추가.
-4. **구 흐름 죽은 CSS 정리** (`10e4c0f`) — 재설계로 고아가 된 CSS 14종(profile-grid/button/unlock, qr-step/dots, password-preview, personal-card, saved-profile-notice, success-mark, input-error, student-footer, entry-card.wide, qr-code-personal, welcome-title-row 조각) 제거. 동적 조립 클래스(stage-1~4, qr-code-teacher/large)는 사용처 확인 후 유지.
-5. **browser-check 재작성 + 실측 결함 수정** (`2df4509`) — 스크립트가 구 UI 전제로 크래시하던 것을 새 흐름(대문 코드 4칸 → 선택 화면 → 3단계 폼 → 이어가기 오류 복구 → 잘못된 코드 → 겹침 검사)으로 재작성. 실측으로 드러난 결함 수정: mobile-tool-peek이 도구·그리미 위를 가림(도구 보이면/그리미 열리면 숨김, observer는 artwork 로드 후 attach), 44px 미달 5종(교사 링크 42, 입장 방법 다시 고르기 38/42, 가로 코드 칸 40, 가로 전체 지우기 40).
-
-6. **Codex 1차 게이트 결함 수정** (2차 후보 커밋) — 1차 독립 검증 FAIL 2건을 수정. ① base→후보 범위 `git diff --check`에서 걸린 문서 3종(current-state·pending-decisions·product-decisions) 3행 끝 공백 제거. ② `animal-portraits-v1/v2.png`를 `asset-manifest.json`에 sha256과 함께 등재 — v1은 2026-08-18 입장 재설계에서 생성된 1536×1024 RGBA 원본 시트(48ecadb 도입, wiggle_draw·제3자 소재 아님, 앱 코드 미참조), v2는 `scripts/repack_animal_portraits.py`가 v1에서 재구성한 파생본으로 입장 UI가 사용. 재발 방지로 CLAUDE.md·AGENTS.md 최소 검증에 `git diff --check main...HEAD` 추가.
+- 동물별 그림 별명 후보가 2개뿐이라 `다른 별명` 주사위가 사실상 두 별명만 왕복했다.
+- 별명의 공백 유무(`토끼 화가` vs `토끼화가`, 앞뒤·연속 공백)가 다른 별명으로 취급돼, 아이가 공백만 다르게 입력하면 재입장이 실패하고 사실상 같은 별명의 중복 프로필이 새로 생겼다. rate-limit 대상 키도 공백 변형마다 분리돼 있었다.
 
 ## 원인
 
-- 게이트 실패: 로컬 최소 검증의 `git diff --check`가 작업 트리만 검사해 base→후보 누적 범위를 커버하지 않았고, 생성 자산 등재가 "남은 위험"으로 미뤄진 채 후보에 포함됨.
-- 오라클: 새 분기가 recover와 같은 비밀을 검증하면서 rate-limit 키 체계에 편입되지 않음.
-- browser-check 크래시: UI 재설계와 검증 스크립트가 같은 커밋에서 함께 갱신되지 않음.
-- peek 가림: 플로팅 버튼에 "목적지가 이미 보이면 숨김" 조건이 없었고, 로딩 분기 때문에 mount 시 ref가 비어 관찰이 시작되지 않는 함정이 있었음.
+- `NICKNAME_IDEAS`가 동물별 2개 하드코딩이었고, 주사위는 현재 별명 하나만 제외한 풀에서 뽑았다.
+- 서버의 중복·자격정보·재입장 검색이 `nickname = ? COLLATE NOCASE` 원문 비교였고, `cleanText`는 연속 공백을 하나로 접을 뿐 공백 유무 차이는 남긴다. rate-limit 키도 원문 별명(`toLocaleLowerCase`)을 그대로 썼다.
 
 ## 변경 파일
 
-44개 파일, +1,947/−431. 주요:
-
-- `app/api/student/route.ts` — entryStatus, 중복 자격정보 차단+대상별 한도, recover 학급 스코프, GET 병렬화
-- `app/api/teacher/route.ts` — 학생 집계 확장, localhost 자동 로그인, 이미지 청크 변환
-- `app/components/JoinClient.tsx` — 입장 재설계 본체 / `TeacherApp.tsx` — 프로필 정보 확장
-- `app/components/DrawingStudio.tsx` — mobile-tool-peek 조건부 렌더 + IntersectionObserver
-- `worker/index.ts` — 전 경로 보안 헤더 / `lib/speech.ts` — 한국어 음성 선택
-- `app/globals.css` — 재설계 CSS + 죽은 규칙 제거 + 44px 보정 (383→새 구성)
-- `scripts/browser-check.mjs` — 새 흐름 재작성 / `tests/classroom-entry-flow.test.mjs` — 신규(+오라클 실동작 테스트)
-- 삭제: `examples/d1/**`, `db/index.ts`, 스타터 svg 4종, `landing-classroom.png`
-- 문서: `docs/current-state.md`(신규)·`product-decisions.md`(신규)·`pending-decisions.md`(신규)·`security-data-model.md`·CLAUDE.md·AGENTS.md·README.md
+- `lib/nickname-ideas.ts` (신규): 동물별 10개(전체 100개) 별명 후보와 `pickDifferentNickname` 주사위 로직. 후보는 한글 낱말만, 공백 무시 기준으로도 전체 중복 없음.
+- `lib/nickname.ts` (신규): `nicknameMatchKey`(모든 공백 제거, 다른 문자는 비정규화), `nicknameRateKeyPart`(ko-KR 소문자 접기), `nicknameKeySql`(저장된 별명에서 공백·탭·개행·NBSP·전각 공백을 지우는 SQL 식 — migration 없이 기존 행 검색).
+- `app/components/JoinClient.tsx`: 후보를 새 lib에서 import, 주사위를 `pickDifferentNickname`으로 교체. 레이아웃·CSS 변경 없음.
+- `app/api/student/route.ts`: join 중복 후보 조회·원자적 INSERT 가드·삽입 실패 후 재확인·recover 후보 조회를 공백 무시 SQL 식으로, join/recover의 대상 rate-limit 키를 `nicknameRateKeyPart`로 변경.
+- `app/api/teacher/route.ts`: 교사 화면의 `duplicateNickname` 표시도 같은 공백 무시 규칙으로 계산.
+- `tests/nickname-spacing.test.mjs` (신규): 아래 6개 테스트.
+- `tests/join-nickname-default.test.mjs`, `tests/classroom-entry-flow.test.mjs`: 새 구현에 맞춘 소스 검사식 갱신.
+- `package.json`: 새 테스트 등록.
+- `docs/current-state.md`, `docs/product-decisions.md`: 지속 컨텍스트 갱신 (결정 14·15 추가).
 
 ## 수정 전 재현
 
-- browser-check: `node scripts/browser-check.mjs` → 288행 부근 `Cannot read properties of undefined (reading 'click')` 크래시 (구 UI 셀렉터).
-- 오라클: 학급 코드·별명·동물을 아는 클라이언트가 `action:"join", allowDuplicate:true`를 IP를 바꿔 가며 60회/10분씩 보내 `PROFILE_CREDENTIALS_EXIST`(409) 여부로 비밀번호 일치를 확인한 뒤 recover 1회로 세션 획득.
-- 320×568: 도구 패널로 스크롤해도 "🎨 색·지우개·되돌리기 ↓" 플로팅 버튼이 전체 지우기를 덮어 탭 불가.
+- 주사위: 후보 2개라 `토끼 화가` ↔ `깡총 별`만 반복.
+- `토끼 화가`로 프로필 생성 후 `토끼화가`로 `내 그림 이어가기` → 401 (프로필을 못 찾음). 같은 입력으로 신규 생성 → 중복 차단 없이 두 번째 프로필 생성.
 
 ## 수정 후 결과
 
-- browser-check 3뷰포트 전 항목 통과(실패 0). 기준선은 재설계 전 실패 18건 + 재설계 후 크래시였다.
-- 오답 8회 뒤 9번째 확인·recover 우회가 IP를 바꿔도 429, 프로필 수 증가 정지(자동 테스트로 고정).
-- 모든 실측 터치 목표 ≥44px, 가로 스크롤 0, 도구·닫기·탈출 버튼 가림 0.
+- 동물마다 10개 후보, 주사위는 현재 별명을 제외한 9개 전체에서 선택 (Miniflare·단위 테스트로 확인).
+- `토끼화가`, `  토끼   화가  `, 탭 변형 모두 같은 student ID로 재입장. 공백 변형 신규 생성은 `PROFILE_EXISTS` 409, 같은 그림 비밀번호의 allowDuplicate는 `PROFILE_CREDENTIALS_EXIST` 409. 표시용 별명은 원래 띄어쓰기 그대로 반환.
+- API를 거치지 않고 D1에 직접 넣은(=기존 DB를 흉내 낸) `아기 곰 화가` 행도 migration 없이 `아기곰화가`로 검색·재입장됨.
+- `토기 화가` 같은 다른 한글 별명은 합쳐지지 않고 정상 생성됨.
+- 공백 변형을 번갈아 써도 같은 brute-force 버킷(8회/15분)을 소비 — 9번째는 올바른 비밀번호·allowDuplicate 대조 경로 모두 429.
 
 ## 실행한 검증
 
 ```text
 npm.cmd run typecheck: 통과
 npm.cmd run lint: 통과
-npm.cmd test: 243/243 통과 (빌드 포함, Miniflare 실동작 테스트 포함)
+npm.cmd test: 전체 통과 (아래 숫자 참조)
 git diff --check: 통과
-git diff --check 1cafeed HEAD: 통과 (base→후보 전체 범위, Codex 1차 FAIL 항목 재검)
+git diff --check main...HEAD: 통과
 node scripts/browser-check.mjs http://localhost:3001: 모든 브라우저 검증 통과 (실패 0)
 ```
+
+- 전체 자동화 테스트 249/249 통과 (기존 243 + 신규 6).
 
 ## 실제 브라우저 검증
 
 | 화면 | 결과 | 확인 내용 |
 |---|---|---|
-| 320×568 세로 | 통과 | 대문→선택→3단계 생성→이어가기 오류 복구→잘못된 코드→그리기·그리미·소감 전 항목 |
-| 390×844 세로 | 통과 | 위와 동일 + 실UI 클릭으로 입장→학생 홈 E2E(별도 세션 확인) |
-| 844×390 가로 | 통과 | 위와 동일 (44px 보정 반영) |
-| iPad Safari | 미실행 | 실기기 없음 — `--ipad` 모드는 Codex 재량으로 실행 |
-| Android Chrome | 미실행 | 실기기 없음 |
+| 320×568 세로 | 통과 | `browser-check.mjs` 실측: 대문→선택→3단계 생성(별명 입력 포함)→이어가기 오류 복구→잘못된 코드→그리기·그리미·소감 전 항목 |
+| 390×844 세로 | 통과 | 위와 동일 |
+| 844×390 가로 | 통과 | 위와 동일 |
+| iPad Safari | 미실행 | 실기기 없음. 이번 변경은 별명 후보 데이터·주사위 로직·서버 매칭만이며 레이아웃·CSS·마크업 구조 변경 없음 (가장 긴 새 후보 7자는 입력칸 16자 상한 이내) |
+| Android Chrome | 미실행 | 위와 동일 |
+
+- 주사위 연타·공백 변형 재입장의 동작 자체는 결정적 단위 테스트와 Miniflare 실동작 테스트(빌드된 worker 코드 대상)로 검증했다.
 
 ## 보안·데이터 영향
 
-- 권한 경계: 오라클 차단으로 강화. entryStatus는 학급명+프로필 존재 1비트만 반환(명단·인원 비노출), IP 한도 적용. 소유권 조건 변경 없음.
-- 개인정보: 입장 시 개인 QR 토큰을 더 이상 응답에 포함하지 않음(교사 재발급 경로만). 신규 수집 없음.
-- D1 migration: 없음 (스키마 변경 없음).
-- R2: 없음.
-- 환경 변수: 없음. localhost 자동 교사 로그인은 `NODE_ENV!==production`+localhost 게이트 안에서만 동작.
+- 권한 경계: 비밀번호 검증(`verifySecret`)·세션 발급 로직은 변경 없음. 공백 무시로 후보 집합이 넓어져도 그림 비밀번호가 일치해야만 재입장된다. 공백 변형이 같은 rate-limit 버킷을 공유하므로 대상별 한도는 오히려 우회가 어려워졌다.
+- 개인정보: 새 데이터 수집 없음. 별명 표시값은 그대로 유지.
+- D1 migration: 없음. 스키마 무변경, 조회 시점 SQL 식(`REPLACE` 체인)으로 기존 행을 매칭.
+- R2: 영향 없음.
+- 환경 변수: 변경 없음.
 
 ## 남은 위험
 
-- browser-check가 로컬 D1에 만든 `브라우저 점검반` 학급이 실행마다 누적(로컬 전용, 운영 무관).
-- `--ipad`·`--desktop` 모드는 이번에 재실행하지 않음(기본 3뷰포트만 통과 확인). 넓은 화면 검증은 codex 세션이 7뷰포트 좌표 검증으로 수행했다고 `docs/current-state.md`에 기록돼 있음.
-- 실기기(iOS Safari·Android Chrome)와 실제 아동 검증은 여전히 미실행 — 출시 판정 기준은 그대로 NO-GO 유지.
+- `duplicateNicknameCount` 서브쿼리와 join/recover 조회가 인덱스 대신 식 비교를 쓰므로 학급 규모(수십 명)에서는 문제없지만 매우 큰 테이블에서는 풀스캔 비용이 있다. 학급 단위 조건(`classroom_id`)이 먼저 걸려 실사용 규모에서는 무시 가능.
+- 공백 무시로 이미 존재하는 "공백만 다른 중복 프로필" 쌍은 재입장 시 비밀번호로 구분된다. 비밀번호까지 같은 기존 쌍이 있다면 recover가 기존 동작대로 409(선생님 확인)로 안내한다.
+- 3뷰포트 browser-check는 실패 0으로 통과했지만, 주사위 연타 시 별명 텍스트 변화 자체를 실제 브라우저 클릭으로 반복 확인하지는 않았다(결정적 단위 테스트로 대체). Codex 독립 검증에서 한 번 눌러 보는 것을 권장한다.
 
 ## Codex가 독립적으로 재현할 항목
 
-1. `npm.cmd run typecheck && npm.cmd run lint && npm.cmd test`, 이어서 `git diff --check 1cafeed <후보>` (전체 범위)
-2. `npm.cmd run dev` 후 `node scripts/browser-check.mjs http://localhost:<포트>` — 실패 0 확인
-3. 오라클 회귀: `tests/classroom-entry-flow.test.mjs`의 "duplicate-credential probing" 테스트가 실동작(Miniflare)인지, 문자열 검사가 아닌지 확인
-4. `/join?code=<유효코드>`에서 새로 시작→3단계 생성→학생 홈, 이어가기→틀린 비밀번호→🔄 다시 골라요 복구를 실제 브라우저로 재현
-5. 보안 헤더: `/student` 응답에 `X-Frame-Options: DENY`·`frame-ancestors 'none'`·`nosniff`, `/`에는 프레임 차단 제외 확인
-6. base(`1cafeed`)와 후보 사이 전체 diff의 권한 경계·비밀값 검토
+- `npm.cmd run typecheck`, `npm.cmd run lint`, `npm.cmd test`, `git diff --check`, `git diff --check main...HEAD`.
+- `tests/nickname-spacing.test.mjs`의 Miniflare 시나리오: 공백 변형 재입장 동일 ID, 공백 변형 신규 생성 409, 직접 삽입한 기존 행 검색, 공유 rate-limit 버킷.
+- 실제 브라우저에서 입장 화면 `다른 별명` 연타 시 같은 별명 즉시 반복·2개 왕복이 없는지, 신규 생성→공백 없는 별명 재입장이 같은 학생 홈을 여는지.
