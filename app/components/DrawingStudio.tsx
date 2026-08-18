@@ -520,6 +520,9 @@ export function DrawingStudio() {
   // 그리미가 "선을 하나 더 그어 보자"고 하면 아이는 그려야 한다. 시트를 닫으면 코칭이 사라지므로,
   // 코칭을 유지한 채 도화지를 여는 접기 상태를 따로 둔다.
   const [grimiCollapsed, setGrimiCollapsed] = useState(false);
+  // 도구로 이동하는 플로팅 버튼이 정작 도구 패널·그리미 시트 위까지 떠서
+  // 320px 세로에서 전체 지우기·탈출 버튼을 가렸다. 도구가 이미 보이면 숨긴다.
+  const [toolPanelInView, setToolPanelInView] = useState(false);
   const [coaching, setCoaching] = useState<(StudentCoaching & { eventId: string }) | null>(null);
   const [answer, setAnswer] = useState("");
   const [answerLabel, setAnswerLabel] = useState("");
@@ -689,6 +692,17 @@ export function DrawingStudio() {
   useEffect(() => {
     createOrLoad().catch((cause) => setSaveState(cause instanceof Error ? cause.message : "불러오지 못했어요"));
   }, [createOrLoad]);
+  useEffect(() => {
+    // 로딩 분기(if (!artwork) return ...)가 지나간 뒤에야 tool-panel이 렌더되므로
+    // artwork가 준비된 뒤에 관찰을 시작해야 한다. mount 시점에는 ref가 비어 있다.
+    const panel = toolPanelRef.current;
+    if (!panel || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      setToolPanelInView(entries.some((entry) => entry.isIntersecting));
+    }, { threshold: 0.2 });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [artwork]);
   useEffect(() => {
     documentStateRef.current = documentState;
     if (canvasRef.current) renderDocument(canvasRef.current, documentState);
@@ -2782,9 +2796,11 @@ export function DrawingStudio() {
               </button>
             )}
           </div>
-          <button type="button" className="mobile-tool-peek" onClick={() => toolPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-            🎨 색·지우개·되돌리기 <span aria-hidden="true">↓</span>
-          </button>
+          {!grimiOpen && !toolPanelInView && (
+            <button type="button" className="mobile-tool-peek" onClick={() => toolPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+              🎨 색·지우개·되돌리기 <span aria-hidden="true">↓</span>
+            </button>
+          )}
         </section>
         <aside className="tool-panel" ref={toolPanelRef} aria-label="그리기 도구 모음">
           <p className="tool-section-label tools-label">도구</p>

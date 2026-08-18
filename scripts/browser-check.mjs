@@ -174,7 +174,7 @@ async function seed(cdp, session) {
     }) });
     const artworkData = await artwork.json();
     if (!artworkData.artwork) return { error: 'artwork', detail: artworkData };
-    return { classroomId, classCode: created.data.classroom.classCode, studentId: student.student.id, deviceToken: student.deviceToken, expiresAt: student.expiresAt,
+    return { classroomId, classCode: created.data.classroom.classCode, joinToken: created.data.classroom.joinToken, studentId: student.student.id, deviceToken: student.deviceToken, expiresAt: student.expiresAt,
       nickname: student.student.nickname, animal: student.student.animal, classroomName: student.student.classroomName, artworkId: artworkData.artwork.id };
   })()`);
   if (seeded.error) throw new Error(`데이터 준비 실패: ${JSON.stringify(seeded)}`);
@@ -212,131 +212,203 @@ async function main() {
     for (const viewport of VIEWPORTS) {
       notes.push(`\n[${viewport.name}]`);
       await withViewport(cdp, session, viewport, async () => {
-        // 1) 홈: 역할 선택
+        // 1) 대문: 수업 코드 입력이 첫 행동
         await navigate(cdp, session, `${BASE}/`);
         await evaluate(cdp, session, MEASURE_HELPERS);
-        const homeOverflow = await evaluate(cdp, session, "window.__wiggle.horizontalOverflow()");
-        check(homeOverflow.overflow <= 0, `${viewport.name} 홈 가로 스크롤 없음`, homeOverflow);
-        const roleSizes = await evaluate(cdp, session, `(() => {
-          const student = document.querySelector('.role-button.student-role'); const teacher = document.querySelector('.role-button.teacher-role');
-          return { student: student && window.__wiggle.box(student), teacher: teacher && window.__wiggle.box(teacher) };
+        const landing = await evaluate(cdp, session, `(() => {
+          const inputs = [...document.querySelectorAll('.landing-code-card input')];
+          const submit = [...document.querySelectorAll('.landing-code-card button')].find((button) => button.textContent.includes('그리러 가기'));
+          const teacherLink = document.querySelector('.teacher-link');
+          return {
+            overflow: window.__wiggle.horizontalOverflow().overflow,
+            small: window.__wiggle.smallTargets(44),
+            codeInputs: inputs.length,
+            inputBoxes: inputs.map((input) => window.__wiggle.box(input)),
+            submitBox: submit ? window.__wiggle.box(submit) : null,
+            teacherBox: teacherLink ? window.__wiggle.box(teacherLink) : null,
+          };
         })()`);
-        check(roleSizes.student && roleSizes.teacher && roleSizes.student.w * roleSizes.student.h > roleSizes.teacher.w * roleSizes.teacher.h,
-          `${viewport.name} 홈에서 학생 입장 버튼이 가장 크게 보임`, roleSizes);
-        const homeSmall = await evaluate(cdp, session, "window.__wiggle.smallTargets(44)");
-        check(homeSmall.length === 0, `${viewport.name} 홈 터치 목표 44px 이상`, homeSmall);
+        check(landing.overflow <= 0, `${viewport.name} 대문 가로 스크롤 없음`, landing.overflow);
+        check(landing.small.length === 0, `${viewport.name} 대문 터치 목표 44px 이상`, landing.small);
+        check(landing.codeInputs === 4 && landing.inputBoxes.every((box) => Math.min(box.w, box.h) >= 44), `${viewport.name} 수업 코드 네 칸이 44px 이상`, landing.inputBoxes);
+        check(landing.submitBox && landing.teacherBox && landing.submitBox.w * landing.submitBox.h >= landing.teacherBox.w * landing.teacherBox.h, `${viewport.name} 학생 행동(그리러 가기)이 교사 링크보다 크게 보임`, { submit: landing.submitBox, teacher: landing.teacherBox });
 
-        // 2) QR 입장 단계 화면
-        await navigate(cdp, session, `${BASE}/join/${seeded.classCode}`);
+        // 2) QR 입장: 학생이 있는 학급은 선택 화면(새로 시작/이어가기)이 먼저 나온다
+        await navigate(cdp, session, `${BASE}/join/${seeded.joinToken}`);
         await evaluate(cdp, session, MEASURE_HELPERS);
-        const qrEntry = await evaluate(cdp, session, `(() => ({
-          hasCodeInput: Boolean([...document.querySelectorAll('label span')].find((item) => item.textContent.includes('수업 코드'))),
-          heading: document.querySelector('h1')?.textContent ?? '',
-          dots: document.querySelectorAll('.qr-step-dots span').length,
-          hasNickname: Boolean([...document.querySelectorAll('label span')].find((item) => item.textContent.includes('그림 별명'))),
-          animals: document.querySelectorAll('.animal-choice-grid .emoji-chip').length,
-          passwordChips: document.querySelectorAll('.picture-chip').length,
-          cardBottom: Math.round(document.querySelector('.entry-card')?.getBoundingClientRect().bottom ?? 0),
-          viewportHeight: innerHeight,
-          overflow: window.__wiggle.horizontalOverflow().overflow,
-          small: window.__wiggle.smallTargets(44),
-        }))()`);
-        check(!qrEntry.hasCodeInput, `${viewport.name} QR 입장이 수업 코드 입력을 건너뜀`, qrEntry.heading);
-        // 스테퍼 없이 별명·동물 10개·비밀번호 그림 10개가 한 화면 폼에 함께 있다.
-        check(qrEntry.dots === 0 && qrEntry.hasNickname && qrEntry.animals === 10 && qrEntry.passwordChips === 10, `${viewport.name} QR 입장이 한 화면 폼으로 열림`, qrEntry);
-        if (IPAD_MODE) check(qrEntry.cardBottom <= qrEntry.viewportHeight, `${viewport.name} QR 입장 내용이 첫 화면 안에 있음`, qrEntry);
-        check(qrEntry.overflow <= 0, `${viewport.name} QR 입장 가로 스크롤 없음`, qrEntry.overflow);
-        check(qrEntry.small.length === 0, `${viewport.name} QR 입장 터치 목표 44px 이상`, qrEntry.small);
+        const choice = await evaluate(cdp, session, `(async () => {
+          const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+          for (let attempt = 0; attempt < 60 && !document.querySelector('.entry-choice-grid'); attempt += 1) await wait(120);
+          const grid = document.querySelector('.entry-choice-grid');
+          if (!grid) return { error: 'no-choice', text: document.body.innerText.slice(0, 120) };
+          const hasCodeInput = Boolean([...document.querySelectorAll('label span, legend')].find((item) => item.textContent.includes('수업 코드')));
+          const buttons = [...grid.querySelectorAll('button')].map((button) => ({ label: window.__wiggle.label(button), ...window.__wiggle.box(button) }));
+          return { hasCodeInput, buttons, overflow: window.__wiggle.horizontalOverflow().overflow, small: window.__wiggle.smallTargets(44) };
+        })()`);
+        check(!choice.error, `${viewport.name} QR 입장 선택 화면 재현`, choice.error);
+        if (!choice.error) {
+          check(!choice.hasCodeInput, `${viewport.name} QR 입장이 수업 코드 입력을 건너뜀`);
+          check(choice.buttons.length === 2 && choice.buttons.every((box) => Math.min(box.w, box.h) >= 44), `${viewport.name} 새로 시작/이어가기 선택이 44px 이상 두 개`, choice.buttons);
+          check(choice.overflow <= 0, `${viewport.name} 선택 화면 가로 스크롤 없음`, choice.overflow);
+          check(choice.small.length === 0, `${viewport.name} 선택 화면 터치 목표 44px 이상`, choice.small);
+        }
 
-        // 3) 공유 태블릿 잠금 해제: 틀린 그림 비밀번호 복구
-        await installSession(cdp, session, seeded);
-        await navigate(cdp, session, `${BASE}/join`);
+        // 2-b) 새로 시작하기: 휴대전화·짧은 화면은 3단계, 넓은 화면은 한 화면 폼
+        const createFlow = await evaluate(cdp, session, `(async () => {
+          const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+          const start = [...document.querySelectorAll('.entry-choice-grid button')].find((button) => button.textContent.includes('새로 시작하기'));
+          if (!start) return { error: 'no-start' };
+          start.click();
+          for (let attempt = 0; attempt < 40 && !document.querySelector('.join-card'); attempt += 1) await wait(120);
+          const card = document.querySelector('.join-card');
+          if (!card) return { error: 'no-join-card' };
+          const progress = document.querySelector('.mobile-entry-progress');
+          const stepped = progress ? getComputedStyle(progress).display !== 'none' : false;
+          const snapshots = [];
+          const snap = (name) => snapshots.push({ name, overflow: window.__wiggle.horizontalOverflow().overflow, small: window.__wiggle.smallTargets(44) });
+          const animals = document.querySelectorAll('.animal-choice-grid .emoji-chip').length;
+          snap('동물 단계');
+          const rabbit = [...document.querySelectorAll('.animal-choice-grid .emoji-chip')].find((button) => button.getAttribute('aria-label') === '토끼 고르기');
+          if (!rabbit) return { error: 'no-rabbit' };
+          rabbit.click(); await wait(150);
+          if (stepped) {
+            const next1 = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('별명 고르기'));
+            if (!next1) return { error: 'no-step2-button' };
+            next1.click(); await wait(200);
+            snap('별명 단계');
+          }
+          const nickname = document.querySelector('.nickname-row input');
+          if (!nickname || nickname.value.trim().length < 2) return { error: 'no-auto-nickname', value: nickname ? nickname.value : null };
+          if (stepped) {
+            const next2 = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('비밀번호 고르기'));
+            if (!next2) return { error: 'no-step3-button' };
+            next2.click(); await wait(200);
+            snap('비밀번호 단계');
+          }
+          const chips = document.querySelectorAll('.picture-chip').length;
+          const cardBottom = Math.round(card.getBoundingClientRect().bottom);
+          return { stepped, animals, chips, snapshots, cardBottom, viewportHeight: innerHeight };
+        })()`);
+        check(!createFlow.error, `${viewport.name} 새로 시작하기 흐름 재현`, createFlow.error);
+        if (!createFlow.error) {
+          check(createFlow.animals === 10, `${viewport.name} 동물 선택이 10개`, createFlow.animals);
+          check(createFlow.chips === 10, `${viewport.name} 그림 비밀번호 선택이 10개`, createFlow.chips);
+          const smallDuringSteps = createFlow.snapshots.flatMap((snapshot) => snapshot.small.map((item) => ({ step: snapshot.name, ...item })));
+          check(smallDuringSteps.length === 0, `${viewport.name} 입장 단계 터치 목표 44px 이상`, smallDuringSteps);
+          check(createFlow.snapshots.every((snapshot) => snapshot.overflow <= 0), `${viewport.name} 입장 단계 가로 스크롤 없음`, createFlow.snapshots.map((snapshot) => snapshot.overflow));
+          if (!createFlow.stepped) check(createFlow.cardBottom <= createFlow.viewportHeight, `${viewport.name} 한 화면 입장 폼이 첫 화면 안에 있음`, { cardBottom: createFlow.cardBottom, viewportHeight: createFlow.viewportHeight });
+        }
+
+        // 3) 내 그림 이어가기: 틀린 그림 비밀번호에서 아이 스스로 복구
+        await navigate(cdp, session, `${BASE}/join/${seeded.joinToken}`);
         await evaluate(cdp, session, MEASURE_HELPERS);
         const unlockError = await evaluate(cdp, session, `(async () => {
           const wait = (ms) => new Promise((done) => setTimeout(done, ms));
-          const click = (element) => { element.click(); return wait(90); };
-          const profile = document.querySelector('.profile-button'); if (!profile) return { error: 'no-profile' };
-          await click(profile);
+          const setValue = (element, value) => { const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; setter.call(element, value); element.dispatchEvent(new Event('input', { bubbles: true })); };
+          for (let attempt = 0; attempt < 60 && !document.querySelector('.entry-choice-grid'); attempt += 1) await wait(120);
+          const resume = [...document.querySelectorAll('.entry-choice-grid button')].find((button) => button.textContent.includes('내 그림 이어가기'));
+          if (!resume) return { error: 'no-resume' };
+          resume.click();
+          for (let attempt = 0; attempt < 40 && !document.querySelector('.join-card.join-recover'); attempt += 1) await wait(120);
+          if (!document.querySelector('.join-card.join-recover')) return { error: 'no-recover-card' };
+          const progress = document.querySelector('.mobile-entry-progress');
+          const stepped = progress ? getComputedStyle(progress).display !== 'none' : false;
+          const rabbit = [...document.querySelectorAll('.animal-choice-grid .emoji-chip')].find((button) => button.getAttribute('aria-label') === '토끼 고르기');
+          if (!rabbit) return { error: 'no-rabbit' };
+          rabbit.click(); await wait(120);
+          if (stepped) { const next1 = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('별명 고르기')); if (next1) next1.click(); await wait(150); }
+          const nickname = document.querySelector('.nickname-row input');
+          if (!nickname) return { error: 'no-nickname-input' };
+          setValue(nickname, ${JSON.stringify(seeded.nickname)}); await wait(120);
+          if (stepped) { const next2 = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('비밀번호 고르기')); if (next2) next2.click(); await wait(150); }
           const chips = [...document.querySelectorAll('.picture-chip')];
-          for (let index = 0; index < 3; index += 1) await click(chips[(index + 2) % chips.length]);
-          const submit = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('내 그림 열기'));
+          if (chips.length < 3) return { error: 'no-chips' };
+          for (let index = 0; index < 3; index += 1) { chips[1].click(); await wait(90); }
+          const submit = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('내 그림 이어가기') && button.className.includes('child-primary-action'));
           if (!submit) return { error: 'no-submit' };
-          await click(submit);
+          submit.click();
           for (let attempt = 0; attempt < 60 && !document.querySelector('.child-error'); attempt += 1) await wait(120);
           const box = document.querySelector('.child-error');
+          if (!box) return { error: 'no-error-box' };
           const reset = document.querySelector('.reset-pictures-button');
-          const speak = box?.querySelector('.speak-button');
-          const before = { icon: box?.querySelector('.child-error-icon')?.textContent ?? '', speak: Boolean(speak), resetAttention: reset?.className.includes('attention') ?? false, filled: document.querySelectorAll('.password-slots span.filled').length, resetBox: reset ? window.__wiggle.box(reset) : null, errorVisible: box ? window.__wiggle.reachable(box) : null };
-          if (reset) await click(reset);
-          const after = { filled: document.querySelectorAll('.password-slots span.filled').length, errorStillThere: Boolean(document.querySelector('.child-error')), chipsEnabled: [...document.querySelectorAll('.picture-chip')].every((chip) => !chip.disabled) };
+          const pageSpeak = document.querySelector('.entry-card .speak-button');
+          const before = { icon: box.querySelector('.child-error-icon') ? box.querySelector('.child-error-icon').textContent : '', pageSpeak: Boolean(pageSpeak), resetAttention: reset ? reset.className.includes('attention') : false, resetBox: reset ? window.__wiggle.box(reset) : null, errorVisible: window.__wiggle.reachable(box) };
+          if (reset) { reset.click(); await wait(200); }
+          const submitAfter = [...document.querySelectorAll('button')].find((button) => button.className.includes('child-primary-action'));
+          const after = { errorStillThere: Boolean(document.querySelector('.child-error')), chipsEnabled: [...document.querySelectorAll('.picture-chip')].every((chip) => !chip.disabled), submitDisabled: submitAfter ? submitAfter.disabled : null };
           return { before, after };
         })()`);
-        check(!unlockError.error, `${viewport.name} 잠금 해제 오류 흐름 재현`, unlockError.error);
+        check(!unlockError.error, `${viewport.name} 이어가기 오류 흐름 재현`, unlockError.error);
         if (!unlockError.error) {
           check(unlockError.before.icon === "⚠️", `${viewport.name} 틀린 비밀번호가 그림(⚠️)으로 표시됨`, unlockError.before.icon);
-          check(unlockError.before.speak, `${viewport.name} 오류를 소리로 들을 수 있음`);
+          check(unlockError.before.pageSpeak, `${viewport.name} 안내를 소리로 들을 수 있음`);
           check(unlockError.before.resetAttention, `${viewport.name} 다시 골라요 버튼이 강조됨`);
           check(unlockError.before.resetBox && Math.min(unlockError.before.resetBox.w, unlockError.before.resetBox.h) >= 44, `${viewport.name} 다시 골라요 버튼 44px 이상`, unlockError.before.resetBox);
-          check(unlockError.after.filled === 0, `${viewport.name} 한 번 눌러 세 칸 모두 초기화`, unlockError.after);
           check(!unlockError.after.errorStillThere, `${viewport.name} 다시 고르면 이전 오류 문구가 사라짐`);
           check(unlockError.after.chipsEnabled, `${viewport.name} 초기화 뒤 그림 버튼을 다시 누를 수 있음`);
+          check(unlockError.after.submitDisabled === true, `${viewport.name} 초기화 뒤에는 세 칸을 다시 골라야 제출 가능`, unlockError.after.submitDisabled);
         }
 
-        // 4) 잘못된 수업 코드
-        await navigate(cdp, session, `${BASE}/join`);
+        // 4) 잘못된 수업 코드: 글자 없이도 복구 행동이 보인다
+        await navigate(cdp, session, `${BASE}/join?code=0000`);
         await evaluate(cdp, session, MEASURE_HELPERS);
         const codeError = await evaluate(cdp, session, `(async () => {
           const wait = (ms) => new Promise((done) => setTimeout(done, ms));
-          const setValue = (element, value) => { const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; setter.call(element, value); element.dispatchEvent(new Event('input', { bubbles: true })); };
-          const first = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('처음 왔어요'));
-          if (first) { first.click(); await wait(120); }
-          const inputs = [...document.querySelectorAll('input')];
-          if (inputs.length < 2) return { error: 'no-inputs', count: inputs.length };
-          setValue(inputs[0], '0000'); setValue(inputs[1], '점검 화가'); await wait(80);
-          const chips = [...document.querySelectorAll('.picture-chip')];
-          for (let index = 0; index < 3; index += 1) { chips[index].click(); await wait(60); }
-          const submit = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('수업 들어가기'));
-          submit.click();
           for (let attempt = 0; attempt < 60 && !document.querySelector('.child-error'); attempt += 1) await wait(120);
-          const highlighted = Boolean(document.querySelector('input.input-error'));
+          const box = document.querySelector('.child-error');
+          if (!box) return { error: 'no-error', text: document.body.innerText.slice(0, 120) };
+          const icon = box.querySelector('.child-error-icon') ? box.querySelector('.child-error-icon').textContent : '';
+          const speak = Boolean(document.querySelector('.entry-card .speak-button'));
           const callButton = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('선생님 불러요'));
           const callBox = callButton ? window.__wiggle.box(callButton) : null;
-          if (callButton) { callButton.click(); await wait(150); }
-          return { highlighted, hadCallButton: Boolean(callButton), callBox, noteShown: Boolean(document.querySelector('.teacher-call-note')) };
+          const retry = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('다시 확인하기'));
+          const backHome = [...document.querySelectorAll('a')].find((link) => link.textContent.includes('수업 코드 다시 입력하기'));
+          if (callButton) { callButton.click(); await wait(200); }
+          return { icon, speak, hadCallButton: Boolean(callButton), callBox, noteShown: Boolean(document.querySelector('.teacher-call-note')), hadRetry: Boolean(retry), hadBackHome: Boolean(backHome), overflow: window.__wiggle.horizontalOverflow().overflow, small: window.__wiggle.smallTargets(44) };
         })()`);
         check(!codeError.error, `${viewport.name} 잘못된 수업 코드 흐름 재현`, codeError.error);
         if (!codeError.error) {
-          check(codeError.highlighted, `${viewport.name} 잘못된 코드 칸이 강조됨`);
+          check(codeError.icon === "⚠️", `${viewport.name} 코드 오류가 그림(⚠️)으로 표시됨`, codeError.icon);
+          check(codeError.speak, `${viewport.name} 코드 오류를 소리로 들을 수 있음`);
           check(codeError.hadCallButton && codeError.callBox && Math.min(codeError.callBox.w, codeError.callBox.h) >= 44, `${viewport.name} 선생님 불러요 버튼 44px 이상`, codeError.callBox);
           check(codeError.noteShown, `${viewport.name} 선생님 부르기 안내가 표시됨`);
+          check(codeError.hadRetry && codeError.hadBackHome, `${viewport.name} 다시 확인·코드 재입력 행동이 함께 보임`, { retry: codeError.hadRetry, backHome: codeError.hadBackHome });
+          check(codeError.overflow <= 0 && codeError.small.length === 0, `${viewport.name} 코드 오류 화면 레이아웃 안전`, { overflow: codeError.overflow, small: codeError.small });
         }
 
-        // 4-b) 직접 입력 입장 화면: 고정된 큰 버튼이 그림 비밀번호 칸을 가리지 않는가
-        await navigate(cdp, session, `${BASE}/join`);
+        // 4-b) 새 프로필 폼: 세 칸을 다 고른 상태에서도 그림 버튼·다시 골라요가 가리지 않는다
+        await navigate(cdp, session, `${BASE}/join/${seeded.joinToken}`);
         await evaluate(cdp, session, MEASURE_HELPERS);
         const stickyOverlap = await evaluate(cdp, session, `(async () => {
           const wait = (ms) => new Promise((done) => setTimeout(done, ms));
-          const first = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('처음 왔어요'));
-          if (first) { first.click(); await wait(150); }
+          for (let attempt = 0; attempt < 60 && !document.querySelector('.entry-choice-grid'); attempt += 1) await wait(120);
+          const start = [...document.querySelectorAll('.entry-choice-grid button')].find((button) => button.textContent.includes('새로 시작하기'));
+          if (!start) return { error: 'no-start' };
+          start.click();
+          for (let attempt = 0; attempt < 40 && !document.querySelector('.join-card'); attempt += 1) await wait(120);
+          const progress = document.querySelector('.mobile-entry-progress');
+          const stepped = progress ? getComputedStyle(progress).display !== 'none' : false;
+          if (stepped) {
+            const firstAnimal = [...document.querySelectorAll('.animal-choice-grid .emoji-chip')][0];
+            if (firstAnimal) firstAnimal.click(); await wait(120);
+            const next1 = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('별명 고르기')); if (next1) next1.click(); await wait(150);
+            const next2 = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('비밀번호 고르기')); if (next2) next2.click(); await wait(150);
+          }
           const chips = [...document.querySelectorAll('.picture-chip')];
           if (!chips.length) return { error: 'no-chips' };
           chips[chips.length - 1].scrollIntoView({ block: 'end' });
           await wait(300);
-          const blockedNow = () => chips.map((chip) => ({ label: window.__wiggle.label(chip), ...window.__wiggle.reachable(chip) })).filter((item) => item.onScreen && !item.hitsSelf);
-          const blocked = blockedNow();
-          const slots = [...document.querySelectorAll('.password-slots span')].map((slot) => ({ label: 'slot', ...window.__wiggle.reachable(slot) })).filter((item) => item.onScreen && !item.hitsSelf);
-          // 세 칸을 다 고른 뒤(=버튼이 눌릴 수 있게 된 뒤)에도 다시 고르기 경로가 살아 있어야 한다.
+          const blocked = chips.map((chip) => ({ label: window.__wiggle.label(chip), ...window.__wiggle.reachable(chip) })).filter((item) => item.onScreen && !item.hitsSelf);
           for (let index = 0; index < 3; index += 1) { chips[index].click(); await wait(80); }
           const reset = document.querySelector('.reset-pictures-button');
-          reset?.scrollIntoView({ block: 'center' }); await wait(250);
+          if (reset) reset.scrollIntoView({ block: 'center' }); await wait(250);
           const resetReach = reset ? window.__wiggle.reachable(reset) : null;
-          return { blocked, slots, resetReach };
+          return { blocked, resetReach };
         })()`);
-        check(!stickyOverlap.error, `${viewport.name} 직접 입장 화면 재현`, stickyOverlap.error);
+        check(!stickyOverlap.error, `${viewport.name} 새 프로필 화면 재현`, stickyOverlap.error);
         if (!stickyOverlap.error) {
           check(stickyOverlap.blocked.length === 0, `${viewport.name} 그림 비밀번호 버튼이 고정 버튼에 가리지 않음`, stickyOverlap.blocked);
-          check(stickyOverlap.slots.length === 0, `${viewport.name} 비밀번호 칸 표시가 가리지 않음`, stickyOverlap.slots);
-          check(stickyOverlap.resetReach?.hitsSelf, `${viewport.name} 세 칸을 다 고른 뒤에도 다시 골라요를 누를 수 있음`, stickyOverlap.resetReach);
+          check(stickyOverlap.resetReach && stickyOverlap.resetReach.hitsSelf, `${viewport.name} 세 칸을 다 고른 뒤에도 다시 골라요를 누를 수 있음`, stickyOverlap.resetReach);
         }
 
         // 5) 그리기 화면과 그리미 패널
@@ -397,7 +469,7 @@ async function main() {
         check(!tools.error, `${viewport.name} 도구 패널 재현`, tools.error);
         if (!tools.error) {
           check(tools.unreachable.length === 0, `${viewport.name} 모든 그리기 도구에 닿을 수 있음`, tools.unreachable);
-          check(tools.primaryTools.length === 8 && tools.primaryTools.every((tool) => tool.label && tool.title), `${viewport.name} 아이콘 도구 이름을 접근성 정보로 제공`, tools.primaryTools);
+          check(tools.primaryTools.length === 9 && tools.primaryTools.every((tool) => tool.label && tool.title), `${viewport.name} 아이콘 도구 이름을 접근성 정보로 제공`, tools.primaryTools);
           check(tools.primaryTools.every((tool) => tool.nameDisplay === 'none'), `${viewport.name} 좁은 도구 버튼의 글자를 숨김`, tools.primaryTools);
           check(tools.primaryTools.every((tool) => Math.min(tool.buttonBox.w, tool.buttonBox.h) >= 44), `${viewport.name} 아이콘 도구 터치 목표 44px 이상`, tools.primaryTools);
           check(tools.primaryTools.every((tool) => tool.iconInside), `${viewport.name} 모든 도구 아이콘이 버튼 안에 온전히 보임`, tools.primaryTools);
@@ -598,12 +670,17 @@ async function main() {
           const peek = document.querySelector('.grimi-peek');
           const canvas = document.querySelector('.draw-canvas');
           if (!panel || !canvas) return { error: 'no-panel-or-canvas' };
+          // 앞 섹션이 도구 패널로 스크롤해 둔 상태일 수 있다. 아이가 그리려면 도화지를
+          // 보고 있어야 하므로, 좌표는 도화지를 화면에 들여놓은 뒤 잰다.
+          canvas.scrollIntoView({ block: 'start' });
+          await wait(300);
           const canvasBox = window.__wiggle.box(canvas);
           const panelBox = window.__wiggle.box(panel);
           // 도화지 안에서 시트에 가리지 않은 지점이 실제로 그릴 수 있어야 한다.
           const probeY = Math.round(Math.min(canvasBox.bottom, panelBox.top) - 12);
           const probeX = Math.round(canvasBox.left + canvasBox.w / 2);
           const hit = window.__wiggle.topElementAt(probeX, probeY);
+          const probePoint = { x: probeX, y: probeY };
           const confirm = peek?.querySelector('.child-primary-action');
           const reExpand = document.querySelector('.grimi-collapse');
           return {
@@ -612,6 +689,7 @@ async function main() {
             confirmReachable: confirm ? window.__wiggle.reachable(confirm) : null,
             drawableHeight: Math.round(Math.min(canvasBox.bottom, panelBox.top) - canvasBox.top),
             probeHitsCanvas: Boolean(hit && String(hit.cls).includes('draw-canvas')),
+            probeHit: hit, probePoint,
             reExpandReachable: reExpand ? window.__wiggle.reachable(reExpand) : null,
             panelTop: panelBox.top, viewportHeight: innerHeight,
           };
