@@ -8,9 +8,9 @@
 - 로컬 저장소: `C:\Users\user\Desktop\Project\wiggle_web`
 - GitHub: `https://github.com/yonghwan86/wiggle_web`
 - 공개 Sites: `https://wiggle-classroom-web.chan1940.chatgpt.site`
-- 마지막으로 확인된 `main` 커밋: `266a25159163aabbb5178a7d014969730a806ef8` (entry-redesign 브랜치와 Codex 릴리스 검증 기록까지 병합됨)
-- 마지막으로 SHA까지 확인한 공개 배포: `1cafeed` 기반 Sites v30. `266a251` 릴리스의 Sites 버전 번호는 이 문서 기준으로 별도 확인하지 않았다.
-- 현재 작업 브랜치: `claude/nickname-spacing-20260818` (base `266a251`). GitHub push·Sites 배포는 하지 않았다.
+- 현재 `main`에는 별명 후보 확대·공백 무시 매칭 검증 후보 HEAD `305742d`가 반영되어 있다 (base `266a251`).
+- 2026-08-18 공개 배포 확인 이력: `305742d2e03e05c175555947b2d8a3e4964f1a22`을 사용한 기존 Sites 프로젝트 v32 (그 이전은 `266a251` / v31).
+- 개발 후보 브랜치: `claude/nickname-spacing-20260818`. Codex 독립 검증을 통과해 `main`에 반영했다.
 
 ## 매우 중요한 작업 폴더 상태
 
@@ -112,9 +112,9 @@
 
 - 그림 별명 후보를 동물별 2개에서 10개로 확대했다 (`lib/nickname-ideas.ts`, 전체 100개, 한글 낱말, 공백 무시 기준 중복 없음). `다른 별명` 주사위는 현재 별명을 제외한 후보 전체에서 고른다.
 - 별명 비교 규칙을 도입했다 (`lib/nickname.ts`): 표시는 띄어쓰기 유지, 신규 중복 검사·동일 자격정보 검사·재입장·관련 rate-limit 대상 키는 모든 공백 차이 무시. D1 migration 없이 조회 시점 SQL 식으로 기존 행을 매칭하며, 다른 한글 문자는 합치지 않는다. 교사 화면의 중복 별명 표시도 같은 규칙을 쓴다.
-- 검증: typecheck·lint 통과, 전체 자동화 테스트 249/249 통과(신규 Miniflare 실동작 6건 포함 — 공백 변형 재입장 동일 student ID, 공백 변형 신규 생성 409, API를 거치지 않고 직접 삽입한 기존 행 검색, 공백 변형이 같은 brute-force 버킷 공유), `git diff --check`·`git diff --check main...HEAD` 통과.
-- 레이아웃·CSS 무변경이라 3뷰포트 브라우저 재검증은 생략했다. Codex 독립 검증에서 입장 화면 실동작 확인을 권장한다.
-- 커밋 후 ready_for_codex 후보를 만들었고, GitHub push·Sites 배포는 하지 않았다.
+- Codex 독립 검증: typecheck·lint·전체 자동화 테스트 249/249·일반/전체 범위 diff check 통과. 신규 Miniflare 실동작 6건에서 공백 변형 재입장 동일 student ID, 공백 변형 신규 생성 409, 직접 삽입한 기존 행 검색, 공백 변형의 동일 brute-force 버킷 사용을 확인했다.
+- `320×568`, `390×844`, `844×390` 브라우저 자동 점검은 실패 0건이었다. 실제 브라우저에서 토끼 별명 주사위를 10회 눌러 7개 후보와 연속 반복 0건을 확인했고, `토끼 화가` 생성 → 학생 전환 → `토끼화가`와 틀린 비밀번호 → `다시 골라요` → 올바른 비밀번호 순서로 같은 학생 홈이 열리고 교사 화면 인원이 1명으로 유지되는 것을 확인했다.
+- 새 Sites 프로젝트를 만들거나 `.openai/hosting.json`, D1/R2 바인딩을 바꾸지 않았다.
 
 ## 다음 작업 시작 전 확인
 
