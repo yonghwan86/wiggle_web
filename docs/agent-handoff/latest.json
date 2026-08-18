@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "status": "ready_for_codex",
   "project": "wiggle_web",
-  "branch": "claude/entry-redesign-cleanup-20260818",
-  "baseCommit": "1cafeed4c2d82ddbc602248f8985879eed642b04",
-  "candidateCommit": "c22371ad8037daee0e353ec5ee706ad67b62ecde",
+  "branch": "claude/nickname-spacing-20260818",
+  "baseCommit": "266a25159163aabbb5178a7d014969730a806ef8",
+  "candidateCommit": "59e2678e50754d4e7155397f841a7f7ae90286bb",
   "report": "docs/agent-handoff/latest.md",
-  "task": "student entry redesign + dead-code/security cleanup + browser-check rewrite",
-  "summary": "학생 입장 재설계 통합, 죽은코드/보안헤더/오라클 수정, 3뷰포트 실측 검증 스크립트 재작성 (테스트 243/243, browser-check 실패 0)",
+  "task": "nickname ideas expansion + spacing-insensitive nickname matching",
+  "summary": "동물별 별명 후보 10개 확대와 별명 공백 무시 매칭(중복·자격정보·재입장·rate-limit), Miniflare 실동작 테스트 6건 추가 (테스트 249/249, browser-check 실패 0)",
   "releaseGate": "codex_go_only",
-  "generatedAt": "2026-08-18T03:30:09.404Z"
+  "generatedAt": "2026-08-18T11:30:15.475Z"
 }
