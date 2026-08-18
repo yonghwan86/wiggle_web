@@ -4,10 +4,10 @@
   "project": "wiggle_web",
   "branch": "claude/entry-redesign-cleanup-20260818",
   "baseCommit": "1cafeed4c2d82ddbc602248f8985879eed642b04",
-  "candidateCommit": "c22371ad8037daee0e353ec5ee706ad67b62ecde",
+  "candidateCommit": "4a9829bc0d79feed41c74f85657c296aae0eb0e2",
   "report": "docs/agent-handoff/latest.md",
-  "task": "student entry redesign + dead-code/security cleanup + browser-check rewrite",
-  "summary": "학생 입장 재설계 통합, 죽은코드/보안헤더/오라클 수정, 3뷰포트 실측 검증 스크립트 재작성 (테스트 243/243, browser-check 실패 0)",
+  "task": "codex release-gate fixes (round 2)",
+  "summary": "Codex 1차 FAIL 2건 수정: 범위 diff 끝 공백 제거, 동물 초상 자산 출처 등재 (테스트 243/243, 범위 diff --check 통과)",
   "releaseGate": "codex_go_only",
-  "generatedAt": "2026-08-18T03:30:09.404Z"
+  "generatedAt": "2026-08-18T04:47:06.509Z"
 }
