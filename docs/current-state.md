@@ -14,7 +14,7 @@
 
 ## 매우 중요한 작업 폴더 상태
 
-2026-08-18 로컬 변경은 모두 `codex/student-entry-ui-20260818` 브랜치에 커밋됐다.
+2026-08-18 로컬 변경은 모두 `claude/entry-redesign-cleanup-20260818` 브랜치에 커밋됐다.
 
 1. `chore: remove dead code, add security headers, optimize hot API paths` — 미사용 코드·자산 삭제, 전 경로 보안 헤더, teacher/family 이미지 변환·student GET 병렬화
 2. `feat: redesign student entry with classroom-scoped re-entry` — 학생 입장 재설계 본체와 지속 컨텍스트 문서
