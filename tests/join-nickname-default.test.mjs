@@ -28,7 +28,8 @@ test("typing a custom nickname stops it from being overwritten by animal changes
 test("다른 별명 stays auto-generated and keeps drawing from the selected animal's ideas", () => {
   assert.match(
     join,
-    /function suggestNickname\(\) \{\s*\n\s*const ideas = NICKNAME_IDEAS\[animal\] \?\? \["꼬마 화가"\];/
+    /function suggestNickname\(\) \{\s*\n\s*const ideas = NICKNAME_IDEAS\[animal\] \?\? \[FALLBACK_NICKNAME\];/
   );
-  assert.match(join, /setNickname\(pool\[Math\.floor\(Math\.random\(\) \* pool\.length\)\] \?\? "꼬마 화가"\);\s*\n\s*setNicknameAuto\(true\);/);
+  assert.match(join, /setNickname\(pickDifferentNickname\(ideas, nickname, Math\.random\(\)\)\);\s*\n\s*setNicknameAuto\(true\);/);
+  assert.match(join, /import \{ FALLBACK_NICKNAME, NICKNAME_IDEAS, pickDifferentNickname \} from "@\/lib\/nickname-ideas";/);
 });

@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "status": "ready_for_codex",
   "project": "wiggle_web",
-  "branch": "claude/entry-redesign-cleanup-20260818",
-  "baseCommit": "1cafeed4c2d82ddbc602248f8985879eed642b04",
-  "candidateCommit": "4a9829bc0d79feed41c74f85657c296aae0eb0e2",
+  "branch": "claude/nickname-spacing-20260818",
+  "baseCommit": "266a25159163aabbb5178a7d014969730a806ef8",
+  "candidateCommit": "59e2678e50754d4e7155397f841a7f7ae90286bb",
   "report": "docs/agent-handoff/latest.md",
-  "task": "codex release-gate fixes (round 2)",
-  "summary": "Codex 1차 FAIL 2건 수정: 범위 diff 끝 공백 제거, 동물 초상 자산 출처 등재 (테스트 243/243, 범위 diff --check 통과)",
+  "task": "nickname ideas expansion + spacing-insensitive nickname matching",
+  "summary": "동물별 별명 후보 10개 확대와 별명 공백 무시 매칭(중복·자격정보·재입장·rate-limit), Miniflare 실동작 테스트 6건 추가 (테스트 249/249, browser-check 실패 0)",
   "releaseGate": "codex_go_only",
-  "generatedAt": "2026-08-18T04:47:06.509Z"
+  "generatedAt": "2026-08-18T11:30:15.475Z"
 }
