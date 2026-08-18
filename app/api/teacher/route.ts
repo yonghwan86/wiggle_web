@@ -97,7 +97,7 @@ export async function POST(request: Request) {
   const payload = await request.json().catch(() => ({})) as Record<string, unknown>;
   const action = cleanText(payload.action, 30);
   if (action === "login") {
-    if (!isLocalDemoRequest(request)) return jsonError("운영 환경에서는 ChatGPT 로그인만 사용할 수 있어요.", 401);
+    if (!isLocalDemoRequest(request)) return jsonError("운영 환경에서는 구글 로그인만 사용할 수 있어요.", 401);
     if (!(await rateLimit(clientKey(request, "teacher-login"), 8, 10 * 60))) return jsonError("잠시 후 다시 시도해 주세요.", 429);
     const email = cleanText(payload.email, 120).toLowerCase();
     const pin = cleanText(payload.pin, 32);
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
 
   if (action === "logout") {
     await revokeTeacherSession();
-    return noStoreJson({ ok: true, signOut: teacher.source === "siwc" });
+    return noStoreJson({ ok: true });
   }
   if (action === "createClassroom") {
     const displayName = cleanText(payload.displayName, 30);

@@ -2,7 +2,6 @@ import "server-only";
 import { pbkdf2 } from "node:crypto";
 import { cookies } from "next/headers";
 import { bindings, ensureSchema } from "@/db/runtime";
-import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { id, sha256 } from "@/lib/token-crypto";
 import { consumeRateLimit, releaseRateLimit } from "@/lib/rate-limit";
 
@@ -32,26 +31,23 @@ export async function verifySecret(value: string, salt: string, expected: string
   return equalConstantTime(await deriveSecret(value, salt), expected);
 }
 
-export type TeacherIdentity = { id: string; email: string; displayName: string; source: "siwc" | "local" };
+export type TeacherIdentity = { id: string; email: string; displayName: string; source: "google" | "local" };
 
-async function chatGPTTeacher(): Promise<TeacherIdentity | null> {
-  const user = await getChatGPTUser();
-  if (!user?.email) return null;
+// 구글 OAuth 콜백이 검증한 이메일만 이 함수에 도달한다. 예전 SIWC의
+// oai-* 헤더 신뢰 경로는 Sites 프록시 밖에서는 클라이언트가 헤더를 위조해
+// 임의 교사로 로그인할 수 있으므로 복원하면 안 된다.
+export async function upsertGoogleTeacher(email: string, displayName: string): Promise<TeacherIdentity | null> {
   await ensureSchema();
-  const email = user.email.trim().toLowerCase().slice(0, 160);
-  const displayName = (user.displayName || email).trim().slice(0, 80);
   const teacherId = id("teacher");
   await bindings().DB.prepare(
     `INSERT INTO teachers(id, email, display_name, credential_hash, credential_salt) VALUES (?, ?, ?, '', '') ON CONFLICT(email) DO UPDATE SET display_name = excluded.display_name`,
   ).bind(teacherId, email, displayName).run();
   const row = await bindings().DB.prepare(`SELECT id, email, display_name AS displayName FROM teachers WHERE email = ?`).bind(email).first<{ id: string; email: string; displayName: string }>();
-  return row ? { ...row, source: "siwc" } : null;
+  return row ? { ...row, source: "google" } : null;
 }
 
 export async function requireTeacher(): Promise<TeacherIdentity | null> {
   await ensureSchema();
-  const hosted = await chatGPTTeacher();
-  if (hosted) return hosted;
   const token = (await cookies()).get("wiggle_teacher")?.value;
   if (!token) return null;
   const tokenHash = await sha256(token);

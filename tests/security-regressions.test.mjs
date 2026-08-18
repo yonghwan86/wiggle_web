@@ -4,10 +4,17 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("hosted teachers require SIWC and fixed demo credentials are absent", async () => {
-  const [security, api, demoSeed, page, classPage, ui, readme] = await Promise.all([read("../lib/security.ts"), read("../app/api/teacher/route.ts"), read("../lib/demo-seed.ts"), read("../app/teacher/page.tsx"), read("../app/teacher/class/[id]/page.tsx"), read("../app/components/TeacherApp.tsx"), read("../README.md")]);
-  assert.match(security, /getChatGPTUser/); assert.match(security, /process\.env\.NODE_ENV === "production"/); assert.match(security, /localhost/); assert.match(api, /isLocalDemoRequest\(request\)/);
-  assert.match(page + classPage, /requireChatGPTUser/); assert.match(page + classPage, /NODE_ENV === "production"/);
+test("hosted teachers use verified Google OAuth and fixed demo credentials are absent", async () => {
+  const [security, googleAuth, start, callback, api, demoSeed, page, classPage, ui, readme] = await Promise.all([read("../lib/security.ts"), read("../lib/google-auth.ts"), read("../app/api/auth/google/start/route.ts"), read("../app/api/auth/google/callback/route.ts"), read("../app/api/teacher/route.ts"), read("../lib/demo-seed.ts"), read("../app/teacher/page.tsx"), read("../app/teacher/class/[id]/page.tsx"), read("../app/components/TeacherApp.tsx"), read("../README.md")]);
+  // Sites 프록시 밖에서는 oai-* 헤더를 클라이언트가 위조할 수 있다 — 헤더 신뢰 경로가 부활하면 안 된다.
+  assert.doesNotMatch(security, /oai-authenticated|getChatGPTUser|chatgpt-auth|siwc/);
+  assert.match(security, /upsertGoogleTeacher/); assert.match(security, /wiggle_teacher/); assert.match(security, /localhost/); assert.match(api, /isLocalDemoRequest\(request\)/);
+  // 코드 플로우 방어선: PKCE S256, state 상수시간 비교, 미검증 이메일 거부, 상태 쿠키는 httpOnly.
+  assert.match(googleAuth, /code_challenge_method: "S256"/); assert.match(googleAuth, /code_verifier/); assert.match(googleAuth, /emailVerified !== true/);
+  assert.match(start, /httpOnly: true/); assert.match(start, /sameSite: "lax"/);
+  assert.match(callback, /timingSafeEqualText\(state, stored\.state\)/); assert.match(callback, /validateGoogleTeacher/); assert.match(callback, /sameSite: "strict"/);
+  assert.match(page + classPage, /\/api\/auth\/google\/start/); assert.match(page + classPage, /NODE_ENV === "production"/);
+  assert.match(ui, /\/api\/auth\/google\/start\?return_to=%2Fteacher/);
   assert.doesNotMatch(api + ui + readme, /teacher@wiggle\.local|\/ 2841|DEMO_TEACHER|ensureDemoSeed/);
   assert.equal((api.match(/await requireTeacher\(\) \?\? await localAutoTeacher\(request\)/g) ?? []).length, 2);
   assert.match(api, /async function localAutoTeacher\(request: Request\) \{\s*if \(!isLocalDemoRequest\(request\)\) return null;/);

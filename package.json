@@ -16,7 +16,7 @@
     "db:local:init": "node scripts/init-local-db.mjs",
     "pipeline:ready": "node scripts/mark-codex-ready.mjs",
     "check:browser": "node scripts/browser-check.mjs",
-    "test:adapters": "node --test tests/turso-adapters.test.mjs",
+    "test:adapters": "node --test tests/turso-adapters.test.mjs tests/google-auth.test.mjs",
     "test:legacy-harness": "echo 'Miniflare 통합 테스트 10개는 Next 하네스 포팅 전까지 보류 — docs/vercel-migration-plan.md 4단계'"
   },
   "dependencies": {
