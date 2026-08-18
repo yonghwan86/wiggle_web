@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "status": "ready_for_codex",
   "project": "wiggle_web",
-  "branch": "claude/field-test-fixes",
-  "baseCommit": "17676fe917edc6f532983e8597d6c7005eb45eb9",
-  "candidateCommit": "a14d3231b06c23aae2e417e25fd26edf5a45bb3e",
+  "branch": "claude/entry-redesign-cleanup-20260818",
+  "baseCommit": "1cafeed4c2d82ddbc602248f8985879eed642b04",
+  "candidateCommit": "c22371ad8037daee0e353ec5ee706ad67b62ecde",
   "report": "docs/agent-handoff/latest.md",
-  "task": "Field-test fixes + QR single-screen entry",
-  "summary": "고양이 레슨 몸 단계, 메시지 닫기, 브러시 구분에 더해 QR 입장을 3학년 기본 단일 화면으로 전환했다",
+  "task": "student entry redesign + dead-code/security cleanup + browser-check rewrite",
+  "summary": "학생 입장 재설계 통합, 죽은코드/보안헤더/오라클 수정, 3뷰포트 실측 검증 스크립트 재작성 (테스트 243/243, browser-check 실패 0)",
   "releaseGate": "codex_go_only",
-  "generatedAt": "2026-08-02T15:08:27.190Z"
+  "generatedAt": "2026-08-18T03:30:09.404Z"
 }
