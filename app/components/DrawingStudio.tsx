@@ -2838,6 +2838,24 @@ export function DrawingStudio() {
               </span>
             </button>
           </div>
+          {studioTool !== "text" && (
+            <div className="width-row" role="group" aria-label="선 굵기">
+              {STROKE_WIDTHS.map((value) => (
+                <button type="button" aria-label={STROKE_WIDTH_LABELS[value]} title={STROKE_WIDTH_LABELS[value]} aria-pressed={width === value} onClick={() => chooseWidth(value)} key={value}>
+                  <i
+                    aria-hidden="true"
+                    style={{
+                      width: Math.max(6, Math.min(34, value * 0.72)),
+                      height: Math.max(6, Math.min(34, value * 0.72)),
+                      // 지우개는 색을 쓰지 않는 도구라 점을 기본 잉크색으로 남겨 "지우는 크기"임을 구분한다.
+                      background: studioTool === "eraser" ? undefined : selectedColor,
+                    }}
+                  />
+                  <small>{STROKE_WIDTH_LABELS[value]}</small>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="tool-group make-group" role="group" aria-label="채우기와 도형">
             <button type="button" aria-label="채우기" title="채우기" aria-pressed={studioTool === "fill"} onClick={() => chooseStudioTool("fill")}>
               <span className="tool-icon" aria-hidden="true">
@@ -2961,25 +2979,6 @@ export function DrawingStudio() {
               </span>
             </button>
           </div>
-          {studioTool !== "text" && (
-            <>
-              <p className="tool-section-label width-label">굵기</p>
-              <div className="width-row" role="group" aria-label="선 굵기">
-                {STROKE_WIDTHS.map((value) => (
-                  <button type="button" aria-label={STROKE_WIDTH_LABELS[value]} title={STROKE_WIDTH_LABELS[value]} aria-pressed={width === value} onClick={() => chooseWidth(value)} key={value}>
-                    <i
-                      aria-hidden="true"
-                      style={{
-                        width: Math.max(6, Math.min(34, value * 0.72)),
-                        height: Math.max(6, Math.min(34, value * 0.72)),
-                      }}
-                    />
-                    <small>{STROKE_WIDTH_LABELS[value]}</small>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
           <p className="tool-section-label color-label">색</p>
           <div className="selected-color" role="status" aria-live="polite"><i style={{ background: selectedColor }} aria-hidden="true" /><span>현재 색 · <b>{COLOR_NAMES[selectedColor] ?? "고른 색"}</b></span></div>
           <button type="button" className="more-colors-button" aria-expanded={colorsExpanded} onClick={() => setColorsExpanded((value) => !value)}>{colorsExpanded ? "기본 색만 보기" : "🎨 색 더보기"}</button>
