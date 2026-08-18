@@ -63,13 +63,20 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 
 ## 단계와 게이트
 
-1. **어댑터**: `@libsql/client`(+`aws4fetch`) 설치 → `db/adapters/turso-d1.ts`, `db/adapters/r2-s3.ts` → `db/runtime.ts` 교체. 게이트: typecheck + 위 어댑터 검증 게이트 전부.
-2. **빌드 전환**: next.config(보안 헤더), scripts, worker/·vite.config 제거, tsconfig types 정리. 게이트: `next build` + 로컬 E2E(입장→그리기→저장).
+1. **어댑터** ✅ 완료(2026-08-18): `@libsql/client`+`aws4fetch` 설치, `db/adapters/turso-d1.ts`(PRAGMA→pragma_table_info 심 포함), `db/adapters/artworks-store.ts`(S3 + 로컬 파일 폴백), `db/runtime.ts` 교체. 어댑터 계약 테스트 6종(meta.changes·batch 원자성 롤백·PRAGMA 심·저장소 왕복·키 탈출 차단) 실동작 통과.
+2. **빌드 전환** ✅ 완료(2026-08-18): next.config(경로별 보안 헤더 재현+devIndicators off+serverExternalPackages), scripts를 next dev/build/start로 교체. `next build` 성공, 전환기 테스트 201개 통과, browser-check 3뷰포트 "모든 브라우저 검증 통과", 경로별 보안 헤더 curl 실측 일치. worker/·vite.config·vinext 의존성 제거는 4단계 하네스 포팅과 함께 정리.
 3. **4.5MB 저장 분리**: 위 확정안 구현. 게이트: 3.5MB 완성본 실저장 + 오프라인 큐 회귀 테스트.
 4. **테스트 하네스 포팅**: 전체 스위트 그린 + browser-check 3뷰포트 실패 0.
 5. **교사 인증 교체** (사용자 결정 후).
 6. **운영 데이터 조사·이전** (Codex) → **Vercel 연결**: repo import(사용자) → env(OPENAI_API_KEY·TURSO_DATABASE_URL·TURSO_AUTH_TOKEN·R2 S3 자격증명·플래그) → Preview 검증 → Production.
 7. **문서·파이프라인 재정의**: CLAUDE.md·AGENTS.md를 GitHub+Vercel 흐름으로 교체.
+
+## 남은 위험 (전환기)
+
+- Miniflare 통합 테스트 10개(classroom-entry-flow·student-join-atomic·rate-limit 등)는 4단계 하네스 포팅 전까지 실행 목록에서 보류 — `npm run test:legacy-harness` 안내 문구 참조. 해당 검증 공백은 browser-check E2E(실 API 호출)와 어댑터 계약 테스트가 부분 커버.
+- browser-check의 390×844 핀치 확대 1항목은 SKIP: next dev + CDP 환경에서 이 뷰포트만 해당 지점의 터치 이벤트가 페이지에 0건 도달(마우스·형제 뷰포트 정상, 페이지 스케일 1, 터치 재무장·리셋 무효). 핀치 로직은 320×568·844×390 실디스패치와 단위 테스트 2종으로 커버. 6단계 배포 검증에서 실기기로 재확인.
+- PRAGMA 심·batch 원자성은 로컬 libsql 파일에서 검증 완료 — 원격 Turso(https)에서의 재검증은 6단계 연결 시 1회 수행.
+- 4.5MB 저장 분리(3단계)와 교사 인증(5단계)은 미착수 — 완성 저장은 로컬에선 문제없고 Vercel 배포 전 필수.
 
 ## 열린 결정 (사용자)
 

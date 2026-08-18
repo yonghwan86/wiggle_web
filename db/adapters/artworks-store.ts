@@ -1,0 +1,156 @@
+/**
+ * R2 호환 작품 파일 저장소.
+ *
+ * 호출부가 쓰는 R2Bucket 표면은 put(key, bytes, {httpMetadata, customMetadata}) /
+ * get(key) → { size, httpMetadata?.contentType, arrayBuffer() } | null / delete(key) 셋뿐이다.
+ * 운영은 기존 R2 버킷을 S3 호환 API로 계속 쓰고(이미지 이전 없음), 로컬 개발·테스트는
+ * 자격증명 없이 파일 저장소로 동작한다. 아이 그림은 어떤 구현에서도 공개 URL을 만들지 않는다.
+ */
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { AwsClient } from "aws4fetch";
+
+type PutOptions = {
+  httpMetadata?: { contentType?: string; cacheControl?: string };
+  customMetadata?: Record<string, string>;
+};
+
+export type StoredObject = {
+  size: number;
+  httpMetadata?: { contentType?: string; cacheControl?: string };
+  customMetadata?: Record<string, string>;
+  arrayBuffer(): Promise<ArrayBuffer>;
+};
+
+export interface ArtworksStore {
+  put(key: string, value: ArrayBuffer | ArrayBufferView, options?: PutOptions): Promise<void>;
+  get(key: string): Promise<StoredObject | null>;
+  delete(key: string): Promise<void>;
+}
+
+function toUint8(value: ArrayBuffer | ArrayBufferView): Uint8Array {
+  return value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+}
+
+const SAFE_KEY = /^[A-Za-z0-9._/-]+$/;
+
+function assertSafeKey(key: string): void {
+  if (!SAFE_KEY.test(key) || key.startsWith("/") || key.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error("저장 키 형식이 올바르지 않아요.");
+  }
+}
+
+export class S3ArtworksStore implements ArtworksStore {
+  private readonly aws: AwsClient;
+  private readonly endpoint: string;
+  private readonly bucket: string;
+
+  constructor(endpoint: string, bucket: string, accessKeyId: string, secretAccessKey: string) {
+    this.endpoint = endpoint;
+    this.bucket = bucket;
+    this.aws = new AwsClient({ accessKeyId, secretAccessKey, region: "auto", service: "s3" });
+  }
+
+  private objectUrl(key: string): string {
+    assertSafeKey(key);
+    const encoded = key.split("/").map((part) => encodeURIComponent(part)).join("/");
+    return `${this.endpoint.replace(/\/$/, "")}/${this.bucket}/${encoded}`;
+  }
+
+  async put(key: string, value: ArrayBuffer | ArrayBufferView, options?: PutOptions): Promise<void> {
+    const headers: Record<string, string> = {};
+    if (options?.httpMetadata?.contentType) headers["content-type"] = options.httpMetadata.contentType;
+    if (options?.httpMetadata?.cacheControl) headers["cache-control"] = options.httpMetadata.cacheControl;
+    for (const [name, metaValue] of Object.entries(options?.customMetadata ?? {})) headers[`x-amz-meta-${name.toLowerCase()}`] = metaValue;
+    const body = toUint8(value);
+    const response = await this.aws.fetch(this.objectUrl(key), { method: "PUT", headers, body: body as unknown as BodyInit });
+    if (!response.ok) throw new Error(`작품 파일 저장에 실패했어요. (S3 ${response.status})`);
+  }
+
+  async get(key: string): Promise<StoredObject | null> {
+    const response = await this.aws.fetch(this.objectUrl(key));
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`작품 파일 조회에 실패했어요. (S3 ${response.status})`);
+    const bytes = await response.arrayBuffer();
+    const customMetadata: Record<string, string> = {};
+    response.headers.forEach((headerValue, name) => {
+      if (name.startsWith("x-amz-meta-")) customMetadata[name.slice("x-amz-meta-".length)] = headerValue;
+    });
+    return {
+      size: bytes.byteLength,
+      httpMetadata: {
+        contentType: response.headers.get("content-type") ?? undefined,
+        cacheControl: response.headers.get("cache-control") ?? undefined,
+      },
+      customMetadata,
+      arrayBuffer: async () => bytes,
+    };
+  }
+
+  async delete(key: string): Promise<void> {
+    const response = await this.aws.fetch(this.objectUrl(key), { method: "DELETE" });
+    if (!response.ok && response.status !== 404) throw new Error(`작품 파일 삭제에 실패했어요. (S3 ${response.status})`);
+  }
+}
+
+export class FsArtworksStore implements ArtworksStore {
+  private readonly baseDir: string;
+
+  constructor(baseDir: string) {
+    this.baseDir = baseDir;
+  }
+
+  private resolveKey(key: string): string {
+    assertSafeKey(key);
+    const resolved = path.resolve(this.baseDir, key);
+    if (!resolved.startsWith(path.resolve(this.baseDir) + path.sep)) throw new Error("저장 키 형식이 올바르지 않아요.");
+    return resolved;
+  }
+
+  async put(key: string, value: ArrayBuffer | ArrayBufferView, options?: PutOptions): Promise<void> {
+    const filePath = this.resolveKey(key);
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, toUint8(value));
+    await writeFile(`${filePath}.meta.json`, JSON.stringify({ httpMetadata: options?.httpMetadata ?? {}, customMetadata: options?.customMetadata ?? {} }));
+  }
+
+  async get(key: string): Promise<StoredObject | null> {
+    const filePath = this.resolveKey(key);
+    let bytes: Buffer;
+    try {
+      bytes = await readFile(filePath);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw cause;
+    }
+    let meta: { httpMetadata?: { contentType?: string; cacheControl?: string }; customMetadata?: Record<string, string> } = {};
+    try {
+      meta = JSON.parse(await readFile(`${filePath}.meta.json`, "utf8")) as typeof meta;
+    } catch {
+      meta = {};
+    }
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    return {
+      size: bytes.byteLength,
+      httpMetadata: meta.httpMetadata,
+      customMetadata: meta.customMetadata,
+      arrayBuffer: async () => buffer,
+    };
+  }
+
+  async delete(key: string): Promise<void> {
+    const filePath = this.resolveKey(key);
+    await rm(filePath, { force: true });
+    await rm(`${filePath}.meta.json`, { force: true });
+  }
+}
+
+export function createArtworksStore(): ArtworksStore {
+  const endpoint = process.env.R2_S3_ENDPOINT;
+  const bucket = process.env.R2_S3_BUCKET;
+  const accessKeyId = process.env.R2_S3_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_S3_SECRET_ACCESS_KEY;
+  if (endpoint && bucket && accessKeyId && secretAccessKey) return new S3ArtworksStore(endpoint, bucket, accessKeyId, secretAccessKey);
+  if (process.env.NODE_ENV === "production") throw new Error("R2 S3 자격증명(R2_S3_*)이 설정되지 않았어요.");
+  return new FsArtworksStore(path.resolve(".data/artworks-store"));
+}

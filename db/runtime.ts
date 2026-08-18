@@ -1,4 +1,5 @@
-import { env } from "cloudflare:workers";
+import { createArtworksStore } from "@/db/adapters/artworks-store";
+import { createTursoD1 } from "@/db/adapters/turso-d1";
 import { upgradeMvp3Schema } from "@/lib/mvp3-schema-upgrade";
 
 export interface WiggleEnv {
@@ -7,11 +8,35 @@ export interface WiggleEnv {
   WHISPER_RELAY?: Fetcher;
 }
 
+// 릴레이는 예전 Workers 서비스 바인딩과 같은 fetch 표면만 노출한다.
+// 호출부는 절대 주소로 Request를 만들므로 경로만 유지한 채 릴레이 주소로 보낸다.
+function whisperRelayFetcher(): Fetcher | undefined {
+  const base = process.env.WHISPER_RELAY_URL;
+  if (!base) return undefined;
+  const relay = {
+    async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const requested = new URL(request.url);
+      const target = new URL(requested.pathname + requested.search, base);
+      return fetch(new Request(target, request));
+    },
+  };
+  return relay as unknown as Fetcher;
+}
+
+let cachedEnv: WiggleEnv | undefined;
+
 export function bindings(): WiggleEnv {
-  const value = env as unknown as Partial<WiggleEnv>;
-  if (!value.DB) throw new Error("D1 binding DB가 연결되지 않았어요.");
-  if (!value.ARTWORKS) throw new Error("R2 binding ARTWORKS가 연결되지 않았어요.");
-  return value as WiggleEnv;
+  if (!cachedEnv) {
+    // 어댑터는 D1/R2에서 실제로 쓰는 표면만 구현한다. 전체 인터페이스 타입은
+    // 호출부 38곳의 제네릭 시그니처를 보존하기 위해 여기서 한 번만 좁혀 단언한다.
+    cachedEnv = {
+      DB: createTursoD1() as unknown as D1Database,
+      ARTWORKS: createArtworksStore() as unknown as R2Bucket,
+      WHISPER_RELAY: whisperRelayFetcher(),
+    };
+  }
+  return cachedEnv;
 }
 
 const schemaStatements = [

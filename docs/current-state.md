@@ -15,8 +15,10 @@
 ## 매우 중요한 작업 폴더 상태
 
 - 입장 재설계·정리 브랜치(`claude/entry-redesign-cleanup-20260818`)와 별명 확대 브랜치(`claude/nickname-spacing-20260818`)는 Codex GO 판정으로 `main` 병합·공개 배포까지 끝났다 (Sites v31·v32, 위 상태 기준 참조).
-- 진행 중 개발 브랜치: `claude/student-home-tray-20260818` (base: `main` 병합 반영 `09dffe3`).
-  1. `fix: match student home shelf to approved design and clarify message button` — 학생 홈 하단 트레이를 확정 시안의 중앙 클러스터로 보정, 선생님 말씀 버튼을 💌 아이콘+라벨 규약으로 교체. Codex 인계 전 상태.
+- 2026-08-18 배포 체계 전환 결정: 개발은 이 폴더, 코드는 GitHub push, 공개 배포는 Vercel. Sites+Codex 게이트는 전환 완료 후 은퇴. 학생 홈 트레이·펜 굵기 수정은 GitHub `main`에 직접 push됨.
+- 진행 중 재플랫폼 브랜치: `claude/vercel-replatform-20260818` — 계획은 `docs/vercel-migration-plan.md`(v2).
+  1. 1·2단계 완료: Turso(D1 호환 어댑터)·R2 S3 어댑터(+로컬 파일 폴백)·`next dev/build/start` 전환·보안 헤더 재현. `next build` 성공, 전환기 테스트 201+어댑터 6 통과, browser-check 3뷰포트 통과(390×844 핀치 1항목은 환경 사유 SKIP — 계획 문서 남은 위험 참조).
+  2. 남은 단계: 4.5MB 저장 분리(3) → Miniflare 테스트 10개 하네스 포팅(4) → 교사 인증 교체(5) → 운영 데이터 조사·Vercel 연결(6) → 문서·파이프라인 재정의(7).
 
 - 커밋되지 않은 파일은 사용자 소유 참고 자료(`examples/*.jpg`, 시안 원본)와 로컬 도구 설정(`.claude/`)뿐이다. 임의로 삭제하지 않는다.
 - `git reset --hard`, `git checkout --`, 광범위한 삭제를 사용하지 않는다.
