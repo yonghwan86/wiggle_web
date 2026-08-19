@@ -26,10 +26,13 @@ export async function GET(request: Request) {
   const teacher = await upsertGoogleTeacher(validated.email, validated.displayName);
   if (!teacher) return fallback();
   const session = await issueTeacherSession(teacher.id);
+  // lax여야 한다: 이 응답의 /teacher 리디렉션은 구글이 시작한 교차 사이트 내비게이션
+  // 연쇄라 strict 쿠키가 실리지 않는다 — strict면 로그인 성공 직후 미인증으로 판정되어
+  // 다시 구글로 튕기는 무한 루프가 된다 (2026-08-19 운영에서 실제 발생).
   cookieStore.set("wiggle_teacher", session.token, {
     httpOnly: true,
     secure: url.protocol === "https:",
-    sameSite: "strict",
+    sameSite: "lax",
     path: "/",
     expires: session.expires,
   });

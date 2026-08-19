@@ -36,7 +36,9 @@ test("hosted teachers use verified Google OAuth and fixed demo credentials are a
   // 코드 플로우 방어선: PKCE S256, state 상수시간 비교, 미검증 이메일 거부, 상태 쿠키는 httpOnly.
   assert.match(googleAuth, /code_challenge_method: "S256"/); assert.match(googleAuth, /code_verifier/); assert.match(googleAuth, /emailVerified !== true/);
   assert.match(start, /httpOnly: true/); assert.match(start, /sameSite: "lax"/);
-  assert.match(callback, /timingSafeEqualText\(state, stored\.state\)/); assert.match(callback, /validateGoogleTeacher/); assert.match(callback, /sameSite: "strict"/);
+  // 세션 쿠키는 lax여야 한다 — 콜백의 /teacher 리디렉션은 구글발 교차 사이트 연쇄라
+  // strict 쿠키가 실리지 않아 로그인 성공 직후 무한 루프가 된다(2026-08-19 운영 실측).
+  assert.match(callback, /timingSafeEqualText\(state, stored\.state\)/); assert.match(callback, /validateGoogleTeacher/); assert.match(callback, /sameSite: "lax"/); assert.doesNotMatch(callback, /sameSite: "strict"/);
   assert.match(page + classPage, /\/api\/auth\/google\/start/); assert.match(page + classPage, /NODE_ENV === "production"/);
   assert.match(ui, /\/api\/auth\/google\/start\?return_to=%2Fteacher/);
   assert.doesNotMatch(api + ui + readme, /teacher@wiggle\.local|\/ 2841|DEMO_TEACHER|ensureDemoSeed/);
