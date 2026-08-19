@@ -1,36 +1,41 @@
 import assert from "node:assert/strict";
-import { pbkdf2Sync, randomUUID } from "node:crypto";
-import test from "node:test";
-import { Miniflare } from "miniflare";
+import { pbkdf2Sync } from "node:crypto";
+import test, { after } from "node:test";
+import { resetRows } from "./harness/db.mjs";
+import { startTestServer } from "./harness/server.mjs";
 import { nicknameKeySql, nicknameMatchKey, nicknameRateKeyPart } from "../lib/nickname.ts";
 import { FALLBACK_NICKNAME, NICKNAME_IDEAS, pickDifferentNickname } from "../lib/nickname-ideas.ts";
 
 const ANIMALS = ["🐰", "🐻", "🦊", "🐯", "🐼", "🐶", "🐱", "🐨", "🦁", "🐸"];
 
-function makeMiniflare(name) {
-  return new Miniflare({
-    modules: true,
-    modulesRoot: "./dist/server",
-    modulesRules: [{ type: "ESModule", include: ["**/*.js"] }],
-    scriptPath: "./dist/server/index.js",
-    compatibilityDate: "2026-05-15",
-    compatibilityFlags: ["nodejs_compat"],
-    d1Databases: { DB: `${name}-${randomUUID()}` },
-    r2Buckets: ["ARTWORKS"],
-  });
+// Next 서버 기동은 프로세스 하나 값이라 테스트마다 띄우면 비싸다. 파일 하나에 서버 하나만 띄우고,
+// 테스트가 끝날 때마다 행을 비워 격리한다. 학급 코드 4321은 UNIQUE라 초기화 없이는 두 번째 시드가 깨진다.
+let booting;
+
+async function sharedServer() {
+  if (!booting) booting = bootServer();
+  return booting;
 }
+
+async function bootServer() {
+  const server = await startTestServer();
+  // 스키마는 서버가 첫 요청을 받을 때 세운다. 시드보다 먼저 한 번 찔러 테이블을 만들어 둔다.
+  const initialized = await server.fetch("/api/student", studentRequest({ action: "unsupported" }));
+  assert.equal(initialized.status, 400);
+  return server;
+}
+
+after(async () => {
+  if (booting) await booting.then((server) => server.dispose(), () => {});
+});
 
 function studentRequest(body, ip = "203.0.113.60") {
+  // 주소는 x-forwarded-for로 흉내 낸다. cf-connecting-ip는 Cloudflare가 사라져 앱이 더 이상 믿지 않는다.
   return {
     method: "POST",
-    headers: { origin: "http://localhost", "content-type": "application/json", "cf-connecting-ip": ip },
+    headers: { "content-type": "application/json", "x-forwarded-for": ip },
     body: JSON.stringify(body),
   };
-}
-
-async function initSchema(miniflare) {
-  const initialized = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "unsupported" }));
-  assert.equal(initialized.status, 400);
 }
 
 async function seedClassroom(DB, suffix) {
@@ -105,21 +110,20 @@ test("the dice never repeats the current nickname and cycles through far more th
 });
 
 test("spacing variants re-enter the same student and are blocked as duplicate new profiles", async (context) => {
-  const miniflare = makeMiniflare("nickname-spacing");
-  context.after(() => miniflare.dispose());
-  await initSchema(miniflare);
-  const DB = await miniflare.getD1Database("DB");
+  const server = await sharedServer();
+  context.after(() => resetRows(server.DB));
+  const DB = server.DB;
   await seedClassroom(DB, "spacing");
 
   const password = ["⭐", "🍎", "🚲"];
-  const joined = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼 화가", animal: "🐰", picturePassword: password }, "203.0.113.61"));
+  const joined = await server.fetch("/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼 화가", animal: "🐰", picturePassword: password }, "203.0.113.61"));
   assert.equal(joined.status, 201);
   const original = await joined.json();
   assert.equal(original.student.nickname, "토끼 화가");
 
   // 공백 제거·연속 공백·탭 변형 모두 같은 학생으로 재입장한다.
   for (const variant of ["토끼화가", "  토끼   화가  ", "토끼\t화가"]) {
-    const recovered = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "recover", entry: "4321", nickname: variant, animal: "🐰", picturePassword: password }, "203.0.113.62"));
+    const recovered = await server.fetch("/api/student", studentRequest({ action: "recover", entry: "4321", nickname: variant, animal: "🐰", picturePassword: password }, "203.0.113.62"));
     assert.equal(recovered.status, 200, variant);
     const payload = await recovered.json();
     assert.equal(payload.student.id, original.student.id, variant);
@@ -127,36 +131,35 @@ test("spacing variants re-enter the same student and are blocked as duplicate ne
   }
 
   // 공백 변형 신규 생성은 기존 프로필 중복으로 차단된다.
-  const duplicate = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼화가", animal: "🐰", picturePassword: ["⭐", "⭐", "⭐"] }, "203.0.113.63"));
+  const duplicate = await server.fetch("/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼화가", animal: "🐰", picturePassword: ["⭐", "⭐", "⭐"] }, "203.0.113.63"));
   assert.equal(duplicate.status, 409);
   assert.equal((await duplicate.json()).code, "PROFILE_EXISTS");
 
   // 같은 그림 비밀번호까지 같으면 allowDuplicate여도 동일 자격정보로 차단된다.
-  const sameCredentials = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼  화가", animal: "🐰", picturePassword: password, allowDuplicate: true }, "203.0.113.64"));
+  const sameCredentials = await server.fetch("/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼  화가", animal: "🐰", picturePassword: password, allowDuplicate: true }, "203.0.113.64"));
   assert.equal(sameCredentials.status, 409);
   assert.equal((await sameCredentials.json()).code, "PROFILE_CREDENTIALS_EXIST");
 
   // 다른 그림 비밀번호의 의도적 중복 생성은 그대로 허용된다.
-  const allowedDuplicate = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼화가", animal: "🐰", picturePassword: ["🌈", "🌈", "🌈"], allowDuplicate: true }, "203.0.113.65"));
+  const allowedDuplicate = await server.fetch("/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼화가", animal: "🐰", picturePassword: ["🌈", "🌈", "🌈"], allowDuplicate: true }, "203.0.113.65"));
   assert.equal(allowedDuplicate.status, 201);
 
   // 다른 동물이면 같은 별명이라도 새 프로필이고, 다른 한글 글자는 합쳐지지 않는다.
-  const otherAnimal = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼화가", animal: "🐻", picturePassword: ["⭐", "⭐", "⭐"] }, "203.0.113.66"));
+  const otherAnimal = await server.fetch("/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼화가", animal: "🐻", picturePassword: ["⭐", "⭐", "⭐"] }, "203.0.113.66"));
   assert.equal(otherAnimal.status, 201);
-  const differentHangul = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토기 화가", animal: "🐰", picturePassword: ["⭐", "⭐", "⭐"] }, "203.0.113.67"));
+  const differentHangul = await server.fetch("/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토기 화가", animal: "🐰", picturePassword: ["⭐", "⭐", "⭐"] }, "203.0.113.67"));
   assert.equal(differentHangul.status, 201);
 
   assert.equal((await DB.prepare("SELECT COUNT(*) AS count FROM student_profiles").first()).count, 4);
 });
 
 test("a pre-existing DB profile with spaces is found by spaceless re-entry without any migration", async (context) => {
-  const miniflare = makeMiniflare("nickname-legacy");
-  context.after(() => miniflare.dispose());
-  await initSchema(miniflare);
-  const DB = await miniflare.getD1Database("DB");
+  const server = await sharedServer();
+  context.after(() => resetRows(server.DB));
+  const DB = server.DB;
   await seedClassroom(DB, "legacy");
 
-  // 새 코드 이전에 저장된 행을 흉내 낸다: API를 거치지 않고 D1에 직접 넣는다.
+  // 새 코드 이전에 저장된 행을 흉내 낸다: API를 거치지 않고 DB에 직접 넣는다.
   const salt = "legacysalt";
   const pictureHash = pbkdf2Sync("⭐→⭐→⭐", salt, 100_000, 32, "sha256").toString("hex");
   await DB.batch([
@@ -164,38 +167,37 @@ test("a pre-existing DB profile with spaces is found by spaceless re-entry witho
     DB.prepare(`INSERT INTO recovery_credentials(student_id, picture_hash, picture_salt, personal_qr_hash) VALUES ('student_legacy', ?, ?, 'legacy_qr_hash')`).bind(pictureHash, salt),
   ]);
 
-  const recovered = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "recover", entry: "4321", nickname: "아기곰화가", animal: "🐻", picturePassword: ["⭐", "⭐", "⭐"] }, "203.0.113.70"));
+  const recovered = await server.fetch("/api/student", studentRequest({ action: "recover", entry: "4321", nickname: "아기곰화가", animal: "🐻", picturePassword: ["⭐", "⭐", "⭐"] }, "203.0.113.70"));
   assert.equal(recovered.status, 200);
   const payload = await recovered.json();
   assert.equal(payload.student.id, "student_legacy");
   assert.equal(payload.student.nickname, "아기 곰 화가");
 
   // 틀린 비밀번호는 공백 변형으로도 열리지 않는다.
-  const wrongPassword = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "recover", entry: "4321", nickname: "아기곰화가", animal: "🐻", picturePassword: ["🍎", "🍎", "🍎"] }, "203.0.113.71"));
+  const wrongPassword = await server.fetch("/api/student", studentRequest({ action: "recover", entry: "4321", nickname: "아기곰화가", animal: "🐻", picturePassword: ["🍎", "🍎", "🍎"] }, "203.0.113.71"));
   assert.equal(wrongPassword.status, 401);
 });
 
 test("spacing variants share one brute-force bucket so spacing cannot bypass the rate limit", async (context) => {
-  const miniflare = makeMiniflare("nickname-ratelimit");
-  context.after(() => miniflare.dispose());
-  await initSchema(miniflare);
-  const DB = await miniflare.getD1Database("DB");
+  const server = await sharedServer();
+  context.after(() => resetRows(server.DB));
+  const DB = server.DB;
   await seedClassroom(DB, "ratelimit");
 
   const password = ["⭐", "🍎", "🚲"];
-  const joined = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼 화가", animal: "🐰", picturePassword: password }, "203.0.113.80"));
+  const joined = await server.fetch("/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼 화가", animal: "🐰", picturePassword: password }, "203.0.113.80"));
   assert.equal(joined.status, 201);
 
   // 대상별 한도는 8회/15분. 공백 변형을 번갈아 써도 같은 버킷을 소비해야 한다.
   const variants = ["토끼 화가", "토끼화가", " 토끼  화가 "];
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const failed = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "recover", entry: "4321", nickname: variants[attempt % variants.length], animal: "🐰", picturePassword: ["🌙", "🌙", "🌙"] }, "203.0.113.81"));
+    const failed = await server.fetch("/api/student", studentRequest({ action: "recover", entry: "4321", nickname: variants[attempt % variants.length], animal: "🐰", picturePassword: ["🌙", "🌙", "🌙"] }, "203.0.113.81"));
     assert.equal(failed.status, 401, `attempt ${attempt}`);
   }
   // 9번째는 올바른 비밀번호여도 공백 변형이어도 잠긴다.
-  const blockedRecover = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "recover", entry: "4321", nickname: "토끼화가", animal: "🐰", picturePassword: password }, "203.0.113.82"));
+  const blockedRecover = await server.fetch("/api/student", studentRequest({ action: "recover", entry: "4321", nickname: "토끼화가", animal: "🐰", picturePassword: password }, "203.0.113.82"));
   assert.equal(blockedRecover.status, 429);
   // 중복 생성 분기의 비밀번호 대조(409 오라클)도 같은 버킷으로 잠긴다.
-  const blockedProbe = await miniflare.dispatchFetch("http://localhost/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼화가", animal: "🐰", picturePassword: password, allowDuplicate: true }, "203.0.113.83"));
+  const blockedProbe = await server.fetch("/api/student", studentRequest({ action: "join", entry: "4321", nickname: "토끼화가", animal: "🐰", picturePassword: password, allowDuplicate: true }, "203.0.113.83"));
   assert.equal(blockedProbe.status, 429);
 });

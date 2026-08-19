@@ -38,6 +38,12 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 - presigned 직접 업로드는 후속 최적화 옵션으로 남긴다(CORS·키 스코프 추가 설계 필요). 지금 방식이 오프라인 큐·권한 모델을 그대로 보존한다.
 - 참고: Replit(일반 Node 서버)에는 이 한도가 없어 이 재작업 없이도 동작한다 — 플랫폼 재결정 시 유일한 실질 차이.
 
+## 클라이언트 IP 신뢰 (필수 보안 재작업) ✅ 완료(2026-08-19)
+
+Cloudflare 시대 코드는 5개 경로에서 `cf-connecting-ip`를 최우선으로 신뢰했다(student·teacher·family invite/session/token). 이 헤더는 **Cloudflare 엣지가 덮어써 주기 때문에** 신뢰할 수 있었던 값이고, Vercel에는 그 대리인이 없다. 그대로 배포하면 요청마다 `cf-connecting-ip`에 아무 값이나 넣는 것만으로 IP 단위 상한이 전부 무력화된다 — 그림 비밀번호 8회/15분 추측 방어와 학급 입장 상한이 함께 뚫린다.
+
+**대응**: 판정을 의존성 0 모듈 `lib/client-ip.ts`의 `clientIp()` 한 곳으로 모으고, 플랫폼이 채우는 헤더만 신뢰한다 — `x-vercel-forwarded-for` → `x-real-ip` → `x-forwarded-for`(첫 항목) → `"local"`. `cf-connecting-ip`는 앱 코드에서 완전히 제거했다. 회귀 방지는 `tests/security-regressions.test.mjs`의 "rate-limit buckets ignore the spoofable Cloudflare IP header"가 맡는다(동작 단언 + 5개 경로 전수 부재 확인).
+
 ## 어댑터 검증 게이트 (강화)
 
 - `meta.changes` 매핑: CAS 가드 10곳(join·artworks 저장·coaching-store·teacher 삭제/복원 등)이 per-statement `meta.changes`에 의존 — libsql `rowsAffected`를 문장별로 정확히 매핑하고 실동작 테스트로 고정.
@@ -67,16 +73,18 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 1. **어댑터** ✅ 완료(2026-08-18): `@libsql/client`+`aws4fetch` 설치, `db/adapters/turso-d1.ts`(PRAGMA→pragma_table_info 심 포함), `db/adapters/artworks-store.ts`(S3 + 로컬 파일 폴백), `db/runtime.ts` 교체. 어댑터 계약 테스트 6종(meta.changes·batch 원자성 롤백·PRAGMA 심·저장소 왕복·키 탈출 차단) 실동작 통과.
 2. **빌드 전환** ✅ 완료(2026-08-18): next.config(경로별 보안 헤더 재현+devIndicators off+serverExternalPackages), scripts를 next dev/build/start로 교체. `next build` 성공, 전환기 테스트 201개 통과, browser-check 3뷰포트 "모든 브라우저 검증 통과", 경로별 보안 헤더 curl 실측 일치. worker/·vite.config·vinext 의존성 제거는 4단계 하네스 포팅과 함께 정리.
 3. **4.5MB 저장 분리** ✅ 완료(2026-08-19): 완성 PNG를 raw 바이너리 별도 업로드(`PUT /api/artworks/[id]/image?kind=final`, 후보 키)로 분리하고 완성 JSON은 키만 참조. 분리는 전송 계층(`flushSaves`+`lib/save-transmit.ts`)에서만 일어나 큐 스키마·DrawingStudio 무수정, 온라인·오프라인 재전송 동일 경로. 키는 학생·작품 프리픽스 강제 + 저장소 head 실측으로 검증. 게이트: `scripts/check-large-save.mjs`로 3.4MB 실저장·회수·경계(남의 키/유령 키 413) 통과, 완성 JSON 435바이트, 전 스위트·browser-check 통과.
-4. **테스트 하네스 포팅**: 전체 스위트 그린 + browser-check 3뷰포트 실패 0.
+4. **테스트 하네스 포팅** ✅ 완료(2026-08-19): Miniflare 10파일 + wrangler 기반 legacy-migration까지 11파일을 Next 하네스로 포팅(단언 보존). 하네스는 `tests/harness/` 4종 — `db.mjs`(D1 호환 파일 libsql, `createTestDb`/`createSchemaDb`/`resetRows`), `server.mjs`(`next start` 프로세스 + 전용 파일 DB·작품 디렉터리, origin 자동 부착), `alias-hooks.mjs`+`register.mjs`(`@/` 별칭·server-only 해석). `ensureSchema`를 `provisionSchema(DB)`로 분리해 테스트가 정본 스키마 경로를 재사용. 이때 Workers 잔재 일괄 정리: `worker/`·`vite.config.ts`·`wrangler.local.jsonc`·`build/sites-vite-plugin.ts` 삭제, devDependencies 7종 제거(vinext·wrangler·vite 계열·react-server-dom-webpack — `@cloudflare/workers-types`는 어댑터 계약 타입이라 유지), `scripts/init-local-db.mjs`를 provisionSchema 기반으로 재작성. 게이트: `npm test` 268/268(exit 0 직접 확인), typecheck·lint 클린, browser-check 3뷰포트 "모든 브라우저 검증 통과".
 5. **교사 인증 교체** ✅ 코드 완료(2026-08-18, 실왕복 검증 대기): 구글 OAuth 코드 플로우(PKCE S256, state 상수시간 비교, 미검증 이메일 거부)를 자체 구현해 기존 teacher_sessions 재사용 — 새 패키지 0개. SIWC(oai-* 헤더) 신뢰 경로는 Sites 밖에서 헤더 위조로 임의 교사 로그인이 가능해 완전 제거. 게이트: 단위 테스트 7종 + security-regressions 재작성 + 전 스위트·browser-check 통과 + env 미설정 시 503 fail-closed 실측. 실제 구글 왕복은 사용자의 OAuth 클라이언트 생성 후 실측.
 6. **Vercel 연결** (데이터 이전 없음): repo import(사용자) → env(OPENAI_API_KEY·TURSO_DATABASE_URL·TURSO_AUTH_TOKEN·R2 S3 자격증명·GOOGLE_CLIENT_ID/SECRET·플래그) → Preview 검증(빈 DB 자가 프로비저닝 확인 포함) → Production.
 7. **문서·파이프라인 재정의**: CLAUDE.md·AGENTS.md를 GitHub+Vercel 흐름으로 교체.
 
 ## 남은 위험 (전환기)
 
-- Miniflare 통합 테스트 10개(classroom-entry-flow·student-join-atomic·rate-limit 등)는 4단계 하네스 포팅 전까지 실행 목록에서 보류 — `npm run test:legacy-harness` 안내 문구 참조. 해당 검증 공백은 browser-check E2E(실 API 호출)와 어댑터 계약 테스트가 부분 커버.
+- ~~Miniflare 통합 테스트 10개 보류~~ ✅ 해소(2026-08-19): 4단계 완료로 전부 새 하네스에서 실행된다. `npm test`가 `tests/*.test.mjs` 전체(268개)를 돌리고, 무거운 HTTP 통합만 따로 돌리려면 `npm run test:integration`. student-join-atomic의 batch 원자성(트리거 강제 실패 → 선행 INSERT 롤백)이 Turso 어댑터에서 D1과 동일함을 실측 확인.
 - browser-check의 390×844 핀치 확대 1항목은 SKIP: next dev + CDP 환경에서 이 뷰포트만 해당 지점의 터치 이벤트가 페이지에 0건 도달(마우스·형제 뷰포트 정상, 페이지 스케일 1, 터치 재무장·리셋 무효). 핀치 로직은 320×568·844×390 실디스패치와 단위 테스트 2종으로 커버. 6단계 배포 검증에서 실기기로 재확인.
-- PRAGMA 심·batch 원자성은 로컬 libsql 파일에서 검증 완료 — 원격 Turso(https)에서의 재검증은 6단계 연결 시 1회 수행.
+- ~~PRAGMA 심·batch 원자성의 원격 Turso 재검증~~ ✅ 해소(2026-08-19): 사용자 계정의 원격 Turso(`libsql://`)에 직접 붙어 PRAGMA 재작성(cid/name/type/notnull/dflt_value/pk), batch 원자성(PK 충돌 시 선행 INSERT 롤백), 문장별 `meta.changes`, intMode=number를 실측 통과. 같은 DB에 `provisionSchema`로 테이블 23종·인덱스 22개·`artwork_mutations` 복합 PK까지 생성 확인 — 빈 Turso 자가 프로비저닝이 성립한다.
+- ~~R2 자격증명·저장소 왕복~~ ✅ 해소(2026-08-19): 사용자 계정의 신규 버킷 `wiggle-artworks`에 S3 어댑터로 3.4MB PNG 업로드→head→회수(340만 바이트 전수 일치, content-type·customMetadata 보존)→삭제→404 확인. 서명 없는 GET은 400(113바이트 오류 XML)으로 차단되어 아이 그림의 공개 URL이 없음을 실측. 검증 후 버킷은 0객체로 정리.
+- **운영 자격증명은 `.env.local`에 `# vercel-only:` 주석으로 보관한다.** 활성 상태로 두면 로컬 dev·테스트가 운영 Turso/R2를 문다(2026-08-19 실제 발생: 로컬 검증이 원격 DB에 테스트 행 기록). 6단계에서 Vercel 대시보드에 넣을 값의 원본으로만 쓴다.
 - 구글 로그인 실왕복(구글 → 콜백 → 교사 세션)은 사용자의 OAuth 클라이언트 생성 대기 — 생성 즉시 로컬에서 실측한다. 리디렉션 URI는 정확 일치가 필요하므로 실측 시 dev 서버 포트를 3000에 고정한다.
 
 ## 열린 결정 (사용자)
@@ -87,6 +95,7 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 
 ## 사용자 실행 항목 (시점 되면 안내)
 
-- Vercel 대시보드에서 repo import (6단계).
-- Turso 무료 계정 + DB 1개 (6단계 전).
-- R2 S3 API 토큰 발급 (Cloudflare 대시보드, 6단계 전).
+- ~~Turso 무료 계정 + DB 1개~~ ✅ 완료(2026-08-19), 원격 검증까지 통과.
+- ~~R2 S3 API 토큰 발급~~ ✅ 완료(2026-08-19): 버킷 `wiggle-artworks`, 계정 토큰 권한은 Object Read & Write, 범위는 해당 버킷 한정.
+- 구글 OAuth 클라이언트 생성 (5단계 실왕복 검증에 필요) — 리디렉션 URI는 로컬 실측용 `http://localhost:3000/api/auth/google/callback`과 배포용 Vercel 도메인 둘 다 등록.
+- Vercel 대시보드에서 repo import (6단계) — **env를 준비한 뒤에 import한다.** 먼저 import하면 자격증명 없는 첫 배포가 500을 노출한다.

@@ -1,5 +1,5 @@
 import { bindings, ensureSchema } from "@/db/runtime";
-import { cleanText, clearRateLimit, deriveSecret, id, jsonError, noStoreJson, normalizePicturePassword, picturePasswordLength, randomToken, rateLimit, sameOrigin, sha256, studentFromRequest, verifySecret } from "@/lib/security";
+import { cleanText, clearRateLimit, clientIp, deriveSecret, id, jsonError, noStoreJson, normalizePicturePassword, picturePasswordLength, randomToken, rateLimit, sameOrigin, sha256, studentFromRequest, verifySecret } from "@/lib/security";
 import { activityLabel, normalizeActivityKey } from "@/lib/lesson-content";
 import { nicknameKeySql, nicknameMatchKey, nicknameRateKeyPart } from "@/lib/nickname";
 
@@ -33,7 +33,7 @@ const TARGET_ATTEMPT_LIMIT = 8;
 const TARGET_ATTEMPT_WINDOW_SECONDS = 15 * 60;
 const CLASSROOM_JOIN_LIMIT = 60;
 
-function requestIp(request: Request) { return request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? "local"; }
+const requestIp = clientIp;
 function entryRateKey(request: Request) { return `student-entry:${requestIp(request)}`; }
 function ipAllowed(request: Request) { return rateLimit(entryRateKey(request), IP_ENTRY_LIMIT, IP_ENTRY_WINDOW_SECONDS); }
 function targetKey(target: string) { return `student-target:${target}`; }

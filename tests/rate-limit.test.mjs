@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { Miniflare } from "miniflare";
+import { createTestDb } from "./harness/db.mjs";
 import { consumeRateLimit, releaseRateLimit } from "../lib/rate-limit.ts";
 
 async function fixture() {
-  const mf = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: "2026-05-22", d1Databases: { DB: "rate-limit-test" } });
-  const DB = await mf.getD1Database("DB");
-  await DB.exec("CREATE TABLE rate_limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0, window_ends_at TEXT NOT NULL)");
-  return { mf, DB };
+  const handle = await createTestDb();
+  await handle.DB.exec("CREATE TABLE rate_limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0, window_ends_at TEXT NOT NULL)");
+  return { mf: { dispose: () => handle.dispose() }, DB: handle.DB };
 }
 
 test("attempts past the cap are rejected within one window", async () => {

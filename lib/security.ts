@@ -112,6 +112,10 @@ export function sameOrigin(request: Request) {
   return !origin || origin === new URL(request.url).origin;
 }
 
+// IP 판정은 의존성 0 모듈에 두어 테스트가 Next 런타임 없이 직접 검증할 수 있게 한다.
+// (확장자를 붙여야 Node 타입 스트리핑에서도 이 파일을 직접 로드할 수 있다.)
+export { clientIp } from "./client-ip.ts";
+
 export async function rateLimit(key: string, max: number, seconds: number) {
   await ensureSchema();
   return consumeRateLimit(bindings().DB, key, max, seconds);

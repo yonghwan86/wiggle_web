@@ -170,6 +170,12 @@ export function createArtworksStore(): ArtworksStore {
   const accessKeyId = process.env.R2_S3_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_S3_SECRET_ACCESS_KEY;
   if (endpoint && bucket && accessKeyId && secretAccessKey) return new S3ArtworksStore(endpoint, bucket, accessKeyId, secretAccessKey);
-  if (process.env.NODE_ENV === "production") throw new Error("R2 S3 자격증명(R2_S3_*)이 설정되지 않았어요.");
-  return new FsArtworksStore(path.resolve(".data/artworks-store"));
+  // 통합 테스트는 프로덕션 빌드를 그대로 띄우므로(next start) NODE_ENV가 production이다.
+  // ARTWORKS_FS_DIR을 명시한 경우에만 파일 저장소를 허용하고, 실제 배포(VERCEL)에서는
+  // 그 변수가 있어도 거부한다 — 자격증명 누락이 임시 디스크로 조용히 굴러가면 안 된다.
+  const fsDir = process.env.ARTWORKS_FS_DIR;
+  if (process.env.NODE_ENV === "production" && (!fsDir || process.env.VERCEL)) {
+    throw new Error("R2 S3 자격증명(R2_S3_*)이 설정되지 않았어요.");
+  }
+  return new FsArtworksStore(path.resolve(fsDir || ".data/artworks-store"));
 }

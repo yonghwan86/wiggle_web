@@ -1,8 +1,32 @@
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
+import { clientIp } from "../lib/client-ip.ts";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
+
+// Cloudflare가 앞단에 있을 때만 cf-connecting-ip를 믿을 수 있었다. Vercel에는 그 대리인이
+// 없으므로 요청자가 헤더를 지어내면 그만이고, 그러면 요청마다 새 IP를 쓰는 것만으로
+// 그림 비밀번호 추측 방어(IP·학급 단위 상한)를 통째로 우회한다.
+test("rate-limit buckets ignore the spoofable Cloudflare IP header", async () => {
+  const headers = (values) => new Request("http://localhost/api/student", { headers: values });
+
+  assert.equal(clientIp(headers({ "cf-connecting-ip": "203.0.113.9" })), "local", "위조 가능한 헤더는 버킷을 가르지 못한다");
+  assert.equal(clientIp(headers({ "cf-connecting-ip": "203.0.113.9", "x-forwarded-for": "198.51.100.4" })), "198.51.100.4", "플랫폼이 채우는 헤더가 이긴다");
+  assert.equal(clientIp(headers({ "x-real-ip": "198.51.100.5" })), "198.51.100.5");
+  assert.equal(clientIp(headers({ "x-vercel-forwarded-for": "198.51.100.6", "x-real-ip": "198.51.100.7" })), "198.51.100.6", "Vercel이 검증한 헤더가 최우선");
+  assert.equal(clientIp(headers({ "x-forwarded-for": "198.51.100.8, 10.0.0.1" })), "198.51.100.8");
+  assert.equal(clientIp(headers({})), "local");
+
+  const sources = await Promise.all([
+    read("../app/api/student/route.ts"),
+    read("../app/api/teacher/route.ts"),
+    read("../app/api/family/invite/route.ts"),
+    read("../app/api/family/session/route.ts"),
+    read("../app/family/[token]/route.ts"),
+  ]);
+  for (const source of sources) assert.doesNotMatch(source, /cf-connecting-ip/, "IP 판정은 lib/client-ip.ts의 clientIp 한 곳에서만 한다");
+});
 
 test("hosted teachers use verified Google OAuth and fixed demo credentials are absent", async () => {
   const [security, googleAuth, start, callback, api, demoSeed, page, classPage, ui, readme] = await Promise.all([read("../lib/security.ts"), read("../lib/google-auth.ts"), read("../app/api/auth/google/start/route.ts"), read("../app/api/auth/google/callback/route.ts"), read("../app/api/teacher/route.ts"), read("../lib/demo-seed.ts"), read("../app/teacher/page.tsx"), read("../app/teacher/class/[id]/page.tsx"), read("../app/components/TeacherApp.tsx"), read("../README.md")]);
@@ -62,7 +86,8 @@ test("duplicate recovery, logout and protected response regressions stay fixed",
 
 test("P1 operational safeguards are wired", async () => {
   const [init, schema, teacherApi, teacherUi, studio] = await Promise.all([read("../scripts/init-local-db.mjs"), read("../db/schema.ts"), read("../app/api/teacher/route.ts"), read("../app/components/TeacherApp.tsx"), read("../app/components/DrawingStudio.tsx")]);
-  assert.match(init, /CREATE TABLE IF NOT EXISTS/); assert.match(init, /readdirSync/);
+  // 로컬 초기화는 앱과 같은 정본 스키마 경로를 쓴다 — 따로 관리되는 DDL 사본이 생기면 안 된다.
+  assert.match(init, /provisionSchema/); assert.doesNotMatch(init, /CREATE TABLE/);
   assert.match(schema, /primaryKey\(\{ columns: \[table\.messageId, table\.studentId\]/); assert.match(schema, /teacherViews/);
   assert.match(teacherApi, /action === "viewStudent"/); assert.match(teacherApi, /action === "resetStudentRecovery"/); assert.doesNotMatch(teacherUi, /복구 카드 재발급/);
   assert.match(studio, /new Map<number/); assert.match(studio, /event\.pointerId/);
@@ -74,7 +99,10 @@ test("legacy mutation storage upgrades in place and offline saves contain no bea
   ]);
   assert.match(runtime, /PRAGMA table_info/); assert.match(runtime, /sqlite_master/); assert.match(runtime, /DB\.batch/); assert.match(runtime, /artwork_mutations__composite_pk/);
   assert.match(incremental, /INSERT OR IGNORE INTO `artwork_mutations__composite_pk`/); assert.match(incremental, /PRIMARY KEY\(`artwork_id`, `student_id`, `request_id`\)/);
-  assert.match(init, /resolve\(wranglerRoot, "state"\)/); assert.doesNotMatch(init, /state-v2/);
+  // 초기화 스크립트와 dev 서버가 같은 파일 DB를 봐야 한다. 경로가 갈리면 "초기화했는데 비어 있다"가 된다.
+  assert.match(init, /file:\.data\/wiggle-local\.db/); assert.match(runtime, /provisionSchema/);
+  // 운영 자격증명이 켜진 채로 로컬 초기화를 돌려 원격 DB를 건드리는 사고를 막는다.
+  assert.match(init, /process\.env\.TURSO_DATABASE_URL/);
   assert.match(session, /indexedDB\.open\("wiggle-offline-v1", 2\)/); assert.match(session, /delete value\.token/); assert.match(session, /profile\.deviceToken/);
   assert.doesNotMatch(session, /QueuedSave[^\n]+token:/); assert.doesNotMatch(studio, /queueSave\(\{[^}]*token:/s);
 });

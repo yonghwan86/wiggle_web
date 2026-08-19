@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { Miniflare } from "miniflare";
+import { createTestDb } from "./harness/db.mjs";
 import { resetActiveStudentRecovery, rotateClassroomEntry, updateClassroomActivity, updateClassroomAdmission, upsertTeacherView } from "../lib/teacher-classroom-mutations.ts";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
@@ -69,14 +68,11 @@ test("every post-delete teacher mutation rechecks active ownership at its SQL bo
 });
 
 test("a committed delete prevents stale teacher actions from changing class state or recreating views", async (context) => {
-  const miniflare = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2026-05-22",
-    d1Databases: { DB: `teacher-delete-boundary-${randomUUID()}` },
-  });
-  context.after(() => miniflare.dispose());
-  const DB = await miniflare.getD1Database("DB");
+  // 삭제 경계만 보는 테스트라 앱 전체 스키마 대신 관련 다섯 테이블만 세운다
+  // (createTestDb는 테이블 없는 빈 DB를 내주고, 호출마다 자기 파일 DB를 쓴다).
+  const handle = await createTestDb();
+  context.after(() => handle.dispose());
+  const DB = handle.DB;
   await DB.exec(`
     CREATE TABLE classrooms (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, admission_open INTEGER NOT NULL DEFAULT 1, class_code TEXT NOT NULL, join_token TEXT NOT NULL, current_activity TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE student_profiles (id TEXT PRIMARY KEY, classroom_id TEXT NOT NULL, archived_at TEXT);

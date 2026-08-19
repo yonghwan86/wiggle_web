@@ -9,15 +9,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/landing-page.test.mjs tests/contracts.test.mjs tests/security-regressions.test.mjs tests/offline-save-queue.test.mjs tests/legacy-migration.test.mjs tests/mvp2-ai.test.mjs tests/picture-password.test.mjs tests/qr-entry.test.mjs tests/safari-entry.test.mjs tests/mobile-css.test.mjs tests/curriculum.test.mjs tests/guide-demonstration.test.mjs tests/lesson-step-progress.test.mjs tests/drawing-tools.test.mjs tests/drawing-text.test.mjs tests/pre-reader-ux.test.mjs tests/speak-button.test.mjs tests/entry-error-recovery.test.mjs tests/coaching-safety.test.mjs tests/document-limits.test.mjs tests/drawing-upgrade.test.mjs tests/flood-fill.test.mjs tests/timelapse-playback.test.mjs tests/responsive-drawing-ui.test.mjs tests/drawing-clear-all.test.mjs tests/join-nickname-default.test.mjs && npm run test:adapters",
+    "test": "npm run build && node --import ./tests/harness/register.mjs --test \"tests/*.test.mjs\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "db:local:init": "node scripts/init-local-db.mjs",
+    "db:local:init": "node --import ./tests/harness/register.mjs scripts/init-local-db.mjs",
     "pipeline:ready": "node scripts/mark-codex-ready.mjs",
     "check:browser": "node scripts/browser-check.mjs",
     "test:adapters": "node --test tests/turso-adapters.test.mjs tests/google-auth.test.mjs tests/save-split.test.mjs",
-    "test:legacy-harness": "echo 'Miniflare 통합 테스트 10개는 Next 하네스 포팅 전까지 보류 — docs/vercel-migration-plan.md 4단계'"
+    "test:integration": "node --import ./tests/harness/register.mjs --test tests/classroom-entry-flow.test.mjs tests/student-join-atomic.test.mjs tests/student-profile-management.test.mjs tests/nickname-spacing.test.mjs tests/feedback-20260809.test.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",
@@ -28,25 +28,18 @@
     "react-dom": "19.2.6"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "^4.20260702.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/qrcode": "^1.5.5",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
     "drizzle-orm": "0.45.2",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
-    "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
-    "typescript": "5.9.3",
-    "vinext": "0.0.50",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "typescript": "5.9.3"
   },
   "type": "module"
 }

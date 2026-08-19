@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { bindings } from "@/db/runtime";
 import { bytesToDataUrl } from "@/lib/image-data";
 import { ensureLocalAutoTeacher, ensureLocalTeacher, issueTeacherSession } from "@/lib/demo-seed";
-import { cleanText, id, isLocalDemoRequest, jsonError, noStoreJson, randomToken, rateLimit, requireTeacher, revokeTeacherSession, sameOrigin, sha256 } from "@/lib/security";
+import { cleanText, clientIp, id, isLocalDemoRequest, jsonError, noStoreJson, randomToken, rateLimit, requireTeacher, revokeTeacherSession, sameOrigin, sha256 } from "@/lib/security";
 import { prepareTeacherMessageInsert, validateTeacherMessageTarget } from "@/lib/teacher-messages";
 import { createFamilyShare, revokeFamilyShare } from "@/lib/family-sharing";
 import { activityLabel, DEFAULT_ACTIVITY_KEY, isActivityKey, normalizeActivityKey } from "@/lib/lesson-content";
@@ -17,7 +17,7 @@ function presentClassroom<T extends { currentActivity: string }>(classroom: T) {
 }
 
 function clientKey(request: Request, scope: string) {
-  return `${scope}:${request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? "local"}`;
+  return `${scope}:${clientIp(request)}`;
 }
 
 async function localAutoTeacher(request: Request) {

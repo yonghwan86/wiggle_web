@@ -3,10 +3,10 @@ import { familyCookieToken, familyJson, resolveFamilySession } from "@/lib/famil
 import { buildWeeklyGrowthReport } from "@/lib/growth-reports";
 import { bytesToDataUrl } from "@/lib/image-data";
 import { validateDrawDocument } from "@/lib/drawing-model";
-import { rateLimit, sha256 } from "@/lib/security";
+import { clientIp, rateLimit, sha256 } from "@/lib/security";
 
 function clientAddress(request: Request) {
-  return request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+  return clientIp(request);
 }
 
 async function imageDataUrl(key: string) {

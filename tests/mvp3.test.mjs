@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { Miniflare } from "miniflare";
+import { createTestDb } from "./harness/db.mjs";
 import {
   createFamilyHandoffInvite,
   createFamilyShare,
@@ -31,8 +31,9 @@ const TOKEN_G = "G".repeat(43); const TOKEN_H = "H".repeat(43); const TOKEN_I = 
 const TOKEN_J = "J".repeat(43); const TOKEN_K = "K".repeat(43); const TOKEN_L = "L".repeat(43);
 
 async function fixture() {
-  const mf = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: "2026-05-22", d1Databases: { DB: "mvp3-test" } });
-  const DB = await mf.getD1Database("DB");
+  // 이 테스트는 아래 fixtureSql로 필요한 표를 직접 세우므로 빈 DB를 받는다.
+  const handle = await createTestDb();
+  const DB = handle.DB;
   const fixtureSql = `
     CREATE TABLE teachers (id TEXT PRIMARY KEY, email TEXT NOT NULL, display_name TEXT NOT NULL);
     CREATE TABLE classrooms (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, display_name TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
@@ -61,8 +62,8 @@ async function fixture() {
     INSERT INTO coaching_events(id, artwork_id, student_answer, created_at) VALUES ('event_one', 'artwork_one', '토끼를 더했어요.', '2026-07-21T06:00:00.000Z');
     INSERT INTO coaching_event_details(event_id, new_elements_json) VALUES ('event_one', '["토끼"]');
   `;
-  try { await DB.batch(fixtureSql.split(";").map((statement) => statement.trim()).filter(Boolean).map((statement) => DB.prepare(statement))); } catch (error) { await mf.dispose(); throw error; }
-  return { mf, DB };
+  try { await DB.batch(fixtureSql.split(";").map((statement) => statement.trim()).filter(Boolean).map((statement) => DB.prepare(statement))); } catch (error) { await handle.dispose(); throw error; }
+  return { handle, DB };
 }
 
 function shareInput(overrides = {}) {
@@ -80,7 +81,7 @@ function shareInput(overrides = {}) {
 }
 
 test("family shares fail closed without auditable guardian prior consent and store hash-only invitations", async () => {
-  const { mf, DB } = await fixture();
+  const { handle, DB } = await fixture();
   try {
     assert.equal((await createFamilyShare(DB, shareInput({ guardianConsentConfirmed: false }))).reason, "guardian_consent_required");
     assert.equal((await createFamilyShare(DB, shareInput({ guardianConsentConfirmed: undefined }))).reason, "guardian_consent_required");
@@ -99,12 +100,13 @@ test("family shares fail closed without auditable guardian prior consent and sto
     assert.equal(JSON.stringify(await DB.prepare("SELECT * FROM family_share_links WHERE id = ?").bind(created.linkId).first()).includes(TOKEN_A), false);
     const collision = await createFamilyShare(DB, shareInput({ artworkIds: ["artwork_one"], consentMethod: "phone" }));
     assert.equal(collision.reason, "save_failed"); assert.equal((await DB.prepare("SELECT COUNT(*) AS count FROM family_share_links").first()).count, 1);
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("rejected early MVP3 schemas upgrade idempotently and invalidate unaudited legacy links", async () => {
-  const mf = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: "2026-05-22", d1Databases: { DB: "mvp3-legacy-test" } });
-  const DB = await mf.getD1Database("DB");
+  // 초기 MVP3 스키마를 그대로 재현해야 하므로 앱 스키마가 없는 빈 DB에서 시작한다.
+  const handle = await createTestDb();
+  const DB = handle.DB;
   try {
     const sql = `
       CREATE TABLE teachers (id TEXT PRIMARY KEY);
@@ -132,11 +134,11 @@ test("rejected early MVP3 schemas upgrade idempotently and invalidate unaudited 
     assert.equal((await DB.prepare("SELECT provider_event_at AS eventAt, provider_event_id AS eventId FROM subscription_entitlements WHERE teacher_id = 'teacher_owner'").first()).eventAt, null);
     const oldEvent = await DB.prepare("SELECT occurred_at AS occurredAt, stale FROM subscription_webhook_events WHERE event_id = 'event_legacy_1'").first();
     assert.equal(oldEvent.occurredAt, "2026-07-22T00:00:00.000Z"); assert.equal(oldEvent.stale, 1);
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("family invitations exchange once, sessions stay link-bound, and revoke or expiry invalidates access", async () => {
-  const { mf, DB } = await fixture();
+  const { handle, DB } = await fixture();
   try {
     const now = new Date("2026-07-22T12:00:00.000Z");
     const created = await createFamilyShare(DB, shareInput());
@@ -192,11 +194,11 @@ test("family invitations exchange once, sessions stay link-bound, and revoke or 
     assert.equal(expired.ok, true);
     await DB.prepare("UPDATE family_share_links SET expires_at = ? WHERE id = ?").bind("2026-07-22T11:59:59.000Z", expired.linkId).run();
     assert.equal((await exchangeFamilyInvite(DB, TOKEN_F, { now, sessionTokenFactory: () => TOKEN_E })).ok, false);
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("peeking an invite never consumes it, so a link preview cannot burn the guardian's one-use link", async () => {
-  const { mf, DB } = await fixture();
+  const { handle, DB } = await fixture();
   try {
     const now = new Date("2026-07-22T12:00:00.000Z");
     const created = await createFamilyShare(DB, shareInput());
@@ -217,11 +219,11 @@ test("peeking an invite never consumes it, so a link preview cannot burn the gua
     const later = await createFamilyShare(DB, shareInput({ artworkIds: ["artwork_two"], tokenFactory: () => TOKEN_G }));
     assert.equal(later.ok, true);
     assert.equal((await peekFamilyInvite(DB, TOKEN_G, { now: afterExpiry })).reason, "invite_unavailable");
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("weekly growth reports canonicalize evasions before redaction and policy checks", async () => {
-  const { mf, DB } = await fixture();
+  const { handle, DB } = await fixture();
   try {
     const created = await createFamilyShare(DB, shareInput({ artworkIds: ["artwork_one", "artwork_two"] }));
     assert.equal(created.ok, true);
@@ -240,11 +242,11 @@ test("weekly growth reports canonicalize evasions before redaction and policy ch
     assert.equal(compactFamilyPolicyText("s\u0000 c . o / r _ e"), "score");
     assert.equal(compactFamilyPolicyText("ｐｅｒｃｅｎｔａｇｅ"), "percentage");
     assert.equal(redactFamilyText("student_\u200Bx7k29 teacher\u200B@example.com 새싹초등학교", []), "[개인정보 제외]");
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("family evidence excludes reconstructable PII split across every child evidence source", async () => {
-  const { mf, DB } = await fixture();
+  const { handle, DB } = await fixture();
   try {
     const sensitiveValues = ["민수", "별빛초등학교 1반", "teacher@example.com"];
     const created = await createFamilyShare(DB, shareInput({ artworkIds: ["artwork_one", "artwork_two"] }));
@@ -312,11 +314,11 @@ test("family evidence excludes reconstructable PII split across every child evid
     assert.equal(emailJoinedFamilyPolicyText("a \u200B / @ / b . co"), "a@bco");
     assert.equal(containsFamilyPii("자전거로 수박을 배달했어요. 🚲", sensitiveValues), false);
     assert.equal(redactFamilyText("자전거로 수박을 배달했어요. 🚲", sensitiveValues), "자전거로 수박을 배달했어요. 🚲");
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("family evidence excludes quantified evaluations across all child evidence sources but keeps ordinary counts", async () => {
-  const { mf, DB } = await fixture();
+  const { handle, DB } = await fixture();
   try {
     const sensitiveValues = ["민수", "별빛초등학교 1반", "teacher@example.com"];
     const created = await createFamilyShare(DB, shareInput({ artworkIds: ["artwork_one", "artwork_two"] }));
@@ -352,11 +354,11 @@ test("family evidence excludes quantified evaluations across all child evidence 
     assert.equal(containsQuantifiedEvaluation("자전거 2대를 그렸어요. 🚲"), false);
     assert.equal(containsQuantifiedEvaluation("무지개와 ⭐을 그렸어요."), false);
     assert.ok(normalReport.childWords.some((item) => item.text === "자전거 2대를 그렸어요. 🚲"));
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("family evidence excludes score, rank, talent, diagnosis and praise judgments from every child evidence source", async () => {
-  const { mf, DB } = await fixture();
+  const { handle, DB } = await fixture();
   try {
     const sensitiveValues = ["민수", "별빛초등학교 1반", "teacher@example.com"];
     const created = await createFamilyShare(DB, shareInput({ artworkIds: ["artwork_one", "artwork_two"] }));
@@ -410,7 +412,7 @@ test("family evidence excludes score, rank, talent, diagnosis and praise judgmen
     assert.ok(normalReport.observations.some((item) => item.text.includes("질문 뒤에 새로운 요소")));
     assert.ok(normalReport.childWords.some((item) => item.text === allowedEvidence[1]));
     assert.ok(normalReport.childWords.some((item) => item.text === allowedEvidence[2]));
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 function providerFor(event) {
@@ -422,7 +424,7 @@ function webhookRequest(eventId) {
 }
 
 test("subscription webhooks apply only the newest verified provider event with deterministic ties", async () => {
-  const { mf, DB } = await fixture();
+  const { handle, DB } = await fixture();
   try {
     assert.equal(subscriptionCapability().enabled, false);
     const spoofed = providerFor(null);
@@ -455,7 +457,7 @@ test("subscription webhooks apply only the newest verified provider event with d
     const missing = { ...active, id: "event_missing_999", teacherId: "teacher_missing" };
     assert.equal((await verifyAndApplySubscriptionWebhook(DB, providerFor(missing), webhookRequest(missing.id))).reason, "invalid_target");
     assert.equal((await DB.prepare("SELECT COUNT(*) AS count FROM subscription_webhook_events WHERE event_id = ?").bind(missing.id).first()).count, 0);
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 function webmBytes() {
@@ -490,8 +492,8 @@ test("routes and UI preserve token-free family history, consent, no-store, and d
   const headers = familySecurityHeaders();
   assert.equal(headers.get("cache-control"), "no-store, max-age=0"); assert.equal(headers.get("referrer-policy"), "no-referrer"); assert.equal(headers.get("x-frame-options"), "DENY"); assert.match(headers.get("content-security-policy"), /frame-ancestors 'none'/);
   assert.equal(familySessionCookieHeader(TOKEN_B, "2026-07-22T13:00:00.000Z", new Date("2026-07-22T12:00:00.000Z")), `wiggle_family=${TOKEN_B}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=3600`);
-  const [exchangeRoute, sessionRoute, inviteRoute, familyPage, teacherRoute, teacherUi, worker, familyUi, voiceRoute, voiceCore, voiceUi, subscriptionRoute, webhookRoute, schema, runtime, migration] = await Promise.all([
-    read("../app/family/[token]/route.ts"), read("../app/api/family/session/route.ts"), read("../app/api/family/invite/route.ts"), read("../app/family/view/page.tsx"), read("../app/api/teacher/route.ts"), read("../app/components/TeacherApp.tsx"), read("../worker/index.ts"), read("../app/components/FamilyView.tsx"), read("../app/api/voice/route.ts"), read("../lib/voice-whisper.ts"), read("../app/components/VoiceWhisper.tsx"), read("../app/api/subscription/route.ts"), read("../app/api/subscription/webhook/route.ts"), read("../db/schema.ts"), read("../db/runtime.ts"), read("../drizzle/0003_perfect_smasher.sql"),
+  const [exchangeRoute, sessionRoute, inviteRoute, familyPage, teacherRoute, teacherUi, edgeHeaders, familyUi, voiceRoute, voiceCore, voiceUi, subscriptionRoute, webhookRoute, schema, runtime, migration] = await Promise.all([
+    read("../app/family/[token]/route.ts"), read("../app/api/family/session/route.ts"), read("../app/api/family/invite/route.ts"), read("../app/family/view/page.tsx"), read("../app/api/teacher/route.ts"), read("../app/components/TeacherApp.tsx"), read("../next.config.ts"), read("../app/components/FamilyView.tsx"), read("../app/api/voice/route.ts"), read("../lib/voice-whisper.ts"), read("../app/components/VoiceWhisper.tsx"), read("../app/api/subscription/route.ts"), read("../app/api/subscription/webhook/route.ts"), read("../db/schema.ts"), read("../db/runtime.ts"), read("../drizzle/0003_perfect_smasher.sql"),
   ]);
   assert.match(exchangeRoute, /exchangeFamilyInvite/); assert.match(exchangeRoute, /status: 303/); assert.match(exchangeRoute, /familySessionCookieHeader/); assert.match(exchangeRoute, /\/family\/view/);
   // 1회용 초대는 사람이 누른 POST에서만 소비된다. GET은 확인 화면만 그린다.
@@ -503,7 +505,8 @@ test("routes and UI preserve token-free family history, consent, no-store, and d
   assert.doesNotMatch(familyUi, /location\.href|encodeURIComponent\(token\)|FamilyView\(\{ token/); assert.match(familyUi, /\/api\/family\/invite/); assert.match(familyUi, /navigator\.share/);
   assert.match(teacherRoute, /guardianConsentConfirmed/); assert.match(teacherRoute, /consentMethod/); assert.match(teacherUi, /실제 보호자의 사전 동의/); assert.match(teacherUi, /school_portal/);
   assert.match(teacherUi, /familySharePanelOpen/); assert.match(teacherUi, /openPreview\(student, true\)/); assert.match(teacherUi, /!familySharePanelOpen/); assert.match(teacherUi, /나중에 하기/);
-  assert.match(worker, /referrer-policy/); assert.match(worker, /x-frame-options/); assert.match(worker, /content-security-policy/);
+  // 전역 보안 헤더는 워커 프록시 대신 next.config headers()가 재현한다 (경로별 실측은 배포 검증에서).
+  assert.match(edgeHeaders, /referrer-policy/); assert.match(edgeHeaders, /x-frame-options/); assert.match(edgeHeaders, /content-security-policy/);
   assert.match(voiceUi, /onPointerDown/); assert.match(voiceUi, /MediaRecorder/); assert.match(voiceCore, /x-wiggle-single-consume/); assert.match(voiceCore, /x-wiggle-replay-protection/); assert.doesNotMatch(voiceCore + voiceRoute, /INSERT|UPDATE|ARTWORKS\.put|ARTWORKS\.get/);
   assert.match(teacherUi, /async function sendPreviewMessage/); assert.match(teacherUi, /studentId: recipientId/); assert.match(teacherUi, /텍스트로 바로 알려주기/); assert.match(teacherUi, /학생 화면에 보냈어요/);
   assert.match(subscriptionRoute, /SUBSCRIPTIONS_DISABLED/); assert.match(webhookRoute, /verifyAndApplySubscriptionWebhook/);

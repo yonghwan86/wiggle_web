@@ -1,9 +1,9 @@
 import { bindings } from "@/db/runtime";
 import { exchangeFamilyInvite, familySecurityHeaders, familySessionCookieHeader, peekFamilyInvite } from "@/lib/family-sharing";
-import { rateLimit, sameOrigin, sha256 } from "@/lib/security";
+import { clientIp, rateLimit, sameOrigin, sha256 } from "@/lib/security";
 
 function clientAddress(request: Request) {
-  return request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+  return clientIp(request);
 }
 
 function unavailable() {

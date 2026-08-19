@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { Miniflare } from "miniflare";
+import { startTestServer } from "./harness/server.mjs";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
@@ -68,24 +67,16 @@ test("teacher cards expose only the approved read-only profile facts", async () 
 // 이 분기가 복구(recover)와 같은 대상 버킷을 소비하지 않으면 복구 경로의
 // 8회/15분 상한을 우회해 60회/10분씩 비밀번호 일치 여부(409 오라클)를 캘 수 있다.
 test("duplicate-credential probing shares the per-target recovery budget", async (context) => {
-  const miniflare = new Miniflare({
-    modules: true,
-    modulesRoot: "./dist/server",
-    modulesRules: [{ type: "ESModule", include: ["**/*.js"] }],
-    scriptPath: "./dist/server/index.js",
-    compatibilityDate: "2026-05-15",
-    compatibilityFlags: ["nodejs_compat"],
-    d1Databases: { DB: `entry-probe-${randomUUID()}` },
-    r2Buckets: ["ARTWORKS"],
-  });
-  context.after(() => miniflare.dispose());
+  const server = await startTestServer();
+  context.after(() => server.dispose());
 
-  const post = (body, ip = "203.0.113.77") => miniflare.dispatchFetch("http://localhost/api/student", {
-    method: "POST", headers: { origin: "http://localhost", "content-type": "application/json", "cf-connecting-ip": ip }, body: JSON.stringify(body),
+  // 주소는 x-forwarded-for로 흉내 낸다 — 플랫폼이 덮어쓰는, 앱이 실제로 신뢰하는 헤더다.
+  const post = (body, ip = "203.0.113.77") => server.fetch("/api/student", {
+    method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": ip }, body: JSON.stringify(body),
   });
   const schemaReady = await post({ action: "unsupported" });
   assert.equal(schemaReady.status, 400);
-  const DB = await miniflare.getD1Database("DB");
+  const DB = server.DB;
   await DB.batch([
     DB.prepare("INSERT INTO teachers(id, email, display_name) VALUES ('teacher_probe', 'probe@example.com', 'Probe')"),
     DB.prepare("INSERT INTO classrooms(id, teacher_id, display_name, class_code, join_token) VALUES ('class_probe', 'teacher_probe', '감사 반', '4998', 'join_probe')"),

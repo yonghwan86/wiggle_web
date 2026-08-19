@@ -2,23 +2,35 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { Miniflare } from "miniflare";
+import { startTestServer } from "./harness/server.mjs";
 
 import { clearRedoAfterEdit, redoDrawing, undoDrawing } from "../lib/drawing-history.ts";
 import { canvasPointerCanEdit, isQuickStationaryTap, savedInputMode } from "../lib/input-mode.ts";
 import { mirrorOp } from "../lib/symmetry.ts";
 import { settleUploadsBeforeCleanup } from "../lib/settled-uploads.ts";
+import { sha256 } from "../lib/token-crypto.ts";
 
-const teacherHeaders = (email) => ({
-  origin: "http://localhost",
-  "content-type": "application/json",
-  "oai-authenticated-user-email": email,
-});
+// 교사 인증은 더 이상 oai-* 헤더가 아니라 wiggle_teacher 세션 쿠키다 (lib/security.ts requireTeacher).
+// 구글 OAuth 왕복을 흉내 내는 대신 교사 행과 세션을 DB에 직접 심고 그 토큰만 쿠키로 보낸다.
+async function signInTeacher(server, email) {
+  // 스키마는 첫 요청의 ensureSchema에서 세워진다 — 시드보다 먼저 한 번 두드려 테이블을 만든다.
+  await server.fetch("/api/teacher");
+  const token = randomUUID();
+  const teacherId = `teacher_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  const now = new Date();
+  await server.DB.batch([
+    server.DB.prepare(`INSERT INTO teachers(id, email, display_name, credential_hash, credential_salt) VALUES (?, ?, ?, '', '')`)
+      .bind(teacherId, email, email.split("@")[0]),
+    server.DB.prepare(`INSERT INTO teacher_sessions(token_hash, teacher_id, expires_at, last_used_at) VALUES (?, ?, ?, ?)`)
+      .bind(await sha256(token), teacherId, new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString(), now.toISOString()),
+  ]);
+  return { "content-type": "application/json", cookie: `wiggle_teacher=${token}` };
+}
 
+// 주소는 x-forwarded-for로 흉내 낸다 — 플랫폼이 덮어쓰는, 앱이 실제로 신뢰하는 헤더다.
 const studentHeaders = {
-  origin: "http://localhost",
   "content-type": "application/json",
-  "cf-connecting-ip": "203.0.113.209",
+  "x-forwarded-for": "203.0.113.209",
 };
 
 const stroke = (suffix) => ({
@@ -90,19 +102,16 @@ test("a failed parallel upload waits for its late sibling before cleanup", async
 });
 
 test("teacher artwork history is ownership-scoped, newest-first, and paginated", async (context) => {
-  const miniflare = new Miniflare({
-    modules: true,
-    modulesRoot: "./dist/server",
-    modulesRules: [{ type: "ESModule", include: ["**/*.js"] }],
-    scriptPath: "./dist/server/index.js",
-    compatibilityDate: "2026-05-15",
-    compatibilityFlags: ["nodejs_compat"],
-    d1Databases: { DB: `feedback-20260809-${randomUUID()}` },
-    r2Buckets: ["ARTWORKS"],
-  });
-  context.after(() => miniflare.dispose());
+  const server = await startTestServer();
+  context.after(() => server.dispose());
+  // 소유자와 제3자 두 교사의 쿠키를 미리 만들어 둔다 — 호출부는 예전처럼 이메일로 고른다.
+  const sessions = new Map();
+  for (const email of ["history-owner@example.com", "different-teacher@example.com"]) {
+    sessions.set(email, await signInTeacher(server, email));
+  }
+  const teacherHeaders = (email) => sessions.get(email);
 
-  const created = await miniflare.dispatchFetch("http://localhost/api/teacher", {
+  const created = await server.fetch("/api/teacher", {
     method: "POST",
     headers: teacherHeaders("history-owner@example.com"),
     body: JSON.stringify({ action: "createClassroom", displayName: "작품 기록반" }),
@@ -110,7 +119,7 @@ test("teacher artwork history is ownership-scoped, newest-first, and paginated",
   assert.equal(created.status, 201);
   const classroom = (await created.json()).classroom;
 
-  const joined = await miniflare.dispatchFetch("http://localhost/api/student", {
+  const joined = await server.fetch("/api/student", {
     method: "POST",
     headers: studentHeaders,
     body: JSON.stringify({
@@ -124,13 +133,13 @@ test("teacher artwork history is ownership-scoped, newest-first, and paginated",
   assert.equal(joined.status, 201);
   const joinedData = await joined.json();
   const student = joinedData.student;
-  const DB = await miniflare.getD1Database("DB");
+  const DB = server.DB;
   for (let index = 0; index < 13; index += 1) {
     await DB.prepare(`INSERT INTO artworks(id, student_id, classroom_id, title, topic, learning_mode, status, updated_at) VALUES (?, ?, ?, ?, ?, 'guided', ?, datetime('2026-08-09 00:00:00', ?))`)
       .bind(`history_${String(index).padStart(2, "0")}`, student.id, classroom.id, `작품 ${index}`, "고양이", index === 0 ? "drawing" : "complete", `+${index} minutes`).run();
   }
 
-  const pageOne = await miniflare.dispatchFetch(`http://localhost/api/teacher?classroomId=${classroom.id}&studentId=${student.id}&historyOffset=0`, {
+  const pageOne = await server.fetch(`/api/teacher?classroomId=${classroom.id}&studentId=${student.id}&historyOffset=0`, {
     headers: teacherHeaders("history-owner@example.com"),
   });
   assert.equal(pageOne.status, 200);
@@ -140,7 +149,7 @@ test("teacher artwork history is ownership-scoped, newest-first, and paginated",
   assert.equal(first.hasMore, true);
   assert.equal(first.nextOffset, 12);
 
-  const pageTwo = await miniflare.dispatchFetch(`http://localhost/api/teacher?classroomId=${classroom.id}&studentId=${student.id}&historyOffset=${first.nextOffset}`, {
+  const pageTwo = await server.fetch(`/api/teacher?classroomId=${classroom.id}&studentId=${student.id}&historyOffset=${first.nextOffset}`, {
     headers: teacherHeaders("history-owner@example.com"),
   });
   assert.equal(pageTwo.status, 200);
@@ -149,7 +158,7 @@ test("teacher artwork history is ownership-scoped, newest-first, and paginated",
   assert.equal(second.artworks[0].id, "history_00");
   assert.equal(second.hasMore, false);
 
-  const forbidden = await miniflare.dispatchFetch(`http://localhost/api/teacher?classroomId=${classroom.id}&studentId=${student.id}`, {
+  const forbidden = await server.fetch(`/api/teacher?classroomId=${classroom.id}&studentId=${student.id}`, {
     headers: teacherHeaders("different-teacher@example.com"),
   });
   assert.equal(forbidden.status, 403);
@@ -159,7 +168,7 @@ test("teacher artwork history is ownership-scoped, newest-first, and paginated",
       .bind(`history_${String(index).padStart(2, "0")}`, student.id, classroom.id, `작품 ${index}`, "고양이", `+${index} minutes`).run();
   }
   const studentAuthHeaders = { ...studentHeaders, authorization: `Bearer ${joinedData.deviceToken}` };
-  const archiveOne = await miniflare.dispatchFetch("http://localhost/api/student?artworkOffset=0", { headers: studentAuthHeaders });
+  const archiveOne = await server.fetch("/api/student?artworkOffset=0", { headers: studentAuthHeaders });
   assert.equal(archiveOne.status, 200);
   const archiveFirst = await archiveOne.json();
   assert.equal(archiveFirst.artworks.length, 40);
@@ -168,7 +177,7 @@ test("teacher artwork history is ownership-scoped, newest-first, and paginated",
   assert.equal(archiveFirst.artworkNextOffset, 40);
   assert.equal(archiveFirst.latestUnfinishedArtwork.id, "history_00");
   assert.equal(archiveFirst.artworks.some((item) => item.id === "history_00"), false, "the old draft must be outside page one for this regression");
-  const archiveTwo = await miniflare.dispatchFetch("http://localhost/api/student?artworkOffset=40", { headers: studentAuthHeaders });
+  const archiveTwo = await server.fetch("/api/student?artworkOffset=40", { headers: studentAuthHeaders });
   const archiveSecond = await archiveTwo.json();
   assert.equal(archiveSecond.artworks.length, 5);
   assert.equal(archiveSecond.artworkHasMore, false);

@@ -138,22 +138,23 @@ async function ensureArtworkMutationPrimaryKey(DB: D1Database) {
   }
 }
 
+// 스키마 생성을 DB 인자로 분리해 두면 통합 테스트가 자기 DB에 같은 스키마를 세울 수 있다.
+// ensureSchema()는 프로세스당 한 번만 도는 캐시 래퍼일 뿐, 내용은 이 함수가 정본이다.
+export async function provisionSchema(DB: D1Database) {
+  await DB.batch(schemaStatements.map((statement) => DB.prepare(statement)));
+  await upgradeMvp3Schema(DB);
+  const artworkColumns = await DB.prepare(`PRAGMA table_info(artworks)`).all<{ name: string }>();
+  if (!artworkColumns.results.some((column) => column.name === "last_mutation_id")) await DB.prepare(`ALTER TABLE artworks ADD COLUMN last_mutation_id TEXT`).run();
+  if (!artworkColumns.results.some((column) => column.name === "lesson_slug")) await DB.prepare(`ALTER TABLE artworks ADD COLUMN lesson_slug TEXT`).run();
+  const studentColumns = await DB.prepare(`PRAGMA table_info(student_profiles)`).all<{ name: string }>();
+  if (!studentColumns.results.some((column) => column.name === "archived_at")) await DB.prepare(`ALTER TABLE student_profiles ADD COLUMN archived_at TEXT`).run();
+  await DB.prepare(`CREATE INDEX IF NOT EXISTS students_classroom_archived_idx ON student_profiles(classroom_id, archived_at, nickname)`).run();
+  await ensureArtworkMutationPrimaryKey(DB);
+}
+
 let ready: Promise<void> | undefined;
 
 export async function ensureSchema() {
-  if (!ready) {
-    const { DB } = bindings();
-    ready = (async () => {
-      await DB.batch(schemaStatements.map((statement) => DB.prepare(statement)));
-      await upgradeMvp3Schema(DB);
-      const artworkColumns = await DB.prepare(`PRAGMA table_info(artworks)`).all<{ name: string }>();
-      if (!artworkColumns.results.some((column) => column.name === "last_mutation_id")) await DB.prepare(`ALTER TABLE artworks ADD COLUMN last_mutation_id TEXT`).run();
-      if (!artworkColumns.results.some((column) => column.name === "lesson_slug")) await DB.prepare(`ALTER TABLE artworks ADD COLUMN lesson_slug TEXT`).run();
-      const studentColumns = await DB.prepare(`PRAGMA table_info(student_profiles)`).all<{ name: string }>();
-      if (!studentColumns.results.some((column) => column.name === "archived_at")) await DB.prepare(`ALTER TABLE student_profiles ADD COLUMN archived_at TEXT`).run();
-      await DB.prepare(`CREATE INDEX IF NOT EXISTS students_classroom_archived_idx ON student_profiles(classroom_id, archived_at, nickname)`).run();
-      await ensureArtworkMutationPrimaryKey(DB);
-    })();
-  }
+  if (!ready) ready = provisionSchema(bindings().DB);
   return ready;
 }

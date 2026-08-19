@@ -5,11 +5,16 @@ import test from "node:test";
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 const compactSource = (text) => text.replace(/\s+/g, " ");
 
-test("declares D1 and R2 and ships a migration", async () => {
+test("binds DB and ARTWORKS through host-neutral adapters and ships a migration", async () => {
   const files = await readdir(new URL("../drizzle/", import.meta.url)); const migrationName = files.find((name) => name.endsWith(".sql")); assert.ok(migrationName);
-  const [hosting, migration, snapshot] = await Promise.all([read("../.openai/hosting.json"), read(`../drizzle/${migrationName}`), read("../drizzle/meta/0002_snapshot.json")]);
-  const hostingConfig = JSON.parse(hosting);
-  assert.equal(hostingConfig.d1, "DB"); assert.equal(hostingConfig.r2, "ARTWORKS");
+  const [runtime, tursoAdapter, storeAdapter, migration, snapshot] = await Promise.all([read("../db/runtime.ts"), read("../db/adapters/turso-d1.ts"), read("../db/adapters/artworks-store.ts"), read(`../drizzle/${migrationName}`), read("../drizzle/meta/0002_snapshot.json")]);
+  // 관문은 db/runtime.ts 하나다. 호출부는 D1Database/R2Bucket 표면만 알고, 실제 구현은 어댑터가 갈아 끼운다.
+  assert.match(runtime, /DB: createTursoD1\(\)/); assert.match(runtime, /ARTWORKS: createArtworksStore\(\)/);
+  assert.doesNotMatch(runtime, /cloudflare:workers/);
+  // 운영에서 자격증명이 비면 조용히 로컬 폴백으로 굴러가지 않고 죽어야 한다.
+  assert.match(tursoAdapter, /TURSO_DATABASE_URL이 설정되지 않았어요/); assert.match(storeAdapter, /R2 S3 자격증명\(R2_S3_\*\)이 설정되지 않았어요/);
+  // D1이 보장하던 계약: batch는 한 트랜잭션, meta.changes는 문장별 영향 행 수.
+  assert.match(tursoAdapter, /client\.batch\([\s\S]*"write"/); assert.match(tursoAdapter, /changes: resultSet\.rowsAffected/);
   for (const table of ["teachers", "classrooms", "student_profiles", "device_sessions", "recovery_credentials", "artworks", "artwork_mutations", "reflections", "teacher_messages", "rate_limits"]) assert.match(migration, new RegExp(`CREATE TABLE .${table}.`));
   assert.match(snapshot, /coaching_event_details/); assert.match(snapshot, /teacher_coaching_drafts/);
 });

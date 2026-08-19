@@ -1,17 +1,52 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import nodePath from "node:path";
 import test from "node:test";
-import { Miniflare } from "miniflare";
+import { FsArtworksStore } from "../db/adapters/artworks-store.ts";
 import { findOwnedCoachingEvent, recordCoachingAfter, recordCoachingBefore } from "../lib/coaching-store.ts";
 import { approveTeacherDraftMessage, validateTeacherMessageTarget } from "../lib/teacher-messages.ts";
+import { createTestDb } from "./harness/db.mjs";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 const document = { schemaVersion: 1, rendererVersion: 1, size: 1024, ops: [] };
 const image = { mimeType: "image/png", extension: "png", bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) };
 
+// 예전 Miniflare `r2Buckets` 대신 앱이 실제로 쓰는 파일 저장소 어댑터를 R2 표면으로 감싼다.
+// put/get/delete는 어댑터를 그대로 통과하고, 검증용 list/head는 디스크에 남은 파일을
+// 직접 세어 보상 삭제가 빠지면 잡히게 한다.
+function artworksBucket(baseDir) {
+  const store = new FsArtworksStore(baseDir);
+  return {
+    put: (key, value, options) => store.put(key, value, options),
+    get: (key) => store.get(key),
+    delete: (key) => store.delete(key),
+    async head(key) {
+      const object = await store.get(key);
+      return object && { size: object.size, customMetadata: object.customMetadata };
+    },
+    async list() {
+      const entries = await readdir(baseDir, { recursive: true, withFileTypes: true }).catch(() => []);
+      const objects = entries
+        .filter((entry) => entry.isFile() && !entry.name.endsWith(".meta.json"))
+        .map((entry) => ({ key: nodePath.relative(baseDir, nodePath.join(entry.parentPath, entry.name)).replaceAll("\\", "/") }));
+      return { objects };
+    },
+  };
+}
+
 async function fixture() {
-  const mf = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: "2026-05-22", d1Databases: { DB: "mvp2-test" }, r2Buckets: ["ARTWORKS"] });
-  const DB = await mf.getD1Database("DB"); const ARTWORKS = await mf.getR2Bucket("ARTWORKS");
+  // 이 테스트는 아래 SQL로 필요한 표를 직접 세우므로 빈 DB를 받는다.
+  const database = await createTestDb();
+  const DB = database.DB;
+  const artworksDir = await mkdtemp(nodePath.join(tmpdir(), "wiggle-test-artworks-"));
+  const ARTWORKS = artworksBucket(artworksDir);
+  const handle = {
+    async dispose() {
+      await database.dispose();
+      await rm(artworksDir, { recursive: true, force: true }).catch(() => {});
+    },
+  };
   await DB.exec(`
     CREATE TABLE classrooms (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
     CREATE TABLE student_profiles (id TEXT PRIMARY KEY, classroom_id TEXT NOT NULL, archived_at TEXT);
@@ -28,11 +63,11 @@ async function fixture() {
     INSERT INTO coaching_event_details(event_id, response_kind, status) VALUES ('event_q', 'question', 'open'), ('event_g1', 'guide', 'active'), ('event_g2', 'guide', 'active');
     INSERT INTO teacher_coaching_drafts(id, teacher_id, classroom_id, student_id, artwork_id, body, observation, next_action, model, status) VALUES ('draft_a', 'teacher_a', 'class_a', 'student_a', 'art_a', '초안', '관찰', '더 그려 봐', 'mock', 'draft');
   `);
-  return { mf, DB, ARTWORKS };
+  return { handle, DB, ARTWORKS };
 }
 
 test("coaching before atomically stores image, version, event and details without conflict pollution", async () => {
-  const { mf, DB, ARTWORKS } = await fixture();
+  const { handle, DB, ARTWORKS } = await fixture();
   try {
     const base = {
       DB, ARTWORKS, studentId: "student_a", artworkId: "art_a", expectedRevision: 0,
@@ -69,11 +104,11 @@ test("coaching before atomically stores image, version, event and details withou
     const failed = await recordCoachingBefore({ ...base, eventId: "coaching_db_failure" });
     assert.equal(failed.reason, "save_failed"); assert.equal((await ARTWORKS.list()).objects.length, beforeFailureObjects);
     assert.equal(await DB.prepare("SELECT id FROM coaching_events WHERE id = 'coaching_db_failure'").first(), null);
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("coaching after versions enforce ownership and duplicate CAS for answers and guide exits", async () => {
-  const { mf, DB, ARTWORKS } = await fixture();
+  const { handle, DB, ARTWORKS } = await fixture();
   try {
     assert.equal(await findOwnedCoachingEvent(DB, "event_q", "art_a", "student_b"), null);
     const input = { DB, ARTWORKS, studentId: "student_a", artworkId: "art_a", eventId: "event_q", kind: "question_answer", document, image, currentStep: 2, answer: "토끼를 더했어요", newElements: ["토끼"] };
@@ -91,11 +126,11 @@ test("coaching after versions enforce ownership and duplicate CAS for answers an
     assert.deepEqual(guideStates.results, [{ eventId: "event_g1", status: "completed" }, { eventId: "event_g2", status: "dismissed" }]);
     const versions = await DB.prepare("SELECT COUNT(*) AS count FROM artwork_versions WHERE artwork_id = 'art_a' AND reason = 'coaching_after'").first();
     assert.equal(versions.count, 3); assert.equal((await ARTWORKS.list()).objects.length, 3);
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("teacher message helper rechecks class/student ownership and approves a draft once", async () => {
-  const { mf, DB } = await fixture();
+  const { handle, DB } = await fixture();
   try {
     assert.equal((await validateTeacherMessageTarget(DB, { teacherId: "teacher_b", classroomId: "class_a", studentId: "student_a", body: "도움말" })).reason, "classroom_forbidden");
     assert.equal((await validateTeacherMessageTarget(DB, { teacherId: "teacher_a", classroomId: "class_a", studentId: "student_b", body: "도움말" })).reason, "student_forbidden");
@@ -111,11 +146,11 @@ test("teacher message helper rechecks class/student ownership and approves a dra
     const approved = await DB.prepare("SELECT status, approved_message_id AS approvedMessageId FROM teacher_coaching_drafts WHERE id = 'draft_a'").first();
     assert.equal(approved.status, "approved");
     assert.equal(approved.approvedMessageId, messages.results.length ? (await DB.prepare("SELECT id FROM teacher_messages").first()).id : null);
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("the draft fixture enforces the production approved_message_id foreign key", async () => {
-  const { mf, DB } = await fixture();
+  const { handle, DB } = await fixture();
   try {
     // 이 테이블에 FK가 없으면 승인 배치의 문장 순서가 뒤집혀도 테스트가 통과해 버린다.
     assert.equal((await DB.prepare("PRAGMA foreign_keys").first()).foreign_keys, 1);
@@ -123,7 +158,7 @@ test("the draft fixture enforces the production approved_message_id foreign key"
       DB.prepare("UPDATE teacher_coaching_drafts SET approved_message_id = 'message_missing' WHERE id = 'draft_a'").run(),
       /FOREIGN KEY/i,
     );
-  } finally { await mf.dispose(); }
+  } finally { await handle.dispose(); }
 });
 
 test("student and teacher routes keep authentication and IDOR checks ahead of mutation", async () => {

@@ -1,6 +1,6 @@
 # Wiggle Web 현재 상태
 
-> 마지막 갱신: 2026-08-18
+> 마지막 갱신: 2026-08-19
 > 목적: 긴 대화가 압축되거나 담당 AI가 바뀌어도 실제 구현·검증·배포 상태를 잃지 않기 위한 기준 문서
 
 ## 상태 기준
@@ -20,7 +20,9 @@
   1. 1·2단계 완료: Turso(D1 호환 어댑터)·R2 S3 어댑터(+로컬 파일 폴백)·`next dev/build/start` 전환·보안 헤더 재현. `next build` 성공, 전환기 테스트 201+어댑터 6 통과, browser-check 3뷰포트 통과(390×844 핀치 1항목은 환경 사유 SKIP — 계획 문서 남은 위험 참조).
   2. 5단계(교사 인증) 코드 완료: 구글 OAuth 자체 구현(PKCE·state·미검증 이메일 거부, 새 패키지 0개), SIWC 헤더 신뢰 경로 제거(위조 위험), 교사 페이지·UI·로그아웃 교체. 실왕복은 사용자 OAuth 클라이언트 대기.
   3. 3단계(4.5MB 저장 분리) 완료: 완성 PNG를 바이너리 별도 업로드로 분리(전송 계층만 수정, 큐 스키마·스튜디오 무수정), `scripts/check-large-save.mjs`로 3.4MB 실저장·회수·경계 검증 통과.
-  4. 남은 단계: Miniflare 테스트 10개 하네스 포팅(4) → 구글 로그인 실왕복(사용자 OAuth 키 대기) → Vercel 연결(6, 데이터 이전 없음) → 문서·파이프라인 재정의(7).
+  4. 4단계(하네스 포팅) 완료(2026-08-19): Miniflare·wrangler 테스트 11파일을 `tests/harness/`(파일 libsql DB + `next start` 서버) 기반으로 포팅, Workers 잔재(worker/·vite.config·wrangler 설정·devDeps 7종) 제거. `npm test` 268/268, browser-check 통과. 이때 `cf-connecting-ip` 신뢰를 제거하고 `lib/client-ip.ts`의 `clientIp`(x-vercel-forwarded-for 우선)로 교체 — Vercel에서 위조 가능한 IP 헤더로 rate limit이 뚫리는 문제의 선제 수정.
+  5. 사용자 인프라 준비 완료(2026-08-19): 원격 Turso 생성·어댑터 계약 실측 통과·스키마 프로비저닝 완료, R2 버킷 `wiggle-artworks`+S3 토큰 발급·3.4MB 실왕복·비공개 확인. 자격증명은 `.env.local`에 `# vercel-only:` 주석으로 보관(활성화 금지 — 로컬이 운영을 물었던 사고 있음, 계획서 남은 위험 참조).
+  6. 남은 단계: 구글 로그인 실왕복(사용자 OAuth 클라이언트 대기) → Vercel 연결(6, 데이터 이전 없음) → 문서·파이프라인 재정의(7). 별도 대기: 원격 Turso에 남은 테스트 행 삭제(사용자 승인 대기).
 
 - 커밋되지 않은 파일은 사용자 소유 참고 자료(`examples/*.jpg`, 시안 원본)와 로컬 도구 설정(`.claude/`)뿐이다. 임의로 삭제하지 않는다.
 - `git reset --hard`, `git checkout --`, 광범위한 삭제를 사용하지 않는다.

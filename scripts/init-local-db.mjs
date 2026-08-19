@@ -1,86 +1,36 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
-import {
-  mvp3EntitlementLegacyStatements,
-  mvp3FamilyLegacyStatements,
-  mvp3WebhookLegacyStatements,
-} from "../lib/mvp3-schema-upgrade-statements.mjs";
+// 로컬 개발용 DB를 만들고 앱 스키마를 세운다.
+// 앱이 dev에서 쓰는 것과 같은 파일(.data/wiggle-local.db)에 같은 정본 경로(provisionSchema)로
+// 세우므로, 여기서 만든 DB를 `npm run dev`가 그대로 이어 쓴다.
+// 사실 첫 API 호출 때 ensureSchema가 알아서 만들지만, 새로 클론한 뒤 상태를 눈으로
+// 확인하고 싶을 때를 위해 남겨 둔다.
+import { createTursoClientFromUrl, TursoD1 } from "../db/adapters/turso-d1.ts";
+import { provisionSchema } from "../db/runtime.ts";
 
-const project = resolve(import.meta.dirname, "..");
-const wranglerRoot = resolve(project, ".wrangler");
-mkdirSync(resolve(wranglerRoot, "logs"), { recursive: true });
-mkdirSync(resolve(wranglerRoot, "registry"), { recursive: true });
-const migrationFiles = readdirSync(resolve(project, "drizzle")).filter((name) => name.endsWith(".sql")).sort();
-if (!migrationFiles.length) throw new Error("No D1 migration files found.");
-const idempotentSql = migrationFiles.map((name) => readFileSync(resolve(project, "drizzle", name), "utf8"))
-  .join("\n")
-  .replace(/CREATE TABLE `(.*?)`/g, "CREATE TABLE IF NOT EXISTS `$1`")
-  .replace(/CREATE UNIQUE INDEX `(.*?)`/g, "CREATE UNIQUE INDEX IF NOT EXISTS `$1`")
-  .replace(/CREATE INDEX `(.*?)`/g, "CREATE INDEX IF NOT EXISTS `$1`");
-const localMigration = resolve(wranglerRoot, "local-init.sql");
-writeFileSync(localMigration, idempotentSql, "utf8");
+const LOCAL_DATABASE_URL = "file:.data/wiggle-local.db";
 
-const result = spawnSync(process.execPath, [
-  resolve(project, "node_modules/wrangler/bin/wrangler.js"),
-  "d1", "execute", "DB", "--local",
-  "--config", resolve(project, "wrangler.local.jsonc"),
-  "--persist-to", resolve(wranglerRoot, "state"),
-  "--file", localMigration,
-], {
-  cwd: project,
-  stdio: "inherit",
-  env: {
-    ...process.env,
-    WRANGLER_WRITE_LOGS: "false",
-    WRANGLER_LOG_PATH: resolve(wranglerRoot, "logs"),
-    MINIFLARE_REGISTRY_PATH: resolve(wranglerRoot, "registry"),
-  },
-});
-
-if (result.status !== 0) process.exit(result.status ?? 1);
-
-const wranglerEnvironment = {
-  ...process.env,
-  WRANGLER_WRITE_LOGS: "false",
-  WRANGLER_LOG_PATH: resolve(wranglerRoot, "logs"),
-  MINIFLARE_REGISTRY_PATH: resolve(wranglerRoot, "registry"),
-};
-
-function localColumns(table) {
-  const inspected = spawnSync(process.execPath, [
-    resolve(project, "node_modules/wrangler/bin/wrangler.js"),
-    "d1", "execute", "DB", "--local", "--json",
-    "--config", resolve(project, "wrangler.local.jsonc"),
-    "--persist-to", resolve(wranglerRoot, "state"),
-    "--command", `PRAGMA table_info(${table})`,
-  ], { cwd: project, encoding: "utf8", env: wranglerEnvironment });
-  if (inspected.status !== 0) {
-    process.stderr.write(inspected.stderr || `Unable to inspect ${table}.\n`);
-    process.exit(inspected.status ?? 1);
-  }
-  const payload = JSON.parse(inspected.stdout);
-  return payload.flatMap((entry) => entry.results ?? []).map((column) => column.name);
+if (process.env.TURSO_DATABASE_URL) {
+  // 운영 자격증명이 켜져 있는 채로 실행하면 원격 DB를 건드릴 뻔한다 — 여기서 멈춘다.
+  console.error("TURSO_DATABASE_URL이 설정되어 있어요. 이 스크립트는 로컬 파일 DB 전용입니다.");
+  console.error(".env.local에서 그 값을 '# vercel-only:' 주석으로 돌린 뒤 다시 실행해 주세요.");
+  process.exit(1);
 }
 
-const compatibilityStatements = [];
-const familyColumns = localColumns("family_share_links");
-if (familyColumns.includes("token_hash") || !familyColumns.includes("guardian_consent_at")) compatibilityStatements.push(...mvp3FamilyLegacyStatements);
-const entitlementColumns = localColumns("subscription_entitlements");
-if (!entitlementColumns.includes("provider_event_at")) compatibilityStatements.push(mvp3EntitlementLegacyStatements[0]);
-if (!entitlementColumns.includes("provider_event_id")) compatibilityStatements.push(mvp3EntitlementLegacyStatements[1]);
-const webhookColumns = localColumns("subscription_webhook_events");
-if (!webhookColumns.includes("occurred_at") || !webhookColumns.includes("stale")) compatibilityStatements.push(...mvp3WebhookLegacyStatements);
+const client = createTursoClientFromUrl(LOCAL_DATABASE_URL);
+const DB = new TursoD1(client);
 
-if (compatibilityStatements.length) {
-  const compatibilityFile = resolve(wranglerRoot, "local-mvp3-compat.sql");
-  writeFileSync(compatibilityFile, `${compatibilityStatements.join(";\n")};\n`, "utf8");
-  const upgraded = spawnSync(process.execPath, [
-    resolve(project, "node_modules/wrangler/bin/wrangler.js"),
-    "d1", "execute", "DB", "--local",
-    "--config", resolve(project, "wrangler.local.jsonc"),
-    "--persist-to", resolve(wranglerRoot, "state"),
-    "--file", compatibilityFile,
-  ], { cwd: project, stdio: "inherit", env: wranglerEnvironment });
-  if (upgraded.status !== 0) process.exit(upgraded.status ?? 1);
-}
+await provisionSchema(DB);
+
+const tables = await DB.prepare(
+  `SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+).first();
+const mutationColumns = await DB.prepare(`PRAGMA table_info(artwork_mutations)`).all();
+const primaryKey = mutationColumns.results
+  .filter((column) => column.pk > 0)
+  .sort((left, right) => left.pk - right.pk)
+  .map((column) => column.name)
+  .join(", ");
+
+console.log(`로컬 DB 준비 완료: ${LOCAL_DATABASE_URL}`);
+console.log(`  테이블 ${tables.count}개`);
+console.log(`  artwork_mutations 기본키: (${primaryKey})`);
+client.close();
