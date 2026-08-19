@@ -22,7 +22,9 @@
   3. 3단계(4.5MB 저장 분리) 완료: 완성 PNG를 바이너리 별도 업로드로 분리(전송 계층만 수정, 큐 스키마·스튜디오 무수정), `scripts/check-large-save.mjs`로 3.4MB 실저장·회수·경계 검증 통과.
   4. 4단계(하네스 포팅) 완료(2026-08-19): Miniflare·wrangler 테스트 11파일을 `tests/harness/`(파일 libsql DB + `next start` 서버) 기반으로 포팅, Workers 잔재(worker/·vite.config·wrangler 설정·devDeps 7종) 제거. `npm test` 268/268, browser-check 통과. 이때 `cf-connecting-ip` 신뢰를 제거하고 `lib/client-ip.ts`의 `clientIp`(x-vercel-forwarded-for 우선)로 교체 — Vercel에서 위조 가능한 IP 헤더로 rate limit이 뚫리는 문제의 선제 수정.
   5. 사용자 인프라 준비 완료(2026-08-19): 원격 Turso 생성·어댑터 계약 실측 통과·스키마 프로비저닝 완료, R2 버킷 `wiggle-artworks`+S3 토큰 발급·3.4MB 실왕복·비공개 확인. 자격증명은 `.env.local`에 `# vercel-only:` 주석으로 보관(활성화 금지 — 로컬이 운영을 물었던 사고 있음, 계획서 남은 위험 참조).
-  6. 남은 단계: 구글 로그인 실왕복(사용자 OAuth 클라이언트 대기) → Vercel 연결(6, 데이터 이전 없음) → 문서·파이프라인 재정의(7). 별도 대기: 원격 Turso에 남은 테스트 행 삭제(사용자 승인 대기).
+  6. 5단계 실왕복 완료(2026-08-19): 사용자 OAuth 클라이언트(`wiggle` 프로젝트) 생성, 로컬 3001에서 구글 동의→콜백→교사 세션 실측. 원격 테스트 행은 사용자 승인 후 삭제(전 테이블 0행 복원).
+  7. **6단계(Vercel 연결) 완료(2026-08-19)**: 사용자 repo import(프로젝트 `wiggle-web`)·env 9종·보호 해제·서울 리전(icn1), 공개 주소 `https://wiggleweb.vercel.app`(무료 서브도메인 — wiggle-web.vercel.app은 타인 선점). 운영 버그 3건을 실측으로 발견·수정: ① `"type": "module"`이 Vercel 함수 런처의 require를 깨서 전 요청 500 → 제거(50a7965) ② 교사 세션 쿠키 strict가 구글발 리디렉션 연쇄에서 탈락해 로그인 무한 루프 → 콜백만 lax(e2df6de) ③ Next 런타임 fetch가 aws4fetch 스트림 본문을 chunked로 보내 R2가 411 → 서명·전송 분리로 버퍼 본문 유지(ef80e31). **최종 운영 E2E 통과**: 실제 학급(코드 9315) 학생 입장→작품 생성→3.4MB 바이너리 업로드(1.6초)→완성 저장(435B)→R2 회수 340만 바이트 전수 일치→남의 키·유령 키 413. 구글 리디렉션 URI는 localhost 3000·3001 + wiggleweb.vercel.app 3종 등록.
+  8. 남은 것: 문서·파이프라인 재정의(7단계 — CLAUDE.md·AGENTS.md의 Codex/Sites 규칙을 GitHub+Vercel로 교체) / 사용자 선택: `wiggleweb.app` 도메인 구매(현재 미등록·구매 가능 확인), 구글 앱 게시(타 교사 허용), OAuth 동의 화면의 검증 학생 정리.
 
 - 커밋되지 않은 파일은 사용자 소유 참고 자료(`examples/*.jpg`, 시안 원본)와 로컬 도구 설정(`.claude/`)뿐이다. 임의로 삭제하지 않는다.
 - `git reset --hard`, `git checkout --`, 광범위한 삭제를 사용하지 않는다.
