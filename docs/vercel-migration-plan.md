@@ -49,10 +49,12 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 
 2026-08-19 Codex 실측(`docs/agent-handoff/operational-data-audit-20260819.md`): **실사용 데이터 있음.**
 
-- D1: teachers 2 · classrooms 9 · student_profiles 27 · artworks 32 (완료 7, artwork_versions 1). 보수적 표식 제외 후에도 학생 22·작품 29가 남고, 과거 인수인계 기록이 특정 프로필을 실제 학생으로 명시 — **이름 패턴만으로 삭제·제외 금지.**
-- 따라서 6단계에서 **D1 전체 테이블 export → Turso import가 필수다** (핵심 4개만이 아니라 recovery_credentials 포함 전부 — 그림 비밀번호 재입장이 걸려 있다).
-- R2: D1이 참조하는 고유 키 31개. 실제 객체 수·용량은 **미확인** — Sites 읽기 전용 도구가 R2 목록을 제공하지 않고 S3 자격증명도 없음.
-- **미해결: Sites 관리 R2에서 객체 31개를 꺼낼 경로.** 후보: ① Sites가 임시 읽기 전용 자격증명·목록 기능 제공 ② 마지막 Sites 배포로 교사 인증 임시 export 엔드포인트 추가 ③ 31개면 앱 화면에서 수동 회수. 6단계 전에 확정한다.
+- D1: teachers 2 · classrooms 9 · student_profiles 27 · artworks 32 (완료 7, artwork_versions 1). 과거 인수인계 기록이 특정 프로필을 실제 학생으로 명시 — **이름 패턴 자동 필터로 삭제·제외 금지.**
+- 2026-08-19 사용자 결정: **전체가 아니라 사용자가 직접 선별한 일부만 이전한다.** 선별 단위는 학급(9개 중 선택)이 기본 — 선택 학급의 데이터 그래프(학생 프로필·recovery_credentials·작품·artwork_versions·reflections·코칭 기록·teacher_messages·message_receipts)가 한 묶음으로 이동한다. 자동 필터 금지 원칙은 유지되고, 판단은 소유자(사용자)가 시트를 보고 내린다.
+- 이전 제외 가능: device_sessions(만료 세션 — 재입장은 recovery_credentials로 가능), artwork_mutations(옛 저장 멱등 기록 — 새 플랫폼에서 무의미), subscription_*(기능 off), family_share_*(만료분).
+- 절차: ① Codex가 학급별 선별 시트 생성(학급명·학생 별명·작품 수·최근 활동) → ② 사용자가 유지 학급 지정 → ③ Codex가 선택분 export(INSERT 문 또는 JSON) 생성 → ④ Claude가 Turso 반입 스크립트로 적재·행 수 검증 → ⑤ 선택 작품이 참조하는 R2 키만 회수.
+- R2: D1이 참조하는 고유 키 31개(선별 후 줄어듦). 실제 객체 수·용량 **미확인** — Sites 도구가 R2 목록 미제공.
+- **미해결: Sites 관리 R2에서 선택 작품 이미지를 꺼낼 경로.** 후보: ① Sites의 임시 읽기 전용 자격증명 ② 마지막 Sites 배포로 교사 인증 임시 export 엔드포인트 ③ 수량이 적으면 앱 화면 수동 회수(선별로 현실성 상승). 6단계 전에 확정한다.
 - 인쇄된 QR·링크가 기존 Sites 도메인을 가리키는 문제: 새 도메인 전환 시 수업 코드 재안내 필요(4자리 코드는 새 도메인에서 그대로 유효).
 
 ## 테스트 전환
