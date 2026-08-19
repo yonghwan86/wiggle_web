@@ -14,8 +14,8 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "db:local:init": "node --import ./tests/harness/register.mjs scripts/init-local-db.mjs",
-    "pipeline:ready": "node scripts/mark-codex-ready.mjs",
     "check:browser": "node scripts/browser-check.mjs",
+    "check:deployed": "node --import ./tests/harness/register.mjs scripts/check-deployed.mjs",
     "test:adapters": "node --test tests/turso-adapters.test.mjs tests/google-auth.test.mjs tests/save-split.test.mjs",
     "test:integration": "node --import ./tests/harness/register.mjs --test tests/classroom-entry-flow.test.mjs tests/student-join-atomic.test.mjs tests/student-profile-management.test.mjs tests/nickname-spacing.test.mjs tests/feedback-20260809.test.mjs"
   },

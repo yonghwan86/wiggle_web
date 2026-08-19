@@ -7,10 +7,9 @@
 
 - 로컬 저장소: `C:\Users\user\Desktop\Project\wiggle_web`
 - GitHub: `https://github.com/yonghwan86/wiggle_web`
-- 공개 Sites: `https://wiggle-classroom-web.chan1940.chatgpt.site`
-- 현재 `main`에는 별명 후보 확대·공백 무시 매칭 검증 후보 HEAD `305742d`가 반영되어 있다 (base `266a251`).
-- 2026-08-18 공개 배포 확인 이력: `305742d2e03e05c175555947b2d8a3e4964f1a22`을 사용한 기존 Sites 프로젝트 v32 (그 이전은 `266a251` / v31).
-- 개발 후보 브랜치: `claude/nickname-spacing-20260818`. Codex 독립 검증을 통과해 `main`에 반영했다.
+- **공개 운영: `https://wiggleweb.vercel.app`** — Vercel 프로젝트 `wiggle-web`, GitHub `main` push 시 자동 배포(서울 리전). `main` push는 사용자만 실행한다.
+- 옛 공개 Sites `https://wiggle-classroom-web.chan1940.chatgpt.site`는 2026-08-19 재플랫폼으로 은퇴 — 사이트·데이터는 보존(폐기는 사용자 승인 필요), 신규 서버는 데이터 이전 없이 새로 시작했다.
+- 운영 저장소: DB는 Turso(libSQL), 그림 파일은 Cloudflare R2 버킷 `wiggle-artworks`(S3 API). 운영 자격증명은 Vercel 대시보드에서만 관리한다.
 
 ## 매우 중요한 작업 폴더 상태
 
@@ -24,12 +23,13 @@
   5. 사용자 인프라 준비 완료(2026-08-19): 원격 Turso 생성·어댑터 계약 실측 통과·스키마 프로비저닝 완료, R2 버킷 `wiggle-artworks`+S3 토큰 발급·3.4MB 실왕복·비공개 확인. 자격증명은 `.env.local`에 `# vercel-only:` 주석으로 보관(활성화 금지 — 로컬이 운영을 물었던 사고 있음, 계획서 남은 위험 참조).
   6. 5단계 실왕복 완료(2026-08-19): 사용자 OAuth 클라이언트(`wiggle` 프로젝트) 생성, 로컬 3001에서 구글 동의→콜백→교사 세션 실측. 원격 테스트 행은 사용자 승인 후 삭제(전 테이블 0행 복원).
   7. **6단계(Vercel 연결) 완료(2026-08-19)**: 사용자 repo import(프로젝트 `wiggle-web`)·env 9종·보호 해제·서울 리전(icn1), 공개 주소 `https://wiggleweb.vercel.app`(무료 서브도메인 — wiggle-web.vercel.app은 타인 선점). 운영 버그 3건을 실측으로 발견·수정: ① `"type": "module"`이 Vercel 함수 런처의 require를 깨서 전 요청 500 → 제거(50a7965) ② 교사 세션 쿠키 strict가 구글발 리디렉션 연쇄에서 탈락해 로그인 무한 루프 → 콜백만 lax(e2df6de) ③ Next 런타임 fetch가 aws4fetch 스트림 본문을 chunked로 보내 R2가 411 → 서명·전송 분리로 버퍼 본문 유지(ef80e31). **최종 운영 E2E 통과**: 실제 학급(코드 9315) 학생 입장→작품 생성→3.4MB 바이너리 업로드(1.6초)→완성 저장(435B)→R2 회수 340만 바이트 전수 일치→남의 키·유령 키 413. 구글 리디렉션 URI는 localhost 3000·3001 + wiggleweb.vercel.app 3종 등록.
-  8. 남은 것: 문서·파이프라인 재정의(7단계 — CLAUDE.md·AGENTS.md의 Codex/Sites 규칙을 GitHub+Vercel로 교체) / 사용자 선택: `wiggleweb.app` 도메인 구매(현재 미등록·구매 가능 확인), 구글 앱 게시(타 교사 허용), OAuth 동의 화면의 검증 학생 정리.
+  8. **7단계(문서·파이프라인 재정의) 완료(2026-08-19) — 재플랫폼 전 단계 종료.** CLAUDE.md·AGENTS.md·README·agent-pipeline(은퇴 공지)·product-decisions를 GitHub+Vercel 흐름으로 교체, `pipeline:ready` 제거, 운영 실측 게이트 `npm run check:deployed` 신설.
+  9. 사용자 선택으로 남은 것: `wiggleweb.app` 도메인 구매(미등록·구매 가능 확인됨), 구글 앱 게시(타 교사 로그인 허용 — 게시 전에는 테스트 사용자만), 교사 화면에서 검증용 학생(검증화가·업로드탐색·헤더탐색) 정리, 인쇄물 QR 새 주소로 재출력.
 
 - 커밋되지 않은 파일은 사용자 소유 참고 자료(`examples/*.jpg`, 시안 원본)와 로컬 도구 설정(`.claude/`)뿐이다. 임의로 삭제하지 않는다.
 - `git reset --hard`, `git checkout --`, 광범위한 삭제를 사용하지 않는다.
 - 새 작업을 시작하기 전에 `git status --short`와 최근 커밋을 확인한다.
-- 로컬 커밋은 검증을 통과했지만 Codex 독립 검증·배포 승인 전이므로 배포 상태로 간주하지 않는다.
+- 로컬·브랜치 커밋은 게이트를 통과했어도 `main` 반영(사용자 push) 전까지 배포 상태로 간주하지 않는다.
 
 ## 현재 구현된 핵심 흐름
 

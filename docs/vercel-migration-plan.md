@@ -80,7 +80,7 @@ Cloudflare 시대 코드는 5개 경로에서 `cf-connecting-ip`를 최우선으
    - 교사 세션 쿠키 `sameSite: strict` → 구글발 교차 사이트 리디렉션 연쇄에는 strict 쿠키가 실리지 않아 로그인 성공 직후 미인증 판정 → 구글로 재이동 무한 루프(세션 4개 생성됨을 DB로 확인). 콜백만 lax로(e2df6de), 회귀 테스트 추가.
    - R2 업로드 411 → aws4fetch `aws.fetch()`가 본문을 Request(스트림)로 감싸고 Next 런타임 fetch가 스트림을 chunked(Content-Length 없음)로 전송, R2가 411 거절. 1KB만 통과하고 그 이상 전멸 — 독립 Node에서는 재현 안 됨(어댑터 스모크 3.4MB 통과가 이 때문에 못 잡음). 서명(sign)과 전송(fetch)을 분리해 버퍼 본문 유지로 해결(ef80e31), 로컬 next start+실 R2로 1KB·100KB·3.4MB 재검증.
    **최종 게이트 — 운영 E2E 통과**: 실제 학급(코드 9315)에서 학생 입장→작품 생성→3.4MB 바이너리 업로드(1.6초)→완성 저장(435B)→R2 회수 340만 바이트 전수 일치→남의 키·유령 키 413→학생 홈 GET(현재 활동 "쭉쭉 직선" 표시). 검증 잔여 고아 객체는 버킷에서 정리(실사용 객체만 잔존).
-7. **문서·파이프라인 재정의**: CLAUDE.md·AGENTS.md를 GitHub+Vercel 흐름으로 교체.
+7. **문서·파이프라인 재정의** ✅ 완료(2026-08-19): CLAUDE.md(배포 절차·env 보관 규칙·main push는 사용자), AGENTS.md(공통 규칙으로 전면 재작성), README(주소·배지·다이어그램·배포 절·구조·협업 흐름), `docs/agent-pipeline.md`(은퇴 공지로 대체), product-decisions(배포 원칙 확정 기록), current-state(상태 기준 갱신). `pipeline:ready` 스크립트 제거, 운영 실측 게이트 `npm run check:deployed`(scripts/check-deployed.mjs) 신설. `docs/agent-handoff/`와 `.openai/hosting.json`은 이력 보존.
 
 ## 남은 위험 (전환기)
 

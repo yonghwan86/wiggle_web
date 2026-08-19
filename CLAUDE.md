@@ -20,8 +20,9 @@
 - 작업 저장소는 `C:\Users\user\Desktop\Project\wiggle_web`이다.
 - `C:\Users\user\Desktop\Project\wiggle_draw`는 읽기 전용 참고 자료다. 수정하거나 통째로 복사하지 않는다.
 - `wiggle_web`은 독립 Git 저장소이며 원격은 `https://github.com/yonghwan86/wiggle_web.git`이다.
-- `.openai/hosting.json`을 삭제하거나 다른 프로젝트 ID로 바꾸지 않는다.
+- `.openai/hosting.json`은 은퇴한 Sites 연결의 이력이다. 삭제하거나 프로젝트 ID를 바꾸지 않는다.
 - `.env.local`, API 키, 토큰, 쿠키 등 비밀값을 읽어 출력하거나 커밋하지 않는다.
+- 운영 자격증명(TURSO_*, R2_S3_*)은 `.env.local`에 `# vercel-only: KEY=value` 주석으로만 보관한다. 활성 줄로 두면 Next dev가 env를 핫리로드해 로컬 개발·테스트가 운영 DB·버킷에 그대로 쓴다(2026-08-19 실제 사고). 원격 검증이 필요할 때만 잠깐 활성화하고 즉시 되돌린다.
 
 ## 제품 불변 원칙
 
@@ -48,30 +49,20 @@ git diff --check
 git diff --check main...HEAD
 ```
 
-5. 모바일 UI는 최소 `320×568`, `390×844`, `844×390`에서 실제 브라우저로 확인한다.
+5. 모바일 UI는 최소 `320×568`, `390×844`, `844×390`에서 실제 브라우저로 확인한다 (`npm.cmd run check:browser`).
 6. 소스 문자열이나 CSS 정규식 검사만으로 UX 통과를 주장하지 않는다. computed size, 잘림, 스크롤, 초점, 연속 탭, 오류 복구를 실제 동작으로 검증한다.
 7. 작업 결과에는 변경 파일, 재현한 문제, 실행한 검증, 남은 위험을 사실대로 기록한다.
-8. Claude는 Sites 운영 배포를 실행하지 않는다. 커밋까지 준비한 뒤 Codex가 독립 검증하고 Sites 버전 저장·배포를 담당한다.
-9. Claude는 Codex를 직접 실행하거나 GitHub `main`에 push하지 않는다. 자동화가 처리할 표준 완료 신호만 남긴다.
+8. Claude는 GitHub `main`에 직접 push하지 않는다. 기능 브랜치에 커밋·push까지 마친 뒤, 사용자가 실행할 `git push origin <브랜치>:main` 명령을 제시한다. `main` push가 곧 운영 배포다.
 
-## Codex 자동 인계
+## 배포 (GitHub → Vercel)
 
-개발과 검증을 모두 마친 뒤 다음 순서로 완료 신호를 만든다.
+- 운영 주소: `https://wiggleweb.vercel.app` — Vercel 프로젝트 `wiggle-web`이 GitHub `main` push를 자동 빌드·배포한다(서울 리전 icn1). `wiggle-web.vercel.app`은 타인 소유이므로 사용·안내 금지.
+- 운영 환경 변수는 Vercel 대시보드에서만 관리한다(9종: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `R2_S3_ENDPOINT`, `R2_S3_BUCKET`, `R2_S3_ACCESS_KEY_ID`, `R2_S3_SECRET_ACCESS_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OPENAI_API_KEY`). 값에 따옴표를 넣지 않는다.
+- DB(Turso)는 첫 요청의 `ensureSchema()`가 자가 프로비저닝한다. 운영 Turso·R2 데이터를 SQL·S3로 직접 수정·삭제하지 않는다(정리도 사용자 승인 필요).
+- 교사 인증은 구글 OAuth다. 도메인을 추가하면 구글 콘솔의 승인된 리디렉션 URI에 `https://<도메인>/api/auth/google/callback`을 함께 추가해야 그 도메인에서 교사 로그인이 된다.
+- 저장 경로(작품 저장·이미지·인증)를 건드린 배포는 반영 후 운영 실측을 돌린다: `node scripts/check-deployed.mjs https://wiggleweb.vercel.app <수업코드>` — 실제 수업 코드가 필요하고 검증용 학생이 하나 생기므로 사용자에게 알리고 정리를 안내한다. 그 외 배포는 랜딩·핵심 API 스모크로 충분하다.
+- 은퇴(2026-08-19): ChatGPT Sites 배포, Codex 독립 검증 게이트, `pipeline:ready` marker. `docs/agent-handoff/`와 `.openai/hosting.json`은 이력 보존용으로만 남긴다.
 
-1. `docs/agent-handoff/TEMPLATE.md`를 기준으로 `docs/agent-handoff/latest.md`를 작성한다.
-2. 코드, 테스트, 문서와 `latest.md`를 먼저 커밋한다.
-3. 작업 트리가 깨끗한 상태에서 다음 명령을 실행한다.
+## 현재 우선순위
 
-```powershell
-npm.cmd run pipeline:ready -- --task "작업 이름" --summary "완료 내용 한 문장"
-git add docs/agent-handoff/latest.json
-git commit -m "chore: mark ready for Codex verification"
-```
-
-4. 마지막 marker 커밋 뒤에는 merge, push, Codex 실행, Sites 배포를 하지 않고 종료한다.
-
-`ready_for_codex` marker는 완료 보고일 뿐 품질 승인이나 배포 승인이 아니다. Codex 자동화가 독립 검증에서 `GO`를 판정해야만 배포된다. 자세한 흐름은 [docs/agent-pipeline.md](docs/agent-pipeline.md)를 따른다.
-
-## 현재 최우선 목표
-
-현재 공개 버전은 기능적으로 동작하지만 비문해 저학년 독립 사용성 검증에서 `NO-GO`다. 새 기능보다 상세 인수인계 문서의 P1/P2 결함을 먼저 수정한다.
+우선순위와 미결정 항목의 정본은 `docs/current-state.md`와 `docs/pending-decisions.md`다. 새 기능보다 실사용 안정(비문해 저학년 독립 사용성, 저장 신뢰성)을 우선한다.

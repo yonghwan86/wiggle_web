@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://wiggle-classroom-web.chan1940.chatgpt.site"><strong>개발 프리뷰 열기</strong></a>
+  <a href="https://wiggleweb.vercel.app"><strong>공개 앱 열기</strong></a>
   ·
   <a href="#-로컬에서-실행하기">로컬 실행</a>
   ·
@@ -31,8 +31,8 @@
   <img alt="Next.js 16.2.6" src="https://img.shields.io/badge/Next.js-16.2.6-000000?logo=nextdotjs&logoColor=white" />
   <img alt="React 19.2.6" src="https://img.shields.io/badge/React-19.2.6-149ECA?logo=react&logoColor=white" />
   <img alt="TypeScript 5.9" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white" />
-  <img alt="Cloudflare D1 and R2" src="https://img.shields.io/badge/Cloudflare-D1%20%2B%20R2-F38020?logo=cloudflare&logoColor=white" />
-  <img alt="Automated tests 235 passing" src="https://img.shields.io/badge/tests-235%20passing-2EA44F" />
+  <img alt="Vercel with Turso and R2" src="https://img.shields.io/badge/Vercel-Turso%20%2B%20R2-000000?logo=vercel&logoColor=white" />
+  <img alt="Automated tests 268 passing" src="https://img.shields.io/badge/tests-268%20passing-2EA44F" />
   <img alt="Status active development" src="https://img.shields.io/badge/status-active%20development-FFB020" />
 </p>
 
@@ -115,7 +115,7 @@ Wiggle Web은 단순한 AI 그림 생성기가 아닙니다.
 - 빠른 Safari 터치에서도 손을 뗀 위치까지 선을 보간
 - 점선 위에서 시작하면 안내 경로를 부드럽게 따라가는 자석 가이드
 - 정규화된 좌표와 pressure 저장
-- D1 자동 저장과 revision 충돌 감지
+- 서버 자동 저장과 revision 충돌 감지
 - IndexedDB 오프라인 저장 큐
 - R2 썸네일·최종 이미지
 - 작품 완료 버전과 타임랩스
@@ -196,31 +196,33 @@ flowchart TB
         Queue["IndexedDB Offline Queue"]
     end
 
-    subgraph Worker["Cloudflare Worker 호환 서버"]
+    subgraph Server["Next.js 서버 (Vercel)"]
         Routes["Next API Routes"]
         Auth["소유권·세션·Rate Limit"]
         Coach["OpenAI Coaching Service"]
     end
 
-    D1[("D1<br/>관계형 기록")]
-    R2[("R2<br/>썸네일·최종 이미지")]
+    DB[("Turso libSQL<br/>관계형 기록")]
+    R2[("R2 (S3 API)<br/>썸네일·최종 이미지")]
     AI["OpenAI Responses API"]
 
     UI --> Routes
     Canvas --> Queue
     Queue --> Routes
     Routes --> Auth
-    Auth --> D1
+    Auth --> DB
     Routes --> R2
     Routes --> Coach
     Coach --> AI
-    Coach --> D1
+    Coach --> DB
 ```
+
+서버는 호스트 중립 어댑터(`db/adapters/`)를 거쳐 저장소에 접근합니다. 로컬 개발·테스트는 자격증명 없이 파일 libSQL과 파일 저장소로 동작하고, 운영은 같은 코드가 Turso·R2를 씁니다.
 
 ### 데이터 저장 원칙
 
-- **D1:** 교사, 학급, 익명 학생, 세션, 작품 동작, 버전, 코칭 사건, 소감, 메시지, 가족 공유
-- **R2:** 학생 썸네일, AI 코칭 전후 이미지, 최종 이미지
+- **Turso(libSQL):** 교사, 학급, 익명 학생, 세션, 작품 동작, 버전, 코칭 사건, 소감, 메시지, 가족 공유
+- **R2(S3 API):** 학생 썸네일, AI 코칭 전후 이미지, 최종 이미지 — 공개 URL 없음, 인증 스트리밍만
 - **브라우저:** 짧은 활성 세션, 토큰 없는 최소 프로필 메타데이터, 전송 전 오프라인 큐
 - **서버 전용:** OpenAI API 키와 AI 요청
 
@@ -324,8 +326,8 @@ git diff --check
 현재 기준:
 
 ```text
-235 tests
-235 passed
+268 tests
+268 passed
 0 failed
 ```
 
@@ -354,24 +356,23 @@ schema는 [`db/schema.ts`](./db/schema.ts), migration은 [`drizzle/`](./drizzle)
 npm.cmd run db:generate
 ```
 
-새 migration을 생성한 뒤 반드시 SQL을 검토합니다. D1 schema 변경 없이 migration 파일만 임의 수정하지 않습니다.
+새 migration을 생성한 뒤 반드시 SQL을 검토합니다. schema 변경 없이 migration 파일만 임의 수정하지 않습니다. 실제 스키마 생성은 서버 첫 요청의 `ensureSchema()`(정본: `db/runtime.ts`의 `provisionSchema`)가 담당하며, 빈 DB에서도 자가 프로비저닝됩니다.
 
 ## ☁️ 배포
 
-현재 앱은 **ChatGPT Sites**에 연결돼 있습니다.
+**GitHub `main` push → Vercel 자동 빌드·배포**입니다. 공개 주소는 [wiggleweb.vercel.app](https://wiggleweb.vercel.app)입니다.
 
-```json
-{
-  "d1": "DB",
-  "r2": "ARTWORKS"
-}
+- Vercel 프로젝트 `wiggle-web`이 `main` 브랜치를 감시합니다. `main` push가 곧 운영 배포이므로 사용자만 실행합니다.
+- 운영 환경 변수 9종(`TURSO_*` 2, `R2_S3_*` 4, `GOOGLE_CLIENT_*` 2, `OPENAI_API_KEY`)은 Vercel 대시보드에서만 관리합니다. 값에 따옴표를 넣지 않습니다.
+- DB는 Turso(libSQL), 그림 파일은 Cloudflare R2(S3 API)입니다. 호스트 중립 어댑터라 다른 호스팅으로 옮겨도 코드 재공사가 없습니다.
+- 교사 인증은 구글 OAuth입니다. 도메인을 추가하면 구글 콘솔의 승인된 리디렉션 URI에 `https://<도메인>/api/auth/google/callback`을 함께 등록해야 합니다.
+- 저장·이미지·인증 경로를 바꾼 배포는 운영 실측으로 마무리합니다:
+
+```powershell
+npm.cmd run check:deployed -- https://wiggleweb.vercel.app <4자리 수업코드>
 ```
 
-- `.openai/hosting.json`의 기존 프로젝트 ID를 유지합니다.
-- D1과 R2는 논리 바인딩 이름만 저장소에 둡니다.
-- 운영 환경 변수는 Sites에서 관리합니다.
-- 검증된 정확한 Git commit에서 Sites version을 만들고 production에 배포합니다.
-- 다른 호스팅으로 이전할 때는 D1, R2, 교사 인증, 환경 변수와 migration 전략을 함께 다시 설계해야 합니다.
+- 이전 배포처였던 ChatGPT Sites와 Codex 릴리스 게이트는 2026-08-19 은퇴했습니다(이력: [docs/agent-pipeline.md](./docs/agent-pipeline.md)). `.openai/hosting.json`은 그 이력으로 보존합니다.
 
 ## 📁 프로젝트 구조
 
@@ -384,9 +385,10 @@ wiggle_web/
 │  ├─ teacher/                # 교사 화면 라우트
 │  └─ family/                 # 가족 제한 공유 라우트
 ├─ db/
-│  ├─ schema.ts               # D1 schema
-│  └─ runtime.ts              # runtime binding
-├─ drizzle/                   # D1 migrations
+│  ├─ adapters/               # Turso(libSQL)·R2(S3) 호스트 중립 어댑터 + 로컬 파일 폴백
+│  ├─ schema.ts               # Drizzle schema
+│  └─ runtime.ts              # binding 관문과 스키마 프로비저닝
+├─ drizzle/                   # SQLite migrations
 ├─ lib/
 │  ├─ lesson-content.ts       # 30개 교육 콘텐츠
 │  ├─ drawing-model.ts        # DrawDoc / DrawOp
@@ -397,10 +399,12 @@ wiggle_web/
 ├─ public/brand/              # 로고와 앱 아이콘
 ├─ public/lessons/            # 따라 그리기·관찰 그리기 참고 이미지
 ├─ tests/                     # 계약·보안·저장·UX 회귀 테스트
-├─ worker/                    # Cloudflare Worker 진입점
+│  └─ harness/                # 통합 테스트용 파일 DB·next start 서버 하네스
+├─ scripts/                   # 브라우저 실측·배포 실측·로컬 DB 초기화
 ├─ docs/                      # 구조·보안·UX·인수인계 문서
 ├─ CLAUDE.md                  # Claude Code 상시 작업 규칙
-└─ .openai/hosting.json       # 기존 Sites 프로젝트와 논리 바인딩
+├─ AGENTS.md                  # 에이전트 공통 규칙
+└─ .openai/hosting.json       # 은퇴한 Sites 연결 이력 (보존)
 ```
 
 ## 📊 현재 개발 상태
@@ -449,23 +453,22 @@ wiggle_web/
 - 치명적 데이터 손실 0건
 - 오류 뒤 한 번의 분명한 행동으로 복구
 
-## 🤝 개발·검증 협업
-
-이 저장소는 구현과 검증을 분리합니다.
+## 🤝 개발·배포 흐름
 
 ```text
-개발 에이전트
+에이전트 (Claude·Codex)
   → 기능 브랜치에서 구현
-  → 자동·브라우저 테스트
-  → 커밋 SHA와 남은 위험 보고
+  → 게이트: typecheck · lint · npm test(268) · check:browser
+  → 커밋·브랜치 push까지 준비, 남은 위험을 사실대로 보고
 
-독립 검증 에이전트
-  → 설명을 정답으로 삼지 않고 재현
-  → 보안·모바일·오류 흐름 공격적 검사
-  → GO일 때만 main 반영과 Sites 배포
+사용자
+  → git push origin <브랜치>:main  ← 이 한 번이 곧 운영 배포 (Vercel 자동)
+
+배포 후
+  → 저장·이미지·인증 경로 변경 시 check:deployed 운영 실측
 ```
 
-Claude Code는 루트 [`CLAUDE.md`](./CLAUDE.md)를 먼저 읽고, 상세 상태는 [개발 인수인계 문서](./docs/claude-handoff-2026-07-27.md)를 따릅니다.
+Claude Code는 루트 [`CLAUDE.md`](./CLAUDE.md), 그 외 에이전트는 [`AGENTS.md`](./AGENTS.md)를 먼저 읽습니다.
 
 ## 📚 문서
 
@@ -478,7 +481,8 @@ Claude Code는 루트 [`CLAUDE.md`](./CLAUDE.md)를 먼저 읽고, 상세 상태
 - [저학년 UX·시장 점검](./docs/ux-market-audit-2026-07.md)
 - [편집 기능·Excalidraw 제한 도입 계획](./docs/editor-roadmap.md)
 - [Claude 개발 인수인계](./docs/claude-handoff-2026-07-27.md)
-- [Claude → Codex 자동 검증·배포 파이프라인](./docs/agent-pipeline.md)
+- [Vercel 재플랫폼 계획·완료 기록](./docs/vercel-migration-plan.md)
+- [Claude → Codex 자동 검증·배포 파이프라인 (은퇴)](./docs/agent-pipeline.md)
 - [브랜드 자산 manifest](./public/brand/asset-manifest.json)
 
 ### 캔버스 짧은 글씨
