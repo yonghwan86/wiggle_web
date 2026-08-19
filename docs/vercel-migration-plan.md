@@ -45,17 +45,15 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 - `PRAGMA table_info`·`sqlite_master` 조회(ensureSchema 업그레이드 경로) 동작 확인.
 - PBKDF2 고정 벡터: workerd 테스트를 Node crypto 벡터로 포팅(같은 파라미터, 같은 결과).
 
-## 운영 데이터 (조사 완료 — 이전 필수)
+## 운영 데이터 (확정: 이전 없음 — 신규 시작)
 
-2026-08-19 Codex 실측(`docs/agent-handoff/operational-data-audit-20260819.md`): **실사용 데이터 있음.**
+2026-08-19 사용자 최종 결정: **운영 데이터를 이전하지 않는다.** 새 서버는 빈 Turso에서 `ensureSchema()` 자가 프로비저닝으로 시작하고, 구글 로그인 → 학급 생성 → 수업 코드 → 학생 입장 → 그림 저장 흐름으로 새로 연다(이 전 구간은 로컬 E2E로 실동작 확인 완료).
 
-- D1: teachers 2 · classrooms 9 · student_profiles 27 · artworks 32 (완료 7, artwork_versions 1). 과거 인수인계 기록이 특정 프로필을 실제 학생으로 명시 — **이름 패턴 자동 필터로 삭제·제외 금지.**
-- 2026-08-19 사용자 결정: **전체가 아니라 사용자가 직접 선별한 일부만 이전한다.** 선별 단위는 학급(9개 중 선택)이 기본 — 선택 학급의 데이터 그래프(학생 프로필·recovery_credentials·작품·artwork_versions·reflections·코칭 기록·teacher_messages·message_receipts)가 한 묶음으로 이동한다. 자동 필터 금지 원칙은 유지되고, 판단은 소유자(사용자)가 시트를 보고 내린다.
-- 이전 제외 가능: device_sessions(만료 세션 — 재입장은 recovery_credentials로 가능), artwork_mutations(옛 저장 멱등 기록 — 새 플랫폼에서 무의미), subscription_*(기능 off), family_share_*(만료분).
-- 절차: ① Codex가 학급별 선별 시트 생성(학급명·학생 별명·작품 수·최근 활동) → ② 사용자가 유지 학급 지정 → ③ Codex가 선택분 export(INSERT 문 또는 JSON) 생성 → ④ Claude가 Turso 반입 스크립트로 적재·행 수 검증 → ⑤ 선택 작품이 참조하는 R2 키만 회수.
-- R2: D1이 참조하는 고유 키 31개(선별 후 줄어듦). 실제 객체 수·용량 **미확인** — Sites 도구가 R2 목록 미제공.
-- **미해결: Sites 관리 R2에서 선택 작품 이미지를 꺼낼 경로.** 후보: ① Sites의 임시 읽기 전용 자격증명 ② 마지막 Sites 배포로 교사 인증 임시 export 엔드포인트 ③ 수량이 적으면 앱 화면 수동 회수(선별로 현실성 상승). 6단계 전에 확정한다.
-- 인쇄된 QR·링크가 기존 Sites 도메인을 가리키는 문제: 새 도메인 전환 시 수업 코드 재안내 필요(4자리 코드는 새 도메인에서 그대로 유효).
+- 조사 결과(실사용 학생 22+·작품 29+, `operational-data-audit-20260819.md`)는 근거 문서로 유지한다.
+- **안전장치: 기존 Sites 배포(v32)와 그 D1/R2는 삭제하지 않고 보존한다.** 과거 작품이 필요해지면 Sites 화면에서 열람·수동 회수할 수 있다. Sites 프로젝트 폐기는 사용자 명시 승인 없이는 수행하지 않는다.
+- 권장(선택): Sites를 완전히 접기 전에 완료 작품 7점을 교사 화면에서 수동 저장해 보관.
+- 이 결정으로 선별 시트·선택분 export·Turso 반입 스크립트·R2 추출 경로 문제는 전부 폐기(불필요)한다.
+- 인쇄된 QR·링크는 기존 Sites 도메인을 가리킨다 — 새 도메인 전환 시 교사에게 새 주소·수업 코드 재안내가 필요하다.
 
 ## 테스트 전환
 
@@ -71,7 +69,7 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 3. **4.5MB 저장 분리**: 위 확정안 구현. 게이트: 3.5MB 완성본 실저장 + 오프라인 큐 회귀 테스트.
 4. **테스트 하네스 포팅**: 전체 스위트 그린 + browser-check 3뷰포트 실패 0.
 5. **교사 인증 교체** ✅ 코드 완료(2026-08-18, 실왕복 검증 대기): 구글 OAuth 코드 플로우(PKCE S256, state 상수시간 비교, 미검증 이메일 거부)를 자체 구현해 기존 teacher_sessions 재사용 — 새 패키지 0개. SIWC(oai-* 헤더) 신뢰 경로는 Sites 밖에서 헤더 위조로 임의 교사 로그인이 가능해 완전 제거. 게이트: 단위 테스트 7종 + security-regressions 재작성 + 전 스위트·browser-check 통과 + env 미설정 시 503 fail-closed 실측. 실제 구글 왕복은 사용자의 OAuth 클라이언트 생성 후 실측.
-6. **운영 데이터 조사·이전** (Codex) → **Vercel 연결**: repo import(사용자) → env(OPENAI_API_KEY·TURSO_DATABASE_URL·TURSO_AUTH_TOKEN·R2 S3 자격증명·플래그) → Preview 검증 → Production.
+6. **Vercel 연결** (데이터 이전 없음): repo import(사용자) → env(OPENAI_API_KEY·TURSO_DATABASE_URL·TURSO_AUTH_TOKEN·R2 S3 자격증명·GOOGLE_CLIENT_ID/SECRET·플래그) → Preview 검증(빈 DB 자가 프로비저닝 확인 포함) → Production.
 7. **문서·파이프라인 재정의**: CLAUDE.md·AGENTS.md를 GitHub+Vercel 흐름으로 교체.
 
 ## 남은 위험 (전환기)
@@ -93,4 +91,3 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 - Vercel 대시보드에서 repo import (6단계).
 - Turso 무료 계정 + DB 1개 (6단계 전).
 - R2 S3 API 토큰 발급 (Cloudflare 대시보드, 6단계 전).
-- Codex에 운영 D1/R2 조사 지시 (6단계 전).
