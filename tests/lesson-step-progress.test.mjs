@@ -72,7 +72,9 @@ test("the studio gates next and complete but keeps an explicit child-controlled 
   assert.doesNotMatch(studio, /한 번 그리고 완성|이번 단계 넘기기|마지막으로 네 생각을 하나 더 그려 볼까/);
   assert.match(css, /\.studio-body \{[^}]*grid-template-columns:240px minmax\(0,1fr\) 180px;/);
   assert.match(css, /\.lesson-step-prompt-actions button \{[^}]*white-space:nowrap;/);
-  assert.match(css, /\.step-panel \.lesson-step-prompt\s*\{\s*grid-column:1\/-1;\s*grid-row:5;/);
+  // 태블릿 세로: 시범·이전·다음 버튼들이 3행 한 줄로 합쳐져 프롬프트는 4행이다
+  // (2026-08-20 iPad 실기기 높이 예산 수정). 전체 폭 한 행 차지가 이 단언의 핵심.
+  assert.match(css, /\.step-panel \.lesson-step-prompt\s*\{\s*grid-column:1\/-1;\s*grid-row:4;/);
   assert.match(css, /\.lesson-step-prompt-actions\s*\{\s*grid-template-columns:1fr;/);
   assert.match(studio, /lessonStepPrompt === "unfinished-lesson"/);
   assert.doesNotMatch(studio, /창의력 점수|그림 점수|정답률/);

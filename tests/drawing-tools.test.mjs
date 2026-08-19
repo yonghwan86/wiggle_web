@@ -174,7 +174,9 @@ test("an empty free canvas tells a first-time child what to do", () => {
   assert.match(studio, /!lesson && !aiGuide && !documentState\.ops\.length/);
   assert.match(studio, /✏️ 하얀 종이에 그어 봐!/);
   assert.match(css, /\.guide-notice,\.canvas-start-hint \{[^}]*pointer-events:none/);
-  assert.match(studio, /className=\{`studio-body \$\{grimiOpen \|\| lesson \? "" : "without-step-panel"\}\$\{grimiOpen \? " grimi-open" : ""\}\$\{grimiOpen && grimiCollapsed \? " grimi-collapsed" : ""\}`\}/);
+  // tool-options-open: 도형·글씨 옵션이 열리면 태블릿 세로에서 패널이 커지고 캔버스가
+  // 양보한다 — 빌드가 :has() 조합을 떨어뜨려 React가 클래스로 알린다 (2026-08-20).
+  assert.match(studio, /className=\{`studio-body \$\{grimiOpen \|\| lesson \? "" : "without-step-panel"\}\$\{grimiOpen \? " grimi-open" : ""\}\$\{grimiOpen && grimiCollapsed \? " grimi-collapsed" : ""\}\$\{studioTool === "shape" \|\| studioTool === "text" \? " tool-options-open" : ""\}`\}/);
   assert.match(css, /\.studio-body\.without-step-panel \{ grid-template-columns:minmax\(0,1fr\) 180px; \}/);
   assert.match(css, /@media \(max-width:720px\)[\s\S]*\.studio-body\.without-step-panel \{ display:flex; \}/);
   assert.match(css, /@media \(max-width:900px\) and \(max-height:500px\) and \(orientation:landscape\)[\s\S]*\.studio-body\.without-step-panel \{ grid-template-columns:minmax\(0,1fr\) 200px; \}/);

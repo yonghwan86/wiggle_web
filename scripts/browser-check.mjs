@@ -19,6 +19,9 @@ const CHROME_CANDIDATES = [
 
 const VIEWPORTS = IPAD_MODE ? [
   { name: "iPad-768x1024", width: 768, height: 1024 },
+  // 실기기 사파리는 상단 크롬(탭 바 포함 ~140px)만큼 낮다 — 2026-08-20 iPad mini 실기기에서
+  // 이 높이 때문에 도구 패널 하단(굵기·색)이 접혀 들어간 보고가 있었다. 낮은 높이를 상시 검증한다.
+  { name: "iPad-768x880-safari", width: 768, height: 880 },
   { name: "iPad-820x1180", width: 820, height: 1180 },
 ] : DESKTOP_MODE ? [
   { name: "desktop-1440x900", width: 1440, height: 900 },
@@ -564,12 +567,13 @@ async function main() {
 
           // 핀치 폴백(펜 없는 기기): 한 손가락으로 긋다 두 번째 손가락이 합류하면
           // 진행 중 그리기를 버리고 핀치 확대가 실제로 시작돼야 한다.
-          if (viewport.name === "390x844") {
-            // next dev + CDP 환경에서 이 뷰포트만 이 지점의 터치 전달이 페이지에 0건
+          if (viewport.name === "390x844" || viewport.name === "iPad-768x880-safari") {
+            // next dev + CDP 환경에서 이 뷰포트들만 이 지점의 터치 전달이 페이지에 0건
             // 도달한다(마우스 입력·형제 뷰포트 정상, 페이지 스케일 1, 재무장·리셋 무효).
-            // 핀치 로직 자체는 320×568·844×390 실디스패치와 단위 테스트(two fingers
-            // zoom, pinch clamp)로 커버된다. 원인은 vercel-migration-plan.md 남은 위험 참조.
-            notes.push(`  SKIP ${viewport.name} 손가락 두 개 핀치 — CDP 터치 전달 환경 문제, 320·844 실측과 단위 테스트로 커버`);
+            // 768×880은 같은 폭의 768×1024가 같은 실행에서 통과해 레이아웃 문제가 아님을
+            // 확인했다. 핀치 로직 자체는 320×568·844×390·768×1024 실디스패치와 단위
+            // 테스트(two fingers zoom, pinch clamp)로 커버된다.
+            notes.push(`  SKIP ${viewport.name} 손가락 두 개 핀치 — CDP 터치 전달 환경 문제, 형제 뷰포트 실측과 단위 테스트로 커버`);
           } else {
             rect = await probeCanvas();
             const pinchCenter = at(rect, 0.5, 0.5);
