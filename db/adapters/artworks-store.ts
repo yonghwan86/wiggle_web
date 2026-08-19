@@ -65,7 +65,12 @@ export class S3ArtworksStore implements ArtworksStore {
     if (options?.httpMetadata?.cacheControl) headers["cache-control"] = options.httpMetadata.cacheControl;
     for (const [name, metaValue] of Object.entries(options?.customMetadata ?? {})) headers[`x-amz-meta-${name.toLowerCase()}`] = metaValue;
     const body = toUint8(value);
-    const response = await this.aws.fetch(this.objectUrl(key), { method: "PUT", headers, body: body as unknown as BodyInit });
+    // 서명은 aws4fetch로 하되 전송은 원본 버퍼로 다시 만든다. aws.fetch()는 본문을
+    // Request 객체(스트림)로 감싸는데, Next 서버 런타임의 fetch는 스트림 본문을
+    // Content-Length 없이(chunked) 보내고 R2는 그런 PUT을 411로 거절한다
+    // (2026-08-19 운영에서 1KB 초과 업로드 전멸로 실측 — 독립 Node에서는 재현 안 됨).
+    const signed = await this.aws.sign(this.objectUrl(key), { method: "PUT", headers, body: body as unknown as BodyInit });
+    const response = await fetch(signed.url, { method: "PUT", headers: signed.headers, body: body as unknown as BodyInit });
     if (!response.ok) throw new Error(`작품 파일 저장에 실패했어요. (S3 ${response.status})`);
   }
 
