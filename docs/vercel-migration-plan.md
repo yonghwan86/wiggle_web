@@ -66,7 +66,7 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 
 1. **어댑터** ✅ 완료(2026-08-18): `@libsql/client`+`aws4fetch` 설치, `db/adapters/turso-d1.ts`(PRAGMA→pragma_table_info 심 포함), `db/adapters/artworks-store.ts`(S3 + 로컬 파일 폴백), `db/runtime.ts` 교체. 어댑터 계약 테스트 6종(meta.changes·batch 원자성 롤백·PRAGMA 심·저장소 왕복·키 탈출 차단) 실동작 통과.
 2. **빌드 전환** ✅ 완료(2026-08-18): next.config(경로별 보안 헤더 재현+devIndicators off+serverExternalPackages), scripts를 next dev/build/start로 교체. `next build` 성공, 전환기 테스트 201개 통과, browser-check 3뷰포트 "모든 브라우저 검증 통과", 경로별 보안 헤더 curl 실측 일치. worker/·vite.config·vinext 의존성 제거는 4단계 하네스 포팅과 함께 정리.
-3. **4.5MB 저장 분리**: 위 확정안 구현. 게이트: 3.5MB 완성본 실저장 + 오프라인 큐 회귀 테스트.
+3. **4.5MB 저장 분리** ✅ 완료(2026-08-19): 완성 PNG를 raw 바이너리 별도 업로드(`PUT /api/artworks/[id]/image?kind=final`, 후보 키)로 분리하고 완성 JSON은 키만 참조. 분리는 전송 계층(`flushSaves`+`lib/save-transmit.ts`)에서만 일어나 큐 스키마·DrawingStudio 무수정, 온라인·오프라인 재전송 동일 경로. 키는 학생·작품 프리픽스 강제 + 저장소 head 실측으로 검증. 게이트: `scripts/check-large-save.mjs`로 3.4MB 실저장·회수·경계(남의 키/유령 키 413) 통과, 완성 JSON 435바이트, 전 스위트·browser-check 통과.
 4. **테스트 하네스 포팅**: 전체 스위트 그린 + browser-check 3뷰포트 실패 0.
 5. **교사 인증 교체** ✅ 코드 완료(2026-08-18, 실왕복 검증 대기): 구글 OAuth 코드 플로우(PKCE S256, state 상수시간 비교, 미검증 이메일 거부)를 자체 구현해 기존 teacher_sessions 재사용 — 새 패키지 0개. SIWC(oai-* 헤더) 신뢰 경로는 Sites 밖에서 헤더 위조로 임의 교사 로그인이 가능해 완전 제거. 게이트: 단위 테스트 7종 + security-regressions 재작성 + 전 스위트·browser-check 통과 + env 미설정 시 503 fail-closed 실측. 실제 구글 왕복은 사용자의 OAuth 클라이언트 생성 후 실측.
 6. **Vercel 연결** (데이터 이전 없음): repo import(사용자) → env(OPENAI_API_KEY·TURSO_DATABASE_URL·TURSO_AUTH_TOKEN·R2 S3 자격증명·GOOGLE_CLIENT_ID/SECRET·플래그) → Preview 검증(빈 DB 자가 프로비저닝 확인 포함) → Production.
@@ -77,7 +77,6 @@ v2 변경: ChatGPT 독립 검토(2026-08-18)를 코드로 재확인해 반영 �
 - Miniflare 통합 테스트 10개(classroom-entry-flow·student-join-atomic·rate-limit 등)는 4단계 하네스 포팅 전까지 실행 목록에서 보류 — `npm run test:legacy-harness` 안내 문구 참조. 해당 검증 공백은 browser-check E2E(실 API 호출)와 어댑터 계약 테스트가 부분 커버.
 - browser-check의 390×844 핀치 확대 1항목은 SKIP: next dev + CDP 환경에서 이 뷰포트만 해당 지점의 터치 이벤트가 페이지에 0건 도달(마우스·형제 뷰포트 정상, 페이지 스케일 1, 터치 재무장·리셋 무효). 핀치 로직은 320×568·844×390 실디스패치와 단위 테스트 2종으로 커버. 6단계 배포 검증에서 실기기로 재확인.
 - PRAGMA 심·batch 원자성은 로컬 libsql 파일에서 검증 완료 — 원격 Turso(https)에서의 재검증은 6단계 연결 시 1회 수행.
-- 4.5MB 저장 분리(3단계)는 미착수 — 완성 저장은 로컬에선 문제없고 Vercel 배포 전 필수.
 - 구글 로그인 실왕복(구글 → 콜백 → 교사 세션)은 사용자의 OAuth 클라이언트 생성 대기 — 생성 즉시 로컬에서 실측한다. 리디렉션 URI는 정확 일치가 필요하므로 실측 시 dev 서버 포트를 3000에 고정한다.
 
 ## 열린 결정 (사용자)

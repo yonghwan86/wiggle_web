@@ -22,6 +22,14 @@ function decodeImage(dataUrl: unknown, maxBytes: number) {
   return bytes;
 }
 
+// 별도 업로드된 완성 그림 후보 키는 이 학생·이 작품의 업로드 프리픽스만 허용한다.
+// 임의 키를 받으면 다른 학생의 객체를 자기 완성본으로 연결할 수 있다.
+function candidateFinalKey(value: unknown, studentId: string, artworkId: string) {
+  if (typeof value !== "string" || value.length > 300 || !/^[A-Za-z0-9._/-]+$/.test(value)) return null;
+  const prefix = `students/${studentId}/artworks/${artworkId}/objects/upload-`;
+  return value.startsWith(prefix) && value.endsWith("-final.png") ? value : null;
+}
+
 async function priorMutation(requestId: string, artworkId: string, studentId: string) {
   return bindings().DB.prepare(`SELECT result_revision AS resultRevision FROM artwork_mutations WHERE request_id = ? AND artwork_id = ? AND student_id = ?`).bind(requestId, artworkId, studentId).first<{ resultRevision: number }>();
 }
@@ -69,10 +77,17 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 
   const newRevision = artwork.revision + 1; const thumbnail = decodeImage(payload.thumbnailDataUrl, 500_000); const finalImage = complete ? decodeImage(payload.finalDataUrl, 3_500_000) : null;
   if (payload.thumbnailDataUrl && !thumbnail) return jsonError("썸네일 파일을 확인해 주세요.", 413);
-  if (complete && !finalImage) return jsonError("완성 그림 파일을 확인해 주세요.", 413);
+  // Vercel 4.5MB 본문 한도 대응: 완성 PNG는 별도 바이너리 업로드로 먼저 올라오고,
+  // 이 요청은 그 후보 키만 참조할 수 있다. 실제 존재·크기를 저장소에서 확인한다.
+  const uploadedFinalKey = complete && !finalImage ? candidateFinalKey(payload.finalImageKey, student.id, artworkId) : null;
+  if (complete && !finalImage && !uploadedFinalKey) return jsonError("완성 그림 파일을 확인해 주세요.", 413);
+  if (uploadedFinalKey) {
+    const uploaded = await bindings().ARTWORKS.head(uploadedFinalKey);
+    if (!uploaded || uploaded.size > 3_500_000) return jsonError("완성 그림 파일을 확인해 주세요.", 413);
+  }
   const nonce = randomToken(10);
   const thumbnailKey = thumbnail ? `students/${student.id}/artworks/${artworkId}/objects/r${newRevision}-${requestId}-${nonce}-thumb.png` : null;
-  const finalKey = finalImage ? `students/${student.id}/artworks/${artworkId}/objects/r${newRevision}-${requestId}-${nonce}-final.png` : null;
+  const finalKey = finalImage ? `students/${student.id}/artworks/${artworkId}/objects/r${newRevision}-${requestId}-${nonce}-final.png` : uploadedFinalKey;
   // 같은 키를 candidate → committed로 두 번 put하면 이미지 인코딩 크기만큼 R2 업로드를
   // 매 저장마다 두 번 기다린다. 객체는 DB가 그 키를 가리키기 전에는 외부에서 발견할 수 없으므로
   // 한 번만 쓰고, DB 커밋 실패 시 아래 보상 삭제로 회수한다.

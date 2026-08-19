@@ -6,7 +6,7 @@
  * 운영은 기존 R2 버킷을 S3 호환 API로 계속 쓰고(이미지 이전 없음), 로컬 개발·테스트는
  * 자격증명 없이 파일 저장소로 동작한다. 아이 그림은 어떤 구현에서도 공개 URL을 만들지 않는다.
  */
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AwsClient } from "aws4fetch";
 
@@ -25,6 +25,8 @@ export type StoredObject = {
 export interface ArtworksStore {
   put(key: string, value: ArrayBuffer | ArrayBufferView, options?: PutOptions): Promise<void>;
   get(key: string): Promise<StoredObject | null>;
+  // 완성 저장이 후보 키의 존재·크기만 확인할 때 3.5MB 본문을 내려받지 않게 한다.
+  head(key: string): Promise<{ size: number } | null>;
   delete(key: string): Promise<void>;
 }
 
@@ -87,6 +89,13 @@ export class S3ArtworksStore implements ArtworksStore {
     };
   }
 
+  async head(key: string): Promise<{ size: number } | null> {
+    const response = await this.aws.fetch(this.objectUrl(key), { method: "HEAD" });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`작품 파일 확인에 실패했어요. (S3 ${response.status})`);
+    return { size: Number(response.headers.get("content-length") ?? 0) };
+  }
+
   async delete(key: string): Promise<void> {
     const response = await this.aws.fetch(this.objectUrl(key), { method: "DELETE" });
     if (!response.ok && response.status !== 404) throw new Error(`작품 파일 삭제에 실패했어요. (S3 ${response.status})`);
@@ -136,6 +145,16 @@ export class FsArtworksStore implements ArtworksStore {
       customMetadata: meta.customMetadata,
       arrayBuffer: async () => buffer,
     };
+  }
+
+  async head(key: string): Promise<{ size: number } | null> {
+    const filePath = this.resolveKey(key);
+    try {
+      return { size: (await stat(filePath)).size };
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw cause;
+    }
   }
 
   async delete(key: string): Promise<void> {

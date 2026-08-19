@@ -8,6 +8,9 @@ const sessionSource = await readFile(sessionUrl, "utf8");
 const executableSource = sessionSource.replace(
   'from "./drawing-model"',
   `from "${new URL("../lib/drawing-model.ts", import.meta.url).href}"`,
+).replace(
+  'from "./save-transmit"',
+  `from "${new URL("../lib/save-transmit.ts", import.meta.url).href}"`,
 );
 const executableJavaScript = ts.transpileModule(executableSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

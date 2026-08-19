@@ -1,6 +1,7 @@
 "use client";
 
 import { DrawDocument, validateDrawDocument } from "./drawing-model";
+import { base64ToBytes, finalImageUploadUrl, splitCompletionBody } from "./save-transmit";
 
 export type DeviceProfile = {
   studentId: string;
@@ -276,7 +277,29 @@ export async function flushSaves(studentId?: string, url?: string): Promise<Flus
     if (save.conflict) { conflicts.push(save); continue; }
     if (!profile || profile.studentId !== save.studentId) continue;
     try {
-      const response = await fetch(save.url, { method: "PUT", headers: { "content-type": "application/json", authorization: `Bearer ${profile.deviceToken}` }, body: save.body, cache: "no-store" });
+      // 완성 저장은 큐 본문 속 base64 이미지를 raw 바이너리 별도 요청으로 먼저 올린다
+      // (Vercel 4.5MB 본문 한도). 업로드된 후보 키를 참조해야 완성 JSON이 한도 안에 든다.
+      let transmitBody = save.body;
+      const split = splitCompletionBody(save.body);
+      if (split) {
+        const imageBytes = base64ToBytes(split.imageBase64);
+        if (!imageBytes) { preserved += 1; continue; }
+        const imageResponse = await fetch(finalImageUploadUrl(save.url, save.requestId), { method: "PUT", headers: { "content-type": "image/png", authorization: `Bearer ${profile.deviceToken}` }, body: imageBytes.buffer as ArrayBuffer, cache: "no-store" });
+        const imageDisposition = flushResponseDisposition(imageResponse.status);
+        if (imageDisposition === "conflict") {
+          const data = await imageResponse.json().catch(() => ({})) as { serverRevision?: number };
+          const conflicted = { ...save, conflict: true, conflictRevision: data.serverRevision };
+          await updateSave(db, conflicted);
+          for (const stale of scoped) if (shouldDeleteSiblingAfterFlush(save, stale)) await deleteSave(db, stale.requestId);
+          conflicts.push(conflicted); continue;
+        }
+        if (imageDisposition === "preserve") { preserved += 1; continue; }
+        if (imageDisposition === "retry") break;
+        const uploaded = await imageResponse.json().catch(() => ({})) as { key?: string };
+        if (typeof uploaded.key !== "string" || !uploaded.key) { preserved += 1; continue; }
+        transmitBody = split.bodyWithKey(uploaded.key);
+      }
+      const response = await fetch(save.url, { method: "PUT", headers: { "content-type": "application/json", authorization: `Bearer ${profile.deviceToken}` }, body: transmitBody, cache: "no-store" });
       const disposition = flushResponseDisposition(response.status);
       if (disposition === "conflict") {
         const data = await response.json().catch(() => ({})) as { serverRevision?: number };
