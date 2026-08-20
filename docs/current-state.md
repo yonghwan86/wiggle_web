@@ -151,6 +151,13 @@
 - 빌드 버그 추가 확인: 자손 선택자 `.landing-trust-note svg`로 쓰면 뒤 무대 블록의 동일 문자열 선택자와 병합되며 앞 규칙이 산출물에서 소실된다(`:has()` 소실과 같은 부류) — `>` 자식 결합자로 회피, 소스 주석으로 고정.
 - 검증: typecheck·lint·268/268(EXIT=0)·`git diff --check`, browser-check 기본 3뷰포트 실패 0, `--ipad` 3뷰포트 실패 0(768×880 핀치 1건은 기록된 CDP 환경 문제 SKIP), 896×634(시안 기준 크기) 무대 렌더 불변 실측, 1024×1366(iPad Pro 세로) 44px 미달 0·가로 넘침 0. `--desktop` 8건 실패는 main과 완전 동일한 기존 문제(무대 자체의 소형 컨트롤, 데스크톱 굵기 버튼 폭 25px)로 이번 변경과 무관 — 별도 판단 대상.
 
+## 2026-08-20 README·대표 이미지 현행화 (claude/readme-refresh)
+
+- `public/og.png`(README 히어로 겸 OG 카드)가 7월 22일 MVP 1의 구브랜드 배너(꿈틀 로고)로 남아 있던 것을 현재 그림책 대문의 1488×1057 실캡처로 교체했다(2.27MB→1.39MB). `app/layout.tsx`의 OG 크기 메타데이터도 1488×1057로 갱신.
+- README에 실캡처 미리보기 3장(태블릿 입장 2열 카드·그리기 화면·교사 진행실, `docs/images/`) 섹션을 추가했다.
+- 본문 정정: 교사 세션 쿠키 서술을 실제 코드와 일치시킴(구글 콜백 발급만 Lax, 그 외 Strict — e2df6de 반영), `/student/activities` 경로 추가, `check:browser`의 `--ipad`(768×880 포함)·`--desktop` 모드 안내 추가.
+- 검증: typecheck·lint·268/268(EXIT=0)·diff-check, 로컬 서버에서 `/og.png` 신규 파일 서빙 확인. `docs/security-data-model.md`에 은퇴한 worker/D1 서술이 남은 것은 별도 작업으로 분리.
+
 ## 다음 작업 시작 전 확인
 
 1. 이 문서와 `product-decisions.md`, `pending-decisions.md`를 읽는다.

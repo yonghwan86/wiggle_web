@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/og.png" alt="Wiggle Web — 그림으로 생각하고, 말로 자라요" width="100%" />
+  <img src="./public/og.png" alt="Wiggle 대문 — 오늘은 어떤 생각을 그려볼까요? 4자리 수업 코드로 바로 입장" width="100%" />
 </p>
 
 <h1 align="center">Wiggle Web</h1>
@@ -38,6 +38,30 @@
 
 > [!IMPORTANT]
 > Wiggle Web은 현재 **활발히 개발 중인 교육용 프로토타입**입니다. 핵심 기능과 서버 저장은 연결돼 있고 주요 모바일·태블릿 화면도 회귀 검증하지만, 실제 비문해 저학년의 독립 사용성과 학교 운영 적합성은 별도 현장 검증이 필요합니다. 공개 프리뷰는 제품 방향과 기능 확인용입니다.
+
+## 🖼️ 화면 미리보기
+
+위 배너와 아래 화면은 모두 실제 앱 캡처입니다 (2026-08-20 기준).
+
+<table>
+  <tr>
+    <td rowspan="2" width="45%" valign="top">
+      <img src="./docs/images/entry-tablet.png" alt="학생 입장 — 태블릿 한 화면에서 동물·별명·그림 비밀번호를 고르는 2열 카드" />
+    </td>
+    <td width="55%">
+      <img src="./docs/images/studio-desktop.png" alt="그리기 화면 — 도화지, 펜 4종과 굵기 점, 색 팔레트, 그리미 부르기" />
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <img src="./docs/images/teacher-room.png" alt="교사 수업 진행실 — 수업 코드와 QR, 오늘의 활동, 짧은 도움말, 학생 진행" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub>학생 입장 — 이름 대신 동물·별명·그림 비밀번호</sub></td>
+    <td align="center"><sub>그리기 화면(위) · 교사 수업 진행실(아래)</sub></td>
+  </tr>
+</table>
 
 ---
 
@@ -235,7 +259,7 @@ flowchart TB
 - 교사 요청마다 담당 학급 소유권 확인
 - 학급 코드와 QR만으로 학생 목록이나 작품 열람 불가
 - 작품 저장 revision CAS와 요청 멱등성
-- 같은 출처 교사 쓰기와 `SameSite=Strict` 쿠키
+- 같은 출처 교사 쓰기 검사와 `HttpOnly` 교사 세션 쿠키 — 구글 콜백이 발급하는 세션만 `SameSite=Lax`(리디렉션 연쇄 생존), 그 외 발급은 `Strict`
 - 학생·교사·AI 요청별 rate limit
 - 전체 채팅 원문 대신 제품에 필요한 구조화 사건만 저장
 
@@ -250,6 +274,7 @@ flowchart TB
 | `/join/:token` | QR·토큰 입장 |
 | `/join/recover` | 이전 개인 QR 호환 경로(기본 학생 입장 UI에는 표시하지 않음) |
 | `/student` | 학생 홈과 오늘의 추천 |
+| `/student/activities` | 활동 고르기 |
 | `/student/practice` | 1단계 선·도형 |
 | `/student/guided` | 2단계 따라 그리기 |
 | `/student/observe` | 3단계 관찰 그리기 |
@@ -338,6 +363,13 @@ npm.cmd run dev            # 별도 창
 npm.cmd run check:browser
 ```
 
+태블릿·데스크톱 화면을 바꿨다면 같은 명령에 모드를 붙여 확장 뷰포트도 실측합니다.
+
+```powershell
+npm.cmd run check:browser -- http://localhost:3000 --ipad      # 768×1024 · 768×880(사파리 실높이) · 820×1180
+npm.cmd run check:browser -- http://localhost:3000 --desktop   # 1440×900 · 1920×1080
+```
+
 > [!WARNING]
 > 자동 테스트 통과는 실제 저학년 UX 통과를 의미하지 않습니다. `check:browser`는 실측이지만 headless 환경이며, 실기기(iPad Safari·Android Chrome)와 실제 아동 관찰을 대신하지 못합니다.
 
@@ -346,6 +378,7 @@ npm.cmd run check:browser
 - `320 × 568` 세로
 - `390 × 844` 세로
 - `844 × 390` 가로
+- 태블릿 화면을 바꿨다면 `--ipad` 3종(특히 사파리 상단 크롬을 뺀 `768 × 880`)
 - 가능하면 실제 iPad Safari와 Android Chrome
 
 ## 🗃️ 데이터베이스 변경

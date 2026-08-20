@@ -27,7 +27,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       type: "website",
-      images: [{ url: new URL("/og.png", metadataBase), width: 1728, height: 910, alt: "Wiggle Web 교실 그림 학습" }],
+      images: [{ url: new URL("/og.png", metadataBase), width: 1488, height: 1057, alt: "Wiggle Web 교실 그림 학습" }],
     },
     twitter: {
       card: "summary_large_image",
