@@ -128,12 +128,14 @@ test("wide picture-book screens keep short landing and join copy on one line", a
 
 test("normal-size screens scale the approved landing art and live controls as one 1488x1057 stage", async () => {
   const css = await read("../app/globals.css");
-  const start = css.indexOf("/* The approved landing is one 1488×1057 stage: artwork and live HTML scale together. */");
+  const start = css.indexOf("/* The approved landing is one 1488×1057 stage: artwork and live HTML scale together.");
   const end = css.indexOf("@media (max-width:340px)", start);
   assert.ok(start >= 0 && end > start, "expected the approved landing stage rules");
   const stage = css.slice(start, end);
 
-  assert.match(stage, /@media \(min-width:601px\) and \(min-height:601px\)/);
+  // 무대는 가로 화면(기존 601px 경계 유지)과 1025px 이상 전용 — 세로 태블릿(601~1024px)은
+  // cqw 축소가 터치 목표 44px을 깨서 제외한다 (2026-08-20 iPad 실측).
+  assert.match(stage, /@media \(min-width:601px\) and \(min-height:601px\) and \(orientation:landscape\), \(min-width:1025px\) and \(min-height:601px\)/);
   assert.match(stage, /\.landing-illustration-wrap \{[\s\S]*container-type:inline-size;[\s\S]*aspect-ratio:1488\/1057;/);
   assert.match(stage, /\.landing \.topbar \{[\s\S]*position:absolute;/);
   assert.match(stage, /\.landing-illustration \{[\s\S]*position:absolute;[\s\S]*inset:0;/);

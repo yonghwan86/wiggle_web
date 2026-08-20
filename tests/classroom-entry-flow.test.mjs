@@ -42,7 +42,8 @@ test("wide/tablet entry stays one screen and only phones or short viewports use 
   ]);
   assert.match(join, /type MobileStep = 1 \| 2 \| 3/);
   assert.match(join, /mobile-entry-progress/);
-  assert.match(css, /@media \(min-width:601px\) and \(min-height:601px\) and \(max-width:900px\)/);
+  // 한 화면 2열 입장 카드: 기존 601~900px에 더해 무대에서 제외된 세로 901~1024px도 맡는다 (2026-08-20 iPad 44px 실측).
+  assert.match(css, /@media \(min-width:601px\) and \(min-height:601px\) and \(max-width:900px\), \(min-width:901px\) and \(max-width:1024px\) and \(min-height:601px\) and \(orientation:portrait\)/);
   assert.match(css, /grid-template-columns:minmax\(245px,42%\) minmax\(0,1fr\)/);
   assert.match(css, /@media \(max-width:600px\), \(max-height:600px\)/);
   assert.match(css, /\.join-step \{ display:none; \}/);
