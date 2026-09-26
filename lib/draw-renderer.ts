@@ -1,4 +1,4 @@
-import { drawingTextGraphemes, visibleDrawOperations, type DrawOp } from "@/lib/drawing-model";
+import { drawingTextGraphemes, drawnStrokeWidth, visibleDrawOperations, type DrawOp } from "@/lib/drawing-model";
 import { computeFloodFillMask, paintFloodFillMask, sampleRgb } from "@/lib/flood-fill";
 
 /* 도화지 크기. 숫자를 주면 예전처럼 정사각이고, 가로 도화지는 {width,height}를 준다.
@@ -215,7 +215,7 @@ export function renderDrawOperation(context: CanvasRenderingContext2D, op: DrawO
   // 도구별 질감: 크레용은 반투명(기존 렌더 보존을 위해 값 불변), 수채붓은 아주 옅고 넓게 +
   // 바깥 번짐 패스(겹칠수록 물감처럼 진해짐), 마커는 가장 넓고 완전 불투명.
   context.globalAlpha = op.tool === "crayon" ? 0.62 : op.tool === "watercolor" ? 0.3 : 1;
-  const baseWidth = (op.width ?? 8) * (op.tool === "marker" ? 1.6 : op.tool === "watercolor" ? 2 : 1) * size / 1024;
+  const baseWidth = drawnStrokeWidth(op.tool, op.width ?? 8) * size / 1024;
   context.lineWidth = baseWidth;
   // 새 연필(pencil)만 필압으로 굵기가 변한다. 기존 "pen" 획에는 실필압이 이미 기록돼 있어
   // 배율을 적용하면 저장 당시 이미지와 재생이 어긋나므로, pen은 예전과 동일한 균일 굵기로 남긴다.

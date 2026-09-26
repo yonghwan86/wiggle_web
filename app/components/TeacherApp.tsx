@@ -4,7 +4,8 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { ArrowLeft, Check } from "lucide-react";
 import { copyText } from "@/lib/copy-text";
 import { useCopyFeedback } from "./useCopyFeedback";
-import { parseRosterText } from "@/lib/roster";
+import { parseRosterRows, RosterRow } from "@/lib/roster";
+import { blankRows, RosterRowsEditor } from "./RosterRowsEditor";
 import { Logo } from "./Logo";
 import { QrCode } from "./QrCode";
 import { TeacherLiveView } from "./TeacherLiveView";
@@ -16,15 +17,6 @@ type Classroom = { id: string; displayName: string; classCode: string; joinToken
 export type WorkspaceArtwork = { id: string; title: string; status: string; thumbnail: string | null; updatedAt: string };
 export type Student = { sessionArtwork: (WorkspaceArtwork & { currentStep: number; revision: number }) | null; id: string; nickname: string; animal: string; seatNumber: number | null; realName: string | null; entryCode: string | null; claimedAt: string | null; createdAt: string; lastActivityAt: string; artworkId: string | null; completedArtworkId: string | null; artworkTitle: string | null; status: string | null; currentStep: number | null; revision: number | null; thumbnail: string | null; handRaisedAt: string | null; artworkUpdatedAt: string | null; artworkCount: number; drawingArtworkCount: number; completedArtworkCount: number; duplicateNickname: boolean };
 export type ArchivedStudent = { id: string; nickname: string; animal: string; seatNumber: number | null; realName: string | null; lastActivityAt: string; archivedAt: string; artworkCount: number };
-function RosterField({ value, onChange, label }: { value: string; onChange: (next: string) => void; label: string }) {
-  const { entries, errors } = parseRosterText(value);
-  return <label className="roster-field">{label}
-    <textarea rows={6} value={value} onChange={(event) => onChange(event.target.value)} placeholder={"1 김민준\n2 이서연\n3 박지호"} spellCheck={false} />
-    <small className="roster-hint">한 줄에 한 명씩 <b>번호 이름</b>. {entries.length > 0 && `${entries.length}명 확인했어요.`}</small>
-    {errors.length > 0 && <ul className="roster-errors">{errors.slice(0, 4).map((message) => <li key={message}>{message}</li>)}</ul>}
-  </label>;
-}
-
 type FamilyLink = { id: string; studentId: string; scope: "artwork" | "bundle"; expiresAt: string; revokedAt: string | null; createdAt: string; artworkCount: number };
 type TeacherArtworkHistory = { id: string; title: string; topic: string; learningMode: string; lessonSlug: string | null; status: string; currentStep: number; updatedAt: string; completedAt: string | null; thumbnail: string | null };
 export type ClassroomData = { serverNow?: string; entryLocks?: number; classroom: Classroom; students: Student[]; archivedStudents: ArchivedStudent[]; messages: Array<{ id: string; studentId: string | null; body: string; createdAt: string; nickname?: string; seenCount?: number }>; familyLinks: FamilyLink[]; teacher: { displayName: string; isAdmin?: boolean; source?: "siwc" | "local" } };
@@ -120,7 +112,9 @@ function TeacherHistoryDrawer({ student, artworks, loading, error, hasMore, onMo
 }
 
 export function TeacherApp({ classroomId = "" }: { classroomId?: string }) {
-  const [newRoster, setNewRoster] = useState("");
+  // 학급 만들 때도 만든 뒤와 같은 번호·이름 칸을 쓴다(2026-09-23 사용자 요청).
+  const [newRows, setNewRows] = useState<RosterRow[]>(() => blankRows(1));
+  const newRosterParsed = parseRosterRows(newRows);
   const [workspaceDialog, setWorkspaceDialog] = useState<"message" | null>(null);
   const [selectedArtwork, setSelectedArtwork] = useState<WorkspaceArtwork | null>(null);
   const [messageSending, setMessageSending] = useState(false);
@@ -214,12 +208,13 @@ export function TeacherApp({ classroomId = "" }: { classroomId?: string }) {
   async function login(event: FormEvent) { event.preventDefault(); setError(""); try { await teacherPost({ action: "login", email, pin }); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "로그인할 수 없어요."); } }
   async function createClass(event: FormEvent) {
     event.preventDefault();
-    const parsed = parseRosterText(newRoster);
+    const parsed = parseRosterRows(newRows);
     if (parsed.errors.length) { setError(parsed.errors[0]); return; }
+    if (!parsed.entries.length) { setError("번호와 이름을 입력해 주세요."); return; }
     try {
       // 명단은 필수다. 입장은 명단의 번호로만 하므로 명단 없는 학급은 아무도 못 들어온다.
       const data = await teacherPost<{ classroom: Classroom }>({ action: "createClassroom", displayName: newClass, roster: parsed.entries });
-      setNewClass(""); setNewRoster("");
+      setNewClass(""); setNewRows(blankRows(1));
       location.href = `/teacher/class/${data.classroom.id}`;
     } catch (cause) { setError(cause instanceof Error ? cause.message : "학급을 만들 수 없어요."); }
   }
@@ -350,7 +345,7 @@ export function TeacherApp({ classroomId = "" }: { classroomId?: string }) {
     return <main className="teacher-shell teacher-dashboard">
       <header className="teacher-header"><Logo /><div><span>교사</span><b>{teacher?.displayName}</b></div>{teacher?.isAdmin && <a className="small-button" href="/admin">관리자 페이지</a>}<button className="small-button" onClick={async () => { await teacherPost({ action: "logout" }); location.href = "/teacher"; }}>로그아웃</button></header>
       <section className="dashboard-title"><div><h1>내 학급</h1><p>오늘도, 아이들의 생각이 자라는 수업을 만들어보세요.</p></div><button type="button" className="button primary" aria-expanded={creatingClass} onClick={() => setCreatingClass((value) => !value)}>＋ 새 학급</button></section>
-      {creatingClass && <form className="create-class" onSubmit={createClass}><label>새 학급 이름<input value={newClass} maxLength={30} autoFocus onChange={(event) => setNewClass(event.target.value)} placeholder="예: 별빛 1반" /></label><RosterField label="우리 반 명단" value={newRoster} onChange={setNewRoster} /><p className="roster-privacy">학생은 자기 <b>번호</b>로 들어옵니다. 이름은 <b>선생님만</b> 봅니다 — 학생 화면·가족 공유·AI에는 보내지 않아요.</p><div className="create-class-actions"><button className="button primary" disabled={newClass.length < 2 || !parseRosterText(newRoster).entries.length || parseRosterText(newRoster).errors.length > 0}>학급 만들기</button><button type="button" className="button secondary" onClick={() => { setCreatingClass(false); setNewClass(""); setNewRoster(""); }}>취소</button></div></form>}
+      {creatingClass && <form className="create-class" onSubmit={createClass}><label>새 학급 이름<input value={newClass} maxLength={30} autoFocus onChange={(event) => setNewClass(event.target.value)} placeholder="예: 별빛 1반" /></label><div className="create-class-roster"><span className="create-class-roster-label">우리 반 명단</span><RosterRowsEditor rows={newRows} setRows={setNewRows} firstSeat={1} /></div><p className="roster-privacy">학생은 자기 <b>번호</b>로 들어옵니다. 이름은 <b>선생님만</b> 봅니다 — 학생 화면·가족 공유·AI에는 보내지 않아요.</p><div className="create-class-actions"><button className="button primary" disabled={newClass.length < 2 || !newRosterParsed.entries.length || newRosterParsed.errors.length > 0}>학급 만들기</button><button type="button" className="button secondary" onClick={() => { setCreatingClass(false); setNewClass(""); setNewRows(blankRows(1)); }}>취소</button></div></form>}
       {error && <p className="error-box" role="alert">{error}</p>}
       <p className="sr-only" role="status">{copiedLabel ? `${copiedLabel}를 복사했어요.` : ""}</p>
       {copyNotice && <p className="copy-notice" role="status">{copyNotice}<button type="button" onClick={() => setCopyNotice("")}>닫기</button></p>}

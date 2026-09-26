@@ -37,8 +37,8 @@ test("entry can be completed with a number pad and one animal picture instead of
 });
 
 test("drawing, navigation and reflection retain familiar visual actions when text is not understood", () => {
-  // 커리큘럼 은퇴(2026-09-12): 홈이 사라지고 아이는 바로 도화지로 간다. 도화지 밖의
-  // 자리는 내 그림 하나뿐이라, 거기서 새 그림·그림책·수업 마치기를 그림 표지로 고른다.
+  // 커리큘럼 은퇴(2026-09-12)로 홈이 사라졌다가, 2026-09-25에 「그림 자리」가 생겼다 —
+  // 저장된 그림이 0장이면 여전히 바로 도화지로 가고, 1장 이상이면 그 자리를 거친다.
   // 기다리는 화면은 글자 대신 몽그리 그림이 먼저다(2026-09-20) — 글을 못 읽어도 무엇을 기다리는지 안다.
   assert.match(entry, /<WaitMongri line="도화지를 펴고 있어요" \/>/);
   // 2026-09-20 GPT 인계로 보관함에서 「새 그림」을 뺐다(archive-sketchbook-handoff).

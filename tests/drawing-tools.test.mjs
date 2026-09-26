@@ -4,13 +4,14 @@ import test from "node:test";
 
 const compactSource = (text) => text.replace(/\s+/g, " ");
 
-const [studio, css, renderer, messageCenter, drawingHistory, inputMode] = await Promise.all([
+const [studio, css, renderer, messageCenter, drawingHistory, inputMode, model] = await Promise.all([
   readFile(new URL("../app/components/DrawingStudio.tsx", import.meta.url), "utf8").then(compactSource),
   readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   readFile(new URL("../lib/draw-renderer.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/components/StudentMessageCenter.tsx", import.meta.url), "utf8"),
   readFile(new URL("../lib/drawing-history.ts", import.meta.url), "utf8").then(compactSource),
   readFile(new URL("../lib/input-mode.ts", import.meta.url), "utf8").then(compactSource),
+  readFile(new URL("../lib/drawing-model.ts", import.meta.url), "utf8"),
 ]);
 
 test("draw width and eraser width are remembered separately", () => {
@@ -172,14 +173,38 @@ test("teacher message banner can be dismissed but every message remains in histo
 
 test("marker and watercolor render distinctly from pencil", () => {
   // 마커는 가장 넓고 불투명, 수채붓은 옅고 넓게 + 번짐 패스. (기존 크레용·pen 값은 불변)
-  assert.match(renderer, /op\.tool === "marker" \? 1\.6 : op\.tool === "watercolor" \? 2 : 1/);
+  /* 굵기 배율은 2026-09-26부터 drawing-model의 TOOL_DRAWN_WIDTH_SCALE 한 곳에 있다 —
+     점 간격 계산이 같은 값을 써야 "보이는 굵기"가 어긋나지 않아서다. 값 자체는 그대로다. */
+  assert.match(renderer, /drawnStrokeWidth\(op\.tool, op\.width \?\? 8\) \* size \/ 1024/);
+  assert.match(model, /TOOL_DRAWN_WIDTH_SCALE: Record<string, number> = \{ marker: 1\.6, watercolor: 2 \}/);
   assert.match(renderer, /op\.tool === "crayon" \? 0\.62 : op\.tool === "watercolor" \? 0\.3 : 1/);
   assert.match(renderer, /if \(op\.tool === "watercolor"\) \{[\s\S]{0,300}globalAlpha = 0\.12/);
 });
 
+test("도구 막대는 아이패드에서 선택·끌기 대상이 되지 않는다", () => {
+  // 2026-09-23 실기기 제보: 도구 그림을 누르고 있으면 iOS가 선택·드래그 항목으로 잡아
+  // 도구 줄이 파랗게 뜬 채 끌려다녔다. img의 draggable={false}로는 못 막는다.
+  const guard = css.match(/\.canvas-wrap[^{]*\{[^}]*-webkit-user-drag:none;[^}]*\}/);
+  assert.ok(guard, "도화지·막대 선택 금지 규칙을 찾지 못했다");
+  assert.match(guard[0], /\.tool-dock,\.tool-dock \*/);
+  assert.match(guard[0], /-webkit-touch-callout:none/);
+  assert.match(guard[0], /user-select:none/);
+  /* 2026-09-26: CSS만으로는 부족했다. 28d0d8f 자신도 "실기기 재확인이 필요하다"고 적었고
+     아이패드에서 도구가 계속 끌린다는 제보가 이어졌다. 도화지는 처음부터 CSS와 onDragStart를
+     **둘 다** 갖고 있었는데 막대에는 JS 방어가 없었다 — 같은 방어를 막대에도 건다.
+     끌기 이벤트는 위로 올라오므로 막대 하나면 안의 도구 그림·색 단추가 모두 덮인다. */
+  // `=>`의 > 때문에 게으른 매칭은 여는 태그 중간에서 잘린다 — 고정 길이 창으로 본다.
+  const dock = studio.match(/<aside className=\{`tool-dock[\s\S]{0,400}/);
+  assert.ok(dock, "도구 막대 엘리먼트를 찾지 못했다");
+  assert.match(dock[0], /onDragStart=\{\(event\) => event\.preventDefault\(\)\}/);
+  assert.match(dock[0], /onContextMenu=\{\(event\) => event\.preventDefault\(\)\}/);
+});
+
 test("eraser footprint matches the square area removed from the document", () => {
   assert.match(studio, /className="eraser-footprint"/);
-  assert.match(studio, /footprint\.style\.width = `\$\{eraserWidth \/ 10\.24\}%`/);
+  // 네모의 %는 도화지(span장 너비) 기준이고 실제로 지워지는 칸은 저장 단위(굵기÷span)다.
+  // 화면 굵기를 그대로 넣으면 새 도화지(span 3)에서 네모만 3배로 커진다(2026-09-23 사용자 제보).
+  assert.match(studio, /footprint\.style\.width = `\$\{documentWidthUnits\(eraserWidth\) \/ 10\.24\}%`/);
   assert.match(studio, /footprint\.style\.height = "auto"/);
   assert.match(css, /\.eraser-footprint \{ aspect-ratio:1; \}/);
   assert.match(renderer, /function eraseWithSquareFootprint/);
@@ -195,8 +220,10 @@ test("도화지 비율은 문서가 정하고, 화면·래스터·저장 이미�
   // 래스터도 문서 비율을 따른다. 정사각으로 고정하면 저장 PNG와 화면이 어긋난다.
   assert.match(studio, /function documentPixels\(document: Pick<DrawDocument, "height">, width: number\)/);
   assert.match(studio, /height: Math\.round\(width \* documentHeight\(document\) \/ DOCUMENT_SIZE\)/);
-  // 저장 이미지는 화면 캔버스 비율을 그대로 쓴다.
-  assert.match(studio, /const height = Math\.max\(1, Math\.round\(size \* canvas\.height \/ Math\.max\(1, canvas\.width\)\)\)/);
+  /* 종전에는 화면 캔버스에서 굽는 imageData가 따로 있어 그 비율 계산을 여기서 지켰다.
+     2026-09-26에 몽그리 전송 이미지까지 documentImage로 옮기면서 쓰는 곳이 없어져 지웠다(P-014).
+     남은 저장 이미지 경로의 비율은 바로 위 documentPixels 검사가 지킨다. */
+  assert.doesNotMatch(studio, /function imageData\(/, "화면 기반 이미지 굽기가 되살아나면 안 된다");
   // 점선 안내 좌표는 정사각 기준이라, 가운데 정사각 영역에 넣어 동그라미가 타원이 되지 않게 한다.
   assert.match(studio, /function guideSquare\(canvas: HTMLCanvasElement\)/);
   assert.match(studio, /context\.scale\(square\.side \/ 1024, square\.side \/ 1024\)/);
@@ -212,10 +239,15 @@ test("도화지 비율은 문서가 정하고, 화면·래스터·저장 이미�
   // 옆으로 넓은 화면에서는 종이가 틀을 덮고 넘친 만큼 옮겨 본다(2026-09-15 "도화지 크기는 화면을 꽉채우지 안 잖아").
   assert.match(studio, /if \(next < from \|\| activePoints\.current\.size \|\| artworkRef\.current\?\.status === "complete" \|\| conflictDraftRef\.current\) return;/);
   assert.match(studio, /growDrawOps\(current\.ops, from, next\)/);
-  // 도화지는 100%에서 화면 span장 너비다(2026-09-20 큰 도화지). 끝까지 축소하면 1/span에서 전체가 보인다.
+  // 도화지는 100%에서 화면 span장 너비다(2026-09-20 큰 도화지). 1/span에서 전체가 틀에 맞고,
+  // 거기서 한 칸 더 줄이면 종이 끝과 그 바깥이 보인다(2026-09-23 사용자 요청).
   assert.match(studio, /const screenPaper = coverPaper\(frame\.width, frame\.height, documentHeight\(documentState\)\);/);
   assert.match(studio, /const paper = \{ width: screenPaper\.width \* span, height: screenPaper\.height \* span \};/);
-  assert.match(studio, /min: 1 \/ span, max: MAX_SCALE/);
+  assert.match(studio, /min: minScaleFor\(span\), max: MAX_SCALE/);
+  // 축소 단추가 멈추는 자리도 같은 값이어야 한다 — 따로 적으면 둘이 어긋난다.
+  assert.match(studio, /disabled=\{view\.scale <= minScaleFor\(span\) \+ 0\.001\}/);
+  // 종이가 틀보다 작아지므로 바탕이 종이와 같은 흰색이면 종이 끝이 보이지 않는다.
+  assert.match(css, /\.studio \{ --paper-backdrop:#e4e9e3; \}/);
   assert.match(studio, /clampDocumentHeight\(DOCUMENT_SIZE \* height \/ width\)/);
 });
 
@@ -290,4 +322,22 @@ test("기다리는 화면은 입장 확인과 같은 몽그리 화면을 쓴다"
   assert.doesNotMatch(studio, /drawing-loading/);
   assert.doesNotMatch(page, /drawing-loading/);
   assert.doesNotMatch(css, /\.drawing-loading/);
+});
+
+test("저장하는 동안 화면 전체를 덮어 아무것도 누르지 못하게 한다", () => {
+  /* 2026-09-25 사용자 요청: 단추 안에서만 도는 표시는 아이 눈에 잘 안 띄어 그동안 다른 것을
+     누르려 든다. 소감 모달(z-index 20)보다 위에 막을 깔아 뒤쪽 누르기를 전부 받아 삼킨다.
+     실측(390×844): 막 390×844로 화면을 꽉 덮고, 모서리·닫기 자리를 눌러도 .saving-veil이 받는다. */
+  assert.match(studio, /\{completionState === "saving" && \([\s\S]{0,80}<div className="saving-veil" role="status" aria-live="assertive">/);
+  // 글을 못 읽어도 무엇을 기다리는지 알도록 몽그리 얼굴과 움직이는 점이 함께 있다.
+  assert.match(studio, /brand\/mongri\/reassuring\.png/);
+  assert.match(studio, /그림을 저장하고 있어요/);
+  assert.match(studio, /className="saving-veil-dots"/);
+  // 모달보다 위에 있어야 뒤쪽을 덮는다.
+  assert.match(css, /\.saving-veil \{ position:fixed; inset:0; z-index:30;/);
+  assert.match(css, /\.modal-backdrop \{ position:fixed; inset:0; z-index:20;/);
+  // 움직임 줄이기에서는 튀지 않는다.
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\n  \.saving-veil \{ backdrop-filter:none; \}/);
+  // 저장 중에는 닫기와 두 단추가 모두 잠긴다 — 막이 뚫려도 뒤에서 눌리지 않는다.
+  assert.match(studio, /className="modal-close" disabled=\{completionState === "saving"\}/);
 });

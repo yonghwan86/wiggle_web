@@ -16,7 +16,13 @@ export function parseImageDataUrl(value: unknown, maxBytes = 3_500_000): ParsedI
   return { bytes, mimeType: "image/jpeg", extension: "jpg" };
 }
 
-export function bytesToDataUrl(bytes: Uint8Array, mimeType: "image/png" | "image/jpeg") {
+/* 썸네일이 2026-09-26부터 WebP 무손실이라 webp를 더한다. 좁은 합집합을 유지하는 이유는
+ * 저장소에서 읽은 임의의 contentType이 그대로 data: URL에 박히지 않게 하려는 것이다. */
+export type ImageMimeType = "image/png" | "image/jpeg" | "image/webp";
+export const isImageMimeType = (value: unknown): value is ImageMimeType =>
+  value === "image/png" || value === "image/jpeg" || value === "image/webp";
+
+export function bytesToDataUrl(bytes: Uint8Array, mimeType: ImageMimeType) {
   let binary = ""; const chunk = 0x8000;
   for (let offset = 0; offset < bytes.length; offset += chunk) binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
   return `data:${mimeType};base64,${btoa(binary)}`;

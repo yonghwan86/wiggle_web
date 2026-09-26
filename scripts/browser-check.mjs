@@ -368,9 +368,13 @@ async function main() {
             // 내 홈으로 넘어가는 순간 보낸 evaluate는 응답 없이 사라질 수 있어 시간 제한을 둔다.
             const settle = (expression) => Promise.race([evaluate(cdp, session, expression), new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 1500))]);
             try { reentryUrl = await settle("location.href"); askedAnimal = await settle("Boolean(document.querySelector('.animal-card'))"); } catch { continue; }
-            if (reentryUrl.includes("/student/draw") || askedAnimal) break;
+            if (reentryUrl.includes("/student/draw") || reentryUrl.endsWith("/student") || askedAnimal) break;
           }
-          check(reentryUrl.includes("/student/draw") && !askedAnimal, `${viewport.name} 쓰던 코드는 동물을 다시 묻지 않고 바로 도화지로 감`, { reentryUrl, askedAnimal });
+          /* 2026-09-25 「그림 자리」 이후: 저장된 그림이 있으면 /student(그림 자리)에 서고, 0장이면
+             예전처럼 바로 도화지로 간다. 이 검사가 지키는 것은 **동물을 다시 묻지 않는다**는 쪽이다 —
+             도착지 주소는 그림 수에 따라 달라지므로 둘 다 받는다. 하나만 고정하면 옛 흐름에 묶인다. */
+          const landed = reentryUrl.includes("/student/draw") || reentryUrl.endsWith("/student");
+          check(landed && !askedAnimal, `${viewport.name} 쓰던 코드는 동물을 다시 묻지 않고 내 자리로 감`, { reentryUrl, askedAnimal });
         }
 
         // 4) 잘못된 수업 코드: 글자 없이도 복구 행동이 보인다
@@ -454,7 +458,15 @@ async function main() {
             const reach = window.__wiggle.reachable(target);
             if (!reach.onScreen || !reach.hitsSelf) unreachable.push({ label: window.__wiggle.label(target), ...reach });
           }
-          return { unreachable, primaryTools, scrolls: body ? body.scrollHeight - body.clientHeight : 0 };
+          /* 아이패드에서 도구 그림을 누르고 있으면 iOS가 "선택·드래그 항목"으로 잡아 도구 줄이 파랗게
+             뜬 채 끌려다녔다(2026-09-23 실기기 제보). img의 draggable={false}로는 안 막히고
+             user-select·-webkit-user-drag가 막대까지 걸려 있어야 한다. 캐스케이드 뒤 실제 값으로 본다. */
+          const dockArt = document.querySelector('.tool-dock .dock-tool-art img');
+          const dockGrab = dockArt ? (() => {
+            const style = getComputedStyle(dockArt);
+            return { userSelect: style.userSelect || style.webkitUserSelect, userDrag: style.webkitUserDrag, callout: style.webkitTouchCallout };
+          })() : null;
+          return { unreachable, primaryTools, dockGrab, scrolls: body ? body.scrollHeight - body.clientHeight : 0 };
         })()`);
         check(!tools.error, `${viewport.name} 도구 패널 재현`, tools.error);
         if (!tools.error) {
@@ -463,6 +475,8 @@ async function main() {
           const shownTools = tools.primaryTools.filter((tool) => tool.visible);
           check(shownTools.length === 6 && shownTools.every((tool) => Math.min(tool.buttonBox.w, tool.buttonBox.h) >= 44), `${viewport.name} 도구 막대 도구 6개가 보이고 터치 목표 44px 이상`, shownTools);
           check(shownTools.every((tool) => tool.artLoaded), `${viewport.name} 세워진 도구 그림이 모두 불러와짐`, shownTools);
+          // -webkit-touch-callout은 사파리 전용이라 크롬 computed에 안 나온다. 선언 자체는 CSS 단위 검사가 지킨다.
+          check(Boolean(tools.dockGrab) && tools.dockGrab.userSelect === "none" && tools.dockGrab.userDrag === "none", `${viewport.name} 도구 그림을 길게 눌러도 선택·끌기가 안 됨`, tools.dockGrab);
         }
 
         // 4.5) 새 도구 실동작: 대칭 쌍·그룹 되돌리기·채우기·도형 2탭을 실제 입력 파이프라인으로 검증.
@@ -574,6 +588,39 @@ async function main() {
           const shapeEdge = await pixel(shapeLeft, shapeProbeY);
           check(differs(beforeEdge, shapeEdge) && shapeEdge[2] > 40 && shapeEdge[0] < 120, `${viewport.name} 두 번째 탭으로 네모가 그려짐`, { beforeEdge, shapeEdge });
 
+          /* 지우개: 아이가 보는 네모와 실제로 지워지는 칸이 같아야 한다. 네모의 %는 도화지(span장 너비)
+             기준이고 지워지는 칸은 저장 단위(굵기÷span)라, 화면 굵기를 그대로 쓰면 네모만 span배로 커진다
+             (2026-09-23 사용자: "지움 범위가 네모칸에 비해 작아"). 소스 문자열로는 잡히지 않아 실제로 재 본다. */
+          await clickPanelButton("지우개"); await sleep(200);
+          const eraseX = 0.3 + rowShift; const eraseY = 0.62 - rowShift;
+          rect = await probeCanvas();
+          const erasePoint = at(rect, eraseX, eraseY);
+          await mouse("mouseMoved", erasePoint.x, erasePoint.y, 0); await sleep(200);
+          const footprintBox = await evaluate(cdp, session, `(() => {
+            const mark = document.querySelector('.eraser-footprint');
+            if (!mark || mark.hidden) return null;
+            const box = mark.getBoundingClientRect();
+            return { width: box.width, height: box.height };
+          })()`);
+          await tapOn(erasePoint); await sleep(400);
+          // 도화지는 불투명한 흰 바탕이라, destination-out으로 파인 자리만 알파 0이 된다.
+          const erasedRun = await evaluate(cdp, session, `(() => {
+            const canvas = document.querySelector('.draw-canvas');
+            const box = canvas.getBoundingClientRect();
+            const row = Math.min(canvas.height - 1, Math.max(0, Math.round(${bandY(eraseY)} * canvas.height)));
+            const data = canvas.getContext('2d').getImageData(0, row, canvas.width, 1).data;
+            let run = 0; let longest = 0;
+            for (let x = 0; x < canvas.width; x += 1) {
+              if (data[x * 4 + 3] === 0) { run += 1; if (run > longest) longest = run; } else run = 0;
+            }
+            return { cssWidth: longest * box.width / canvas.width, backingWidth: canvas.width };
+          })()`);
+          const eraseGap = footprintBox && erasedRun.cssWidth > 0 ? Math.abs(erasedRun.cssWidth - footprintBox.width) / footprintBox.width : 1;
+          check(Boolean(footprintBox) && erasedRun.cssWidth > 0 && eraseGap <= 0.25, `${viewport.name} 지우개 네모와 실제 지워진 칸의 크기가 같음`, { footprintBox, erasedRun, eraseGap });
+          // 여기서 연필로 되돌리지 않는다. 아래 "연필로 되돌린다" 단계가 이미 하는데, 먼저 골라 두면
+          // 그 클릭이 "같은 도구 다시 누르기"가 돼 굵기 자가 열리고, 뒤의 몽그리 접기 검사에서
+          // 도화지 탐침 자리를 가린다(2026-09-23 이 검사를 넣으면서 실제로 겪은 일).
+
           // 핀치 폴백(펜 없는 기기): 한 손가락으로 긋다 두 번째 손가락이 합류하면
           // 진행 중 그리기를 버리고 핀치 확대가 실제로 시작돼야 한다.
           if (viewport.name === "390x844" || viewport.name === "iPad-768x880-safari") {
@@ -586,6 +633,11 @@ async function main() {
           } else {
             rect = await probeCanvas();
             const pinchCenter = at(rect, 0.5, 0.5);
+            /* 이 검사는 위에서 축소 단추를 끝까지 누른 상태에서 시작한다. 그 바닥 배율은 도화지 넓이(span)와
+               축소 한계가 바뀌면 함께 바뀌므로, 절대 숫자로 재면 핀치와 상관없는 변경에 깨진다
+               (2026-09-23 축소 한계를 한 칸 내렸을 때 실제로 깨짐). 핀치 전후를 비교한다. */
+            const scaleNow = `(() => { const stack = document.querySelector('.canvas-stack'); return new DOMMatrix(getComputedStyle(stack).transform).a; })()`;
+            const beforePinch = await evaluate(cdp, session, scaleNow);
             const touch = (type, points) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points.map((point, index) => ({ x: Math.round(point.x), y: Math.round(point.y), id: index + 1 })) }, session);
             await touch("touchStart", [{ x: pinchCenter.x - 15, y: pinchCenter.y }]);
             await touch("touchMove", [{ x: pinchCenter.x - 25, y: pinchCenter.y }]);
@@ -593,8 +645,8 @@ async function main() {
             for (let step = 1; step <= 5; step += 1) await touch("touchMove", [{ x: pinchCenter.x - 25 - step * 14, y: pinchCenter.y }, { x: pinchCenter.x + 25 + step * 14, y: pinchCenter.y }]);
             await touch("touchEnd", []);
             await sleep(250);
-            const zoomScale = await evaluate(cdp, session, `(() => { const stack = document.querySelector('.canvas-stack'); const matrix = new DOMMatrix(getComputedStyle(stack).transform); return matrix.a; })()`);
-            check(zoomScale > 1.05, `${viewport.name} 손가락 두 개 핀치로 확대됨`, zoomScale);
+            const zoomScale = await evaluate(cdp, session, scaleNow);
+            check(zoomScale > beforePinch * 1.5, `${viewport.name} 손가락 두 개 핀치로 확대됨`, { beforePinch, zoomScale });
             await evaluate(cdp, session, `(() => { const reset = document.querySelector('.zoom-fit'); if (reset && !reset.disabled) reset.click(); })()`);
             await sleep(200);
           }
@@ -651,30 +703,33 @@ async function main() {
           for (let attempt = 0; attempt < 60 && !panel.querySelector('.grimi-coaching'); attempt += 1) await wait(200);
           const scroll = panel.querySelector('.grimi-scroll');
           if (!panel.querySelector('.grimi-coaching') || !scroll) return { error: 'no-coaching', html: panel.innerText.slice(0, 120) };
-          // 아이가 선택지를 골라야 다음 행동과 확인 버튼이 나타난다.
-          panel.querySelector('.grimi-chips button')?.click();
-          await wait(300);
+          /* 몽그리 카드는 읽기 전용이다(2026-09-23 「몽그리 카드를 읽기 전용으로 바꾸기」).
+             답 칩을 고르고 되돌려 보내던 왕복을 없앴으므로, 고르는 동작 없이 처음부터
+             관찰 한마디 → 궁금한 점 → 「이제 그려 볼 일」이 한 번에 보여야 한다.
+             (이 문자열은 바깥 템플릿 리터럴 안이라 백틱을 쓰면 문자열이 끊긴다.) */
           const question = panel.querySelector('.grimi-coaching h2');
+          const nextAction = panel.querySelector('.next-action');
+          const again = panel.querySelector('.grimi-again');
           const chips = [...panel.querySelectorAll('.grimi-chips button')];
-          const confirm = panel.querySelector('.next-action .child-primary-action');
           const exit = panel.querySelector('.free-exit');
-          const close = panel.querySelector('.grimi-head > button');
+          const close = panel.querySelector('.grimi-head [aria-label="몽그리 닫기"]');
           const reach = (element) => element ? window.__wiggle.reachable(element) : null;
-          const startState = { question: reach(question), firstChip: reach(chips[0]), close: reach(close), exit: reach(exit) };
-          // 아이가 확인 버튼까지 이동하는 경로: 시트 안쪽 스크롤 한 번
-          confirm?.scrollIntoView({ block: 'center' });
+          const startState = { question: reach(question), nextAction: reach(nextAction), close: reach(close), exit: reach(exit), chipCount: chips.length };
+          // 아이가 맨 아래 행동(다른 것도 물어보기)까지 이동하는 경로: 시트 안쪽 스크롤 한 번
+          again?.scrollIntoView({ block: 'center' });
           await wait(250);
-          const afterScroll = { confirm: reach(confirm), close: reach(close), exit: reach(exit), confirmBox: confirm ? window.__wiggle.box(confirm) : null };
+          const afterScroll = { confirm: reach(again), close: reach(close), exit: reach(exit), confirmBox: again ? window.__wiggle.box(again) : null };
           const nestedScrollers = [...panel.querySelectorAll('*')].filter((element) => element !== scroll && element.scrollHeight - element.clientHeight > 4 && ['auto', 'scroll'].includes(getComputedStyle(element).overflowY));
           return { startState, afterScroll, nestedScrollers: nestedScrollers.map((element) => window.__wiggle.label(element)), scrollerHeight: scroll.clientHeight, contentHeight: scroll.scrollHeight };
         })()`);
         check(!coaching.error, `${viewport.name} 코칭 내용 레이아웃 재현`, coaching.error);
         if (!coaching.error) {
           check(coaching.startState.question?.onScreen, `${viewport.name} 몽그리 첫 질문이 바로 보임`, coaching.startState.question);
-          check(coaching.startState.firstChip?.hitsSelf, `${viewport.name} 첫 선택지를 바로 누를 수 있음`, coaching.startState.firstChip);
+          check(coaching.startState.nextAction?.onScreen, `${viewport.name} '이제 그려 볼 일'이 고르지 않아도 바로 보임`, coaching.startState.nextAction);
+          check(coaching.startState.chipCount === 0, `${viewport.name} 답을 되돌려 보내는 칩이 없음(읽기 전용)`, coaching.startState.chipCount);
           check(coaching.startState.close?.hitsSelf, `${viewport.name} 코칭 중에도 닫기가 고정되어 보임`, coaching.startState.close);
           check(coaching.startState.exit?.hitsSelf, `${viewport.name} 코칭 중에도 탈출 버튼이 고정되어 보임`, coaching.startState.exit);
-          check(coaching.afterScroll.confirm?.hitsSelf, `${viewport.name} 한 번 스크롤로 확인 버튼에 닿음`, coaching.afterScroll.confirm);
+          check(coaching.afterScroll.confirm?.hitsSelf, `${viewport.name} 한 번 스크롤로 '다른 것도 물어보기'에 닿음`, coaching.afterScroll.confirm);
           check(coaching.afterScroll.close?.hitsSelf && coaching.afterScroll.exit?.hitsSelf, `${viewport.name} 스크롤 뒤에도 닫기·탈출이 그대로 보임`, coaching.afterScroll);
           check(coaching.nestedScrollers.length === 0, `${viewport.name} 시트 안에 숨은 중첩 스크롤이 없음`, coaching.nestedScrollers);
         }
@@ -701,12 +756,13 @@ async function main() {
           const probeX = Math.round(canvasBox.left + canvasBox.w / 2);
           const hit = window.__wiggle.topElementAt(probeX, probeY);
           const probePoint = { x: probeX, y: probeY };
-          const confirm = peek?.querySelector('.child-primary-action');
+          // 접힌 줄도 읽기 전용이다 — 답을 요구하는 단추가 있으면 안 된다.
+          const peekButtons = [...(peek?.querySelectorAll('button') ?? [])].map((b) => (b.textContent || '').trim().slice(0, 12));
           const reExpand = document.querySelector('.grimi-collapse');
           return {
             peekShown: Boolean(peek),
             nextActionShown: Boolean(peek?.querySelector('b')?.textContent?.trim()),
-            confirmReachable: confirm ? window.__wiggle.reachable(confirm) : null,
+            peekButtons,
             drawableHeight: Math.round(Math.min(canvasBox.bottom, panelBox.top) - canvasBox.top),
             probeHitsCanvas: Boolean(hit && String(hit.cls).includes('draw-canvas')),
             probeHit: hit, probePoint,
@@ -717,7 +773,7 @@ async function main() {
         check(!collapse.error, `${viewport.name} 몽그리 접기 재현`, collapse.error);
         if (!collapse.error) {
           check(collapse.peekShown && collapse.nextActionShown, `${viewport.name} 접어도 다음 행동이 계속 보임`, collapse);
-          check(collapse.confirmReachable?.hitsSelf, `${viewport.name} 접은 상태에서 '그렸어요'를 누를 수 있음`, collapse.confirmReachable);
+          check(collapse.peekButtons.length === 0, `${viewport.name} 접힌 줄에 답을 요구하는 단추가 없음(읽기 전용)`, collapse.peekButtons);
           check(collapse.drawableHeight >= 140, `${viewport.name} 접으면 그릴 수 있는 도화지가 남음`, { drawableHeight: collapse.drawableHeight });
           check(collapse.probeHitsCanvas, `${viewport.name} 접은 상태에서 도화지에 실제로 그릴 수 있음`, collapse);
           check(collapse.reExpandReachable?.hitsSelf, `${viewport.name} 몽그리를 다시 펼칠 수 있음`, collapse.reExpandReachable);

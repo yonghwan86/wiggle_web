@@ -228,9 +228,13 @@ test("the UI source keeps completion, archive, palette, help-choice and touch pr
   assert.match(studentRoute, /artworkTotal/);
   assert.match(studentRoute, /currentActivityArtwork/);
   assert.match(studentRoute, /latestUnfinishedArtwork/);
-  // 홈이 사라져(2026-09-12) 들어온 아이는 그리다 만 그림이 있으면 그것을, 없으면 새 도화지를 연다.
-  assert.match(studentEntry, /const unfinished = data\.latestUnfinishedArtwork;/);
-  assert.match(studentEntry, /location\.replace\(unfinished \? `\/student\/draw\/\$\{unfinished\.id\}` : "\/student\/draw\/new\?mode=free"\)/);
+  /* 2026-09-25 사용자 결정(인계 student-art-desk-handoff-20260923): 갈림길은 저장된 그림 **총수** 하나다.
+     0장이면 중간 화면 없이 바로 새 도화지, 1장 이상이면 「그림 자리」를 보여 준다.
+     종전에는 그리다 만 그림을 **자동으로** 열었다 — 그러면 아이가 새 그림을 시작할 길이 없었다.
+     이제 이어 그리기는 목록에서 아이가 직접 고른다. */
+  assert.match(studentEntry, /if \(!Number\(payload\.artworkTotal\)\) \{ location\.replace\("\/student\/draw\/new\?mode=free"\); return; \}/);
+  assert.match(studentEntry, /if \(data\) return <StudentArtDesk /);
+  assert.doesNotMatch(studentEntry, /latestUnfinishedArtwork/, "그리던 그림을 자동으로 열면 안 된다");
   assert.match(archive, /setHasMore\(Boolean\(value\.artworkHasMore\)\)/);
   assert.doesNotMatch(studio, /lastTwoFingerTapRef|두 손가락 짧은 탭 두 번/);
   assert.match(studio, /lastSingleFingerTapRef[\s\S]*resetViewToFit/);

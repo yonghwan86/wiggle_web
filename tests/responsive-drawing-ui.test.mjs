@@ -95,3 +95,35 @@ test("dock controls honor the 44px minimum touch target", async () => {
   assert.match(css, /\.dock-width input\[type="range"\] \{[^}]*height:44px;/);
   assert.match(css, /@media \(max-height:500px\) and \(orientation:landscape\) \{[\s\S]*?\.dock-history button,\.dock-more \{ width:44px; height:44px; min-height:44px; \}/);
 });
+
+test("몽그리 머리의 원형 규칙은 닫기(×)만 잡고 글자 단추인 접기는 건드리지 않는다", async () => {
+  const css = await read("../app/globals.css");
+  /* 회귀(2026-09-23 재발): .grimi-head>button의 원형 규칙은 × 전용인데 :not()이 없으면
+     글자 단추인 .grimi-collapse까지 폭 48px에 가둔다. 「✏️ 그리러 가기」는 135px이 필요해
+     844×390에서 글자가 잘렸다(실측 폭 48 / 필요 135). 같은 수정이 한 번 원격 main에서
+     사라졌기 때문에 이 시험으로 묶어 둔다 — 세 규칙 모두 접기를 빼야 한다. */
+  for (const rule of [
+    /\.grimi-head>button:not\(\.grimi-collapse\) \{ border:0; background:#f5edcf; width:34px; height:34px;/,
+    /\.grimi-head>button:not\(\.grimi-collapse\) \{ width:44px; height:44px; \}/,
+    /\.studio-body>\.grimi-panel>\.grimi-head>button:not\(\.grimi-collapse\) \{ width:48px; height:48px; \}/,
+  ]) assert.match(css, rule);
+  // 접기를 빼지 않은 옛 규칙이 하나라도 남으면 다시 잘린다.
+  assert.doesNotMatch(css, /\.grimi-head>button \{/, "접기를 제외하지 않은 원형 규칙이 남아 있으면 안 된다");
+  // 접기 단추는 글자가 줄바꿈되지 않고 제 폭을 가져야 한다.
+  assert.match(css, /\.grimi-collapse \{[^}]*white-space:nowrap;/);
+});
+
+test("보관함의 세 겹 그리드는 줄어들 수 있는 칼럼을 가진다", async () => {
+  const css = await read("../app/globals.css");
+  /* 회귀(2026-09-23 실측): 칼럼을 적지 않으면 암묵 `auto` 칼럼이 안쪽 썸네일 줄의
+     max-content(886px)까지 부푼다. html이 잘라 내므로 가로 스크롤은 생기지 않고
+     내용만 오른쪽으로 사라진다 — 390px에서 머리·무대가 882px로 잡혀 단추가 화면 밖에 있었다.
+     browser-check가 /student/archive를 방문하지 않아 게이트에 걸리지 않았으므로 여기서 묶는다. */
+  for (const rule of [
+    /\.archive-book-page \{ min-height:100dvh; display:grid; grid-template-columns:minmax\(0,1fr\);/,
+    /\.archive-stage \{ display:grid; grid-template-columns:minmax\(0,1fr\); place-items:center;/,
+    /\.archive-book \{ width:min\(1500px,100%\); display:grid; grid-template-columns:minmax\(0,1fr\);/,
+  ]) assert.match(css, rule);
+  // 썸네일 줄이 가로 스크롤러라는 전제가 깨지면 위 칼럼만으로는 부족해진다.
+  assert.match(css, /\.archive-book-list>ul \{ display:flex;[^}]*overflow-x:auto;/);
+});

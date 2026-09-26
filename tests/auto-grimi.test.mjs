@@ -74,8 +74,16 @@ test("프롬프트가 역할·대상과 어긋나지 않는다", async () => {
   assert.match(collaborator, /uncertain=true이면 next_action도/);
   // 누가 먼저 말을 걸었는지 모델이 알아야 말투를 고를 수 있다.
   assert.match(collaborator, /opened_by/);
-  // 틀리는 해석자: 허락이 아니라 규칙으로 덜 구체적으로 짐작하게 한다.
-  assert.match(interpreter, /일부러 덜 구체적으로 짐작한다/);
+  /* 틀리는 해석자(학습 과정 4항)를 2026-09-26에 「확신도로 갈린다」로 개정했다(P-014, 사용자 "가로 가자").
+     종전에는 "일부러 덜 구체적으로 짐작한다 … 두 번째로 그럴듯한 읽기를 고른다"였는데, 그 전제인
+     "그럴듯하게 살짝 빗나간 짐작"이 성립하려면 첫 짐작이 맞아야 한다. 그림이 작게 들어가 첫 짐작부터
+     틀리던 상태에서는 완전히 무작위가 됐다(운영 제보 "집을 그리면 다른 걸로 추측해버린다").
+     목적(아이가 자기 말로 고치게 하기)은 그대로다. */
+  assert.match(interpreter, /짐작은 네가 실제로 본 것에서 나온다\. 일부러 빗나가게 고르지 않는다\./);
+  assert.match(interpreter, /알아볼 수 있으면 본 대로 짐작하고 아이에게 확인을 청한다/);
+  assert.match(interpreter, /알아보기 어려우면 아무 이름이나 대지 말고 갈래로 말한다/);
+  assert.match(interpreter, /자기 말로 고칠 자리를 남기는 것이 목적이다/);
+  assert.doesNotMatch(interpreter, /두 번째로 그럴듯한 읽기/, "일부러 빗나가게 시키던 규칙이 되살아나면 안 된다");
   assert.match(interpreter, /하나만 네 짐작과 같다는 답이고 나머지는 모두 다르다는 답이다/);
   // answer가 최상위가 아니라 각 choice의 필드임을 분명히 한다(스키마는 guess·choices만 받는다).
   assert.match(interpreter, /각 choice의 answer는/);

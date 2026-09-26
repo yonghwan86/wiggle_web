@@ -36,8 +36,15 @@ test("keeps canvas contracts and guide data separate", async () => {
   const [model, studioRaw, css, catalog] = await Promise.all([read("../lib/drawing-model.ts"), read("../app/components/DrawingStudio.tsx"), read("../app/globals.css"), import("../lib/lesson-content.ts")]);
   const studio = compactSource(studioRaw);
   assert.match(model, /DOCUMENT_SIZE = 1024/); assert.match(model, /schemaVersion/); assert.match(model, /rendererVersion/); assert.match(model, /clientOpId/); assert.match(model, /STICKER_ALLOWLIST/);
-  // 썸네일·완성 PNG는 문서 기반(documentImage), 몽그리 전송 이미지는 화면 기반(imageData 1024).
-  assert.match(studio, />= 2\.5/); assert.match(studio, /guideRef/); assert.match(studio, /documentImage\([^)]+, 256\)/); assert.match(studio, /imageData\(canvasRef\.current, 1024\)/);
+  /* 썸네일·완성 PNG는 문서 기반(documentImage)이다. 몽그리 전송 이미지도 2026-09-26부터 같은 것을 쓴다
+     (P-014): 종전 imageData는 "아이가 보는 화면"이라는 이유였지만 실제로는 문서 래스터 전체였고,
+     넓은 도화지는 대부분이 흰 여백이라 집이 57×48px로 들어갔다. documentImage는 그린 칸만 잘라 9배 크게 담는다. */
+  /* 점 간격은 2026-09-26부터 고정 2.5가 아니라 굵기에 비례한다(strokePointGap). 가는 붓은 바닥값
+     2.5가 그대로 걸려 예전 밀도를 유지하고, 굵은 붓만 성글어진다. 수치는 drawing-model 시험이 지킨다. */
+  assert.match(studio, /const gap = strokePointGap\(meta\.tool, meta\.width\);/);
+  assert.match(studio, /\) >= gap\)/); assert.match(studio, /guideRef/); assert.match(studio, /documentImage\([^)]+, 256\)/);
+  assert.match(studio, /imageDataUrl: documentImage\(documentStateRef\.current, 1024\)/);
+  assert.doesNotMatch(studio, /imageDataUrl: imageData\(canvasRef\.current/, "AI에 도화지 전체를 다시 보내면 안 된다");
   assert.match(studio, /strokeStyle = "#087EA8"[\s\S]*globalAlpha = 0\.92[\s\S]*lineWidth = 9[\s\S]*setLineDash\(\[20, 14\]\)/);
   assert.match(studio, /item\.step === lessonStep \+ 1/); assert.doesNotMatch(studio, /item\.step <= lessonStep \+ 1/);
   assert.match(studio, /<canvas\s+ref=\{guideRef\}[\s\S]*<canvas\s+ref=\{canvasRef\}/);

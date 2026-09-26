@@ -1,0 +1,13 @@
+/* Student art-desk concept only. Do not replace global design-system tokens. */
+.student-art-desk {
+  --desk-cream: #fdf8e6;
+  --desk-paper: #fefdf5;
+  --desk-ink: #173e29;
+  --desk-green: #2f6b3f;
+  --desk-pale-green: #dbf1ba;
+  --desk-yellow: #f6c84b;
+  --desk-card-border: #e8e0cd;
+  --desk-card-shadow: 0 4px 10px rgb(56 40 12 / 12%);
+  --desk-section-radius: 24px;
+  --desk-touch-min: 44px;
+}

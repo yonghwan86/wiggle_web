@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { estimateDocumentBytes, estimateStrokeBytes, SHAPE_KINDS, STROKE_TOOLS, STROKE_WIDTH_MAX, STROKE_WIDTH_MIN, validateDrawDocument } from "../lib/drawing-model.ts";
+import { estimateDocumentBytes, estimateStrokeBytes, SHAPE_KINDS, STROKE_TOOLS, STROKE_WIDTH_MAX, STROKE_WIDTH_MIN, validateDrawDocument, MIN_POINT_GAP, strokePointGap, drawnStrokeWidth } from "../lib/drawing-model.ts";
 import { isMirrorOf, mirrorOp, undoGroupSize } from "../lib/symmetry.ts";
-import { clampView, coverPaper, IDENTITY_VIEW, pinchView, zoomView } from "../lib/canvas-view.ts";
+import { clampView, coverPaper, IDENTITY_VIEW, minScaleFor, pinchView, zoomView } from "../lib/canvas-view.ts";
 
 const stroke = (suffix, overrides = {}) => ({
   opId: `op_${suffix}`.padEnd(12, "0"),
@@ -152,18 +152,51 @@ test("the paper always covers its frame, and an overflowing paper pans at 1x wit
   assert.equal(clampView({ scale: 1, x: 50, y: 20 }, ...box).y, 0);
 });
 
-test("넓은 도화지는 1/span까지 축소되고, 그 아래로는 내려가지 않는다", () => {
+test("넓은 도화지는 전체가 보이는 배율보다 한 칸 더 줄어들고, 그 아래로는 내려가지 않는다", () => {
   // 100%에서 종이는 틀의 3배다(1180×754 화면 → 3540×2262 종이).
   const box = [1180, 754, 3540, 2262];
-  const limits = { min: 1 / 3, max: 4 };
-  // 끝까지 축소하면 종이 전체가 틀에 딱 맞는다.
-  const out = clampView({ scale: 0.01, x: 0, y: 0 }, ...box, limits);
-  assert.ok(Math.abs(out.scale - 1 / 3) < 1e-9, `축소 하한: ${out.scale}`);
-  assert.equal(Math.round(3540 * out.scale), 1180);
+  const limits = { min: minScaleFor(3), max: 4 };
+  // 1/span이면 종이 전체가 틀에 딱 맞는다.
+  assert.equal(Math.round(3540 / 3), 1180);
+  // 바닥은 거기서 한 칸(1.5배) 더 아래다 — 종이 끝과 그 바깥 바탕이 보인다(2026-09-23 사용자 요청).
+  const out = clampView({ scale: 0.001, x: 0, y: 0 }, ...box, limits);
+  assert.ok(Math.abs(out.scale - 1 / 3 / 1.5) < 1e-9, `축소 하한: ${out.scale}`);
+  assert.ok(3540 * out.scale < 1180, "바닥에서는 종이가 틀보다 좁다");
+  // 종이가 틀보다 작으면 왼쪽 위에 붙지 않고 가운데에 놓인다.
+  assert.equal(out.x, (1180 - 3540 * out.scale) / 2);
+  assert.equal(out.y, (754 - 2262 * out.scale) / 2);
+  // 손으로 밀어도 가운데를 벗어나지 않는다 — 옮길 여유가 없는 상태다.
+  assert.equal(clampView({ scale: out.scale, x: -900, y: 400 }, ...box, limits).x, out.x);
   // 한계를 주지 않으면 예전처럼 1배 아래로 내려가지 않는다(옛 작품 보호).
   assert.equal(clampView({ scale: 0.01, x: 0, y: 0 }, ...box).scale, 1);
   // 확대 상한은 그대로 4배, 이동은 종이 밖을 보여 주지 않는다.
   const zoomed = zoomView({ scale: 1, x: 0, y: 0 }, 99, { x: 590, y: 377 }, ...box, limits);
   assert.equal(zoomed.scale, 4);
   assert.ok(zoomed.x <= 0 && zoomed.x >= 1180 - 3540 * 4, "가로 이동이 종이 안에 머문다");
+});
+
+test("굵은 붓은 점을 성글게 담고, 가는 붓은 예전 밀도를 지킨다", () => {
+  /* 2026-09-26 운영 보고: 여백이 많은데도 「종이가 가득 찼다」가 떴다. 넓이가 아니라 저장 용량
+     (1.25MB)이 먼저 찬 것이고, 그걸 채우는 건 점 개수다. 렌더러는 점을 찍지 않고 이어 그리므로
+     굵은 붓에 촘촘한 점은 낭비다. 간격을 보이는 굵기의 1/4로 잡되 바닥은 2.5를 지킨다. */
+  assert.equal(MIN_POINT_GAP, 2.5);
+  // 가는 연필: 바닥값이 걸려 예전과 같다 — 세밀한 그림의 밀도를 떨어뜨리지 않는다.
+  assert.equal(strokePointGap("pencil", 4), 2.5);
+  assert.equal(strokePointGap("pencil", 10), 2.5);
+  // 수채붓은 저장 굵기의 두 배로 그어진다 — 그 실제 굵기를 기준으로 성글어진다.
+  assert.equal(strokePointGap("watercolor", 16), 8);
+  assert.equal(strokePointGap("marker", 20), 8);
+  // 도구를 모르면 배율 1로 본다(옛 "pen" 획 등).
+  assert.equal(strokePointGap(undefined, 40), 10);
+  // 렌더러와 같은 배율을 써야 "보이는 굵기"가 어긋나지 않는다.
+  assert.equal(drawnStrokeWidth("watercolor", 16), 32);
+  assert.equal(drawnStrokeWidth("crayon", 16), 16);
+});
+
+test("성글게 담아도 한도까지 그릴 수 있는 양이 실제로 늘어난다", () => {
+  // 간격이 넓어지면 같은 길이를 긋는 데 쓰는 점이 줄고, 그만큼 더 오래 칠할 수 있다.
+  const path = 100_000; // 도화지 단위로 잰 붓이 지나간 총 거리
+  const before = path / MIN_POINT_GAP;
+  const after = path / strokePointGap("watercolor", 16);
+  assert.equal(Math.round(before / after * 10) / 10, 3.2, "굵은 수채붓은 점이 3.2배 적게 쌓인다");
 });

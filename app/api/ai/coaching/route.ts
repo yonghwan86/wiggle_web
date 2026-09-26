@@ -1,6 +1,6 @@
 import { bindings } from "@/db/runtime";
 import { findOwnedCoachingEvent, recordCoachingAfter, recordCoachingBefore } from "@/lib/coaching-store";
-import { validateDrawDocument } from "@/lib/drawing-model";
+import { validateDrawDocument, MAX_DOCUMENT_BYTES } from "@/lib/drawing-model";
 import { parseImageDataUrl } from "@/lib/image-data";
 import { AIServiceError, requestStructuredOpenAI, StoryInterpretation, StudentCoaching } from "@/lib/openai-coaching";
 import { cleanText, jsonError, noStoreJson, rateLimit, sameOrigin, sha256, studentFromRequest } from "@/lib/security";
@@ -112,7 +112,9 @@ export async function POST(request: Request) {
   if (!(await rateLimit(`ai-create:${student.id}`, 8, 10 * 60))) return jsonError("몽그리를 많이 불렀어요. 잠깐 뒤에 다시 불러 주세요.", 429);
   const expectedRevision = Number(payload.expectedRevision); const document = validateDrawDocument(payload.document); const image = parseImageDataUrl(payload.imageDataUrl);
   if (!Number.isInteger(expectedRevision) || expectedRevision !== artwork.revision) return noStoreJson({ error: "그림을 먼저 저장한 뒤 다시 불러 주세요.", code: "REVISION_CONFLICT", serverRevision: artwork.revision }, { status: 409 });
-  if (!document || JSON.stringify(document).length > 1_250_000 || !image) return jsonError("현재 그림을 확인하지 못했어요.", 413);
+  // 저장 한도와 같은 상수를 쓴다. 숫자를 따로 박아 두면 저장 한도를 올렸을 때 그림은 저장되는데
+  // 몽그리만 413으로 막힌다(2026-09-26 2.5MB로 올리며 실제로 걸릴 뻔한 자리).
+  if (!document || JSON.stringify(document).length > MAX_DOCUMENT_BYTES || !image) return jsonError("현재 그림을 확인하지 못했어요.", 413);
   const childChoice = cleanText(payload.childChoice, 80);
   // 아이가 불렀는지 몽그리가 먼저 말을 걸었는지 알려 준다 — 프롬프트가 이 값으로 말투를 고른다.
   const openedBy = payload.openedBy === "mongri" ? "mongri" : "child";

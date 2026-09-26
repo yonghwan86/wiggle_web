@@ -16,9 +16,15 @@ async function ownedArtwork(teacherId: string, classroomId: string, studentId: s
   return bindings().DB.prepare(`SELECT a.id AS artworkId, s.id AS studentId, s.nickname, a.topic, a.intent, a.thumbnail_key AS thumbnailKey, a.final_image_key AS finalImageKey FROM artworks a JOIN student_profiles s ON s.id = a.student_id AND s.archived_at IS NULL JOIN classrooms c ON c.id = a.classroom_id WHERE a.id = ? AND s.id = ? AND c.id = ? AND c.teacher_id = ? AND c.active = 1`).bind(artworkId, studentId, classroomId, teacherId).first<OwnedArtwork>();
 }
 
-function imageMime(bytes: Uint8Array): "image/png" | "image/jpeg" | null {
+/* 키 이름이 아니라 바이트를 직접 본다 — 저장 형식이 바뀌어도 여기서 틀리지 않는다.
+ * 썸네일은 2026-09-26부터 WebP 무손실이다. 여기에 WebP를 더하지 않으면 교사 AI 초안이
+ * 415 「학생 그림 형식을 확인할 수 없어요」로 막힌다(썸네일을 우선 읽기 때문). */
+function imageMime(bytes: Uint8Array): "image/png" | "image/jpeg" | "image/webp" | null {
   if ([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, index) => bytes[index] === byte)) return "image/png";
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff && bytes.at(-2) === 0xff && bytes.at(-1) === 0xd9) return "image/jpeg";
+  // RIFF....WEBP
+  if ([0x52, 0x49, 0x46, 0x46].every((byte, index) => bytes[index] === byte)
+    && [0x57, 0x45, 0x42, 0x50].every((byte, index) => bytes[index + 8] === byte)) return "image/webp";
   return null;
 }
 

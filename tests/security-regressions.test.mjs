@@ -91,7 +91,10 @@ test("artwork CAS, idempotency, completion and R2 keys are race safe", async () 
   assert.match(route, /if \(artwork\.status === "complete"\)/);
   // 소감 두 칸은 2026-09-20에 없앴다 — 완성의 조건이 아니다. 대신 완성 그림이 없으면 완성으로 넘어가지 않는다.
   assert.doesNotMatch(route, /!favoritePart \|\| !favoriteReason/);
-  assert.match(route, /requestId.*nonce.*thumb\.png/s); assert.doesNotMatch(route, /state: "candidate"/); assert.match(route, /state: "committed"/); assert.match(route, /removeCandidates/);
+  /* 키에 requestId와 nonce가 들어가야 동시 저장이 같은 키를 덮지 않는다. 확장자는 2026-09-26부터
+     실제 형식을 따른다(썸네일 WebP) — 보장은 이름의 무작위성이지 확장자가 아니다. */
+  assert.match(route, /requestId.*nonce.*-thumb\./s);
+  assert.match(route, /thumbnail\.contentType === "image\/webp" \? "webp" : "png"/); assert.doesNotMatch(route, /state: "candidate"/); assert.match(route, /state: "committed"/); assert.match(route, /removeCandidates/);
   assert.equal((route.match(/ARTWORKS\.put\(thumbnailKey/g) ?? []).length, 1);
   assert.equal((route.match(/ARTWORKS\.put\(finalKey/g) ?? []).length, 1);
   assert.match(runtime, /PRIMARY KEY\(artwork_id, student_id, request_id\)/);
@@ -130,4 +133,33 @@ test("legacy mutation storage upgrades in place and offline saves contain no bea
   assert.match(init, /process\.env\.TURSO_DATABASE_URL/);
   assert.match(session, /indexedDB\.open\("wiggle-offline-v1", 2\)/); assert.match(session, /delete value\.token/); assert.match(session, /profile\.deviceToken/);
   assert.doesNotMatch(session, /QueuedSave[^\n]+token:/); assert.doesNotMatch(studio, /queueSave\(\{[^}]*token:/s);
+});
+
+test("썸네일만 WebP로 받고 완성본은 PNG 그대로다", async () => {
+  /* 2026-09-26: 썸네일은 자동 저장마다 본문에 실려 반복 비용이 크다 → WebP 무손실로 바꿨다.
+     실측 PNG 40.3KB → 23.9KB(−41%), 픽셀 손상 0. 완성본(1024)은 한 번뿐이고 인코딩이 3배
+     느려 PNG로 둔다. 실제 왕복 확인: 저장 200 · 서빙 content-type image/webp · 256×144 디코딩 ·
+     완성본에 WebP를 보내면 413. */
+  const [route, studio, draft, family] = await Promise.all([
+    read("../app/api/artworks/[id]/route.ts"),
+    read("../app/components/DrawingStudio.tsx"),
+    read("../app/api/ai/teacher-draft/route.ts"),
+    read("../app/api/family/session/route.ts"),
+  ]);
+  // 썸네일은 둘 다 받고(옛 기기는 PNG로 보낸다), 완성본은 PNG만 받는다.
+  assert.match(route, /const THUMBNAIL_TYPES = \["image\/webp", "image\/png"\] as const;/);
+  assert.match(route, /const FINAL_TYPES = \["image\/png"\] as const;/);
+  assert.match(route, /decodeImage\(payload\.thumbnailDataUrl, 500_000, THUMBNAIL_TYPES\)/);
+  assert.match(route, /decodeImage\(payload\.finalDataUrl, 3_500_000\)/);
+  // 저장한 형식을 그대로 적는다 — 하드코딩하면 WebP를 PNG라고 적어 보내 그림이 깨진다.
+  assert.match(route, /contentType: thumbnail\.contentType/);
+  assert.doesNotMatch(route, /put\(thumbnailKey[^)]*contentType: "image\/png"/);
+  // 클라이언트: 256만 WebP로 굽고, 못 굽는 기기는 말없이 PNG가 된다.
+  assert.match(studio, /function encodeThumbnail/);
+  assert.match(studio, /webp\.startsWith\("data:image\/webp;base64,"\) \? webp : output\.toDataURL\("image\/png"\)/);
+  assert.match(studio, /size === 256 \? encodeThumbnail\(output\) : output\.toDataURL\("image\/png"\)/);
+  // 썸네일 바이트를 읽어 쓰는 곳도 WebP를 알아야 한다 — 모르면 교사 AI 초안이 415로 막힌다.
+  assert.match(draft, /return "image\/webp";/);
+  // 가족 공유는 저장된 형식을 쓴다(지금 완성본은 PNG). 하드코딩 자리를 남기지 않는다.
+  assert.match(family, /isImageMimeType\(stored\) \? stored : "image\/png"/);
 });

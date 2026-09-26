@@ -2,12 +2,12 @@
 
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { activeTextObjects, clampDocumentHeight, contentBounds, DOCUMENT_SIZE, documentHeight, documentSpan, DrawDocument, DrawOp, drawingTextGraphemes, emptyDocument, estimateDocumentBytes, estimateStrokeBytes, growDrawOps, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, MAX_TEXT_GRAPHEMES, MAX_TEXT_OBJECTS, NEW_DOCUMENT_SPAN, normalizeDrawingText, roundUnit, ShapeKind, STROKE_WIDTH_SCREEN_MAX, STROKE_WIDTH_MIN, StrokeWidth, TextKind, TEXT_SIZES, TextSize, toDocumentUnits, toScreenUnits, validateDrawDocument } from "@/lib/drawing-model";
+import { activeTextObjects, clampDocumentHeight, contentBounds, DOCUMENT_SIZE, documentHeight, documentSpan, DrawDocument, DrawOp, drawingTextGraphemes, emptyDocument, estimateDocumentBytes, estimateStrokeBytes, growDrawOps, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_OPS, MAX_STROKE_POINTS, strokePointGap, MAX_TEXT_GRAPHEMES, MAX_TEXT_OBJECTS, NEW_DOCUMENT_SPAN, normalizeDrawingText, roundUnit, ShapeKind, STROKE_WIDTH_SCREEN_MAX, STROKE_WIDTH_MIN, StrokeWidth, TextKind, TEXT_SIZES, TextSize, toDocumentUnits, toScreenUnits, validateDrawDocument } from "@/lib/drawing-model";
 import { renderDrawDocument, renderDrawOperation, resetDrawingCanvas } from "@/lib/draw-renderer";
 import { mirrorOp } from "@/lib/symmetry";
 import { clearAllDrawing, redoDrawing, undoDrawing } from "@/lib/drawing-history";
 import { DrawingInputMode, INPUT_MODE_EVENT } from "@/lib/input-mode";
-import { CanvasView, clampView, coverPaper, IDENTITY_VIEW, MAX_SCALE, pinchView, zoomView } from "@/lib/canvas-view";
+import { CanvasView, clampView, coverPaper, IDENTITY_VIEW, MAX_SCALE, minScaleFor, pinchView, zoomView } from "@/lib/canvas-view";
 import { lessonBySlug, Lesson } from "@/lib/lesson-content";
 import { guideMarksForVariant } from "@/lib/lesson-guide-variants";
 import { ArrowLeftIcon, CheckIcon, ChevronUpIcon, HandIcon, MoreHorizontalIcon, Redo2Icon, Trash2Icon, Undo2Icon } from "./StudioIcons";
@@ -431,30 +431,32 @@ function renderGuideFrame(canvas: HTMLCanvasElement, traces: GuideTrace[], phase
   context.restore();
 }
 
-function imageData(canvas: HTMLCanvasElement, size: 256 | 1024) {
-  const output = document.createElement("canvas");
-  // 화면 캔버스의 비율을 그대로 따른다 — 정사각으로 고정하면 가로 도화지가 찌그러진다.
-  const height = Math.max(1, Math.round(size * canvas.height / Math.max(1, canvas.width)));
-  output.width = size;
-  output.height = height;
-  const context = output.getContext("2d");
-  if (!context) return "";
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, size, height);
-  context.drawImage(canvas, 0, 0, size, height);
-  return output.toDataURL("image/png");
+
+/* 썸네일은 자동 저장마다 본문에 실린다(완성본은 완성할 때 한 번뿐이다). 그래서 이 한 장만
+ * WebP 무손실로 굽는다 — 실측(2026-09-26): 물감 많은 그림 기준 PNG 40.3KB → WebP 23.9KB(−41%),
+ * 픽셀 손상 0, 256px 인코딩은 PNG보다 오히려 빠르다(2.2ms → 1.8ms).
+ * 완성본(1024)은 PNG 그대로 둔다 — 한 번뿐이라 이득이 작고 인코딩이 3배 느리다.
+ * toDataURL은 못 굽는 형식을 주면 **말없이 PNG를 돌려준다.** 그래서 결과 접두사를 보고 판단한다 —
+ * 안 되는 기기(옛 사파리)에서는 자동으로 PNG가 되고 서버는 둘 다 받는다. */
+function encodeThumbnail(output: HTMLCanvasElement) {
+  const webp = output.toDataURL("image/webp", 1);
+  return webp.startsWith("data:image/webp;base64,") ? webp : output.toDataURL("image/png");
 }
 
-// 저장 이미지는 화면 픽셀이 아니라 저장하려는 문서에서 직접 렌더한다. 화면 캔버스에는
-// 그리는 중 미리보기 같은 문서 밖 픽셀이 있을 수 있고, 그게 썸네일·완성 PNG에 섞이면 안 된다.
-// (몽그리에 보내는 이미지는 "아이가 지금 보는 화면"이어야 하므로 imageData를 그대로 쓴다.)
+/* 저장 이미지는 화면 픽셀이 아니라 저장하려는 문서에서 직접 렌더한다. 화면 캔버스에는
+ * 그리는 중 미리보기 같은 문서 밖 픽셀이 있을 수 있고, 그게 썸네일·완성 PNG에 섞이면 안 된다.
+ *
+ * 2026-09-26: 몽그리에 보내는 이미지도 이것을 쓴다(미결정 P-014). 종전에는 "아이가 지금 보는
+ * 화면"이라는 이유로 imageData를 썼는데, 실제로는 화면이 아니라 문서 래스터 전체였고 — 넓은
+ * 도화지(span 3)는 대부분이 흰 여백이라 340×290짜리 집이 모델 눈에 57×48px(넓이의 5.6%)로
+ * 들어갔다. 이 함수는 span>1이면 그린 칸만 잘라 같은 크기에 9배 크게 담는다. */
 function documentImage(documentValue: DrawDocument, size: 256 | 1024) {
   const span = documentSpan(documentValue);
   const bounds = span > 1 ? contentBounds(documentValue) : null;
   if (!bounds) {
     const output = document.createElement("canvas");
     renderDocument(output, documentValue, size);
-    return output.toDataURL("image/png");
+    return size === 256 ? encodeThumbnail(output) : output.toDataURL("image/png");
   }
   /* 넓은 도화지(span>1)는 흰 여백이 대부분이라 도화지 전체를 1024로 줄이면 아이 그림이 1/3 크기로 들어간다.
    * 그러면 그림책·인쇄에서 뭉개진다. 그래서 그린 칸만 잘라, 같은 파일 크기로 훨씬 촘촘하게 담는다. */
@@ -475,7 +477,7 @@ function documentImage(documentValue: DrawDocument, size: 256 | 1024) {
   context.translate(-Math.round(bounds.x * pageSize.width), -Math.round(bounds.y * pageSize.height));
   resetDrawingCanvas(context, pageSize);
   renderDrawDocument(context, documentValue.ops, pageSize);
-  return output.toDataURL("image/png");
+  return size === 256 ? encodeThumbnail(output) : output.toDataURL("image/png");
 }
 
 // 서버 한도에 부딪히면 그 작품은 이후 모든 저장이 실패해 조용히 유실된다.
@@ -730,7 +732,7 @@ export function DrawingStudio() {
       const loadDisposition = artworkUrl ? resolveArtworkDraftDisposition(localSaves, artworkUrl, data.artwork.status === "complete") : { action: "load" as const };
       if (loadDisposition.action === "archive") {
         hydratedKeyRef.current = loadKey;
-        location.replace("/student/archive");
+        location.replace("/student");
         return;
       }
       const loadDraft = loadDisposition.action === "recover" ? loadDisposition.draft : restoredDraft;
@@ -1353,7 +1355,7 @@ export function DrawingStudio() {
           conflictDraftRef.current = null;
           setConflictDraft(null);
           setConflictRevision(null);
-          location.replace("/student/archive");
+          location.replace("/student");
           return;
         }
         const latestRevision = flushed.latestRevisions[url];
@@ -1488,7 +1490,9 @@ export function DrawingStudio() {
     footprint.style.left = `${point.x * 100}%`;
     footprint.style.top = `${point.y * 100}%`;
     // 가로 도화지에서는 가로 %와 세로 %가 다른 픽셀이 된다 — 가로 기준 폭 + aspect-ratio로 정사각을 지킨다.
-    footprint.style.width = `${eraserWidth / 10.24}%`;
+    // %는 도화지(span장 너비) 기준이므로 화면 굵기를 그대로 쓰면 안 된다 — 실제로 지워지는 칸은
+    // 저장 단위(굵기÷span)라, 그대로 두면 새 도화지(span 3)에서 네모만 3배로 커진다.
+    footprint.style.width = `${documentWidthUnits(eraserWidth) / 10.24}%`;
     footprint.style.height = "auto";
     footprint.dataset.pressed = pressed ? "true" : "false";
   }
@@ -1651,9 +1655,10 @@ export function DrawingStudio() {
   }, [artwork?.id]);
   const span = documentSpan(documentState);
   const screenPaper = coverPaper(frame.width, frame.height, documentHeight(documentState));
-  // 도화지는 100%에서 화면 span장 너비다. 끝까지 축소하면(1/span) 도화지 전체가 보인다.
+  // 도화지는 100%에서 화면 span장 너비다. 1/span이면 도화지 전체가 틀에 맞고,
+  // 거기서 한 칸 더 줄이면 종이 끝과 그 바깥 바탕까지 보인다(2026-09-23 사용자 요청).
   const paper = { width: screenPaper.width * span, height: screenPaper.height * span };
-  scaleLimitsRef.current = useMemo(() => ({ min: 1 / span, max: MAX_SCALE }), [span]);
+  scaleLimitsRef.current = useMemo(() => ({ min: minScaleFor(span), max: MAX_SCALE }), [span]);
   // 화면에 보이는 도화지 크기(배율 포함)에 맞춰 래스터를 잡는다. 바뀌면 아래 effect가 다시 그린다.
   const rasterWidth = rasterWidthFor(paper.width * view.scale, documentHeight(documentState));
   rasterWidthRef.current = rasterWidth;
@@ -1725,7 +1730,7 @@ export function DrawingStudio() {
     viewRef.current = next;
     setView(next);
   }
-  // 확대·축소 단추는 도화지 가운데를 붙잡고 1.5배씩 움직인다. 1배(화면 맞춤) 아래로는 줄이지 않는다.
+  // 확대·축소 단추는 도화지 가운데를 붙잡고 1.5배씩 움직인다. 바닥은 도화지 전체보다 한 칸 더 작은 배율이다.
   function zoomBy(factor: number) {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -1995,7 +2000,7 @@ export function DrawingStudio() {
       return;
     }
     if (canvasFull) {
-      setSaveState("종이가 가득 찼어요. ‘완성’을 눌러 완성해요");
+      setSaveState("그림이 아주 커졌어요. ‘완성’을 눌러 저장해요");
       return;
     }
     // 한 번에 한 포인터만 그린다. 그렇지 않으면 태블릿에 얹은 손바닥 접촉이 각각 별도의 선이 된다.
@@ -2125,9 +2130,11 @@ export function DrawingStudio() {
       } else incoming.push(rawNext);
     }
     let addedPoint = false;
+    // 굵은 붓은 점을 촘촘히 담을 이유가 없다 — 렌더러가 점을 이어 그리므로 간격을 굵기에 맞춘다.
+    const gap = strokePointGap(meta.tool, meta.width);
     for (const next of incoming) {
       const last = points.at(-1);
-      if (last && Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= 2.5) {
+      if (last && Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= gap) {
         points.push(next);
         addedPoint = true;
       }
@@ -2171,7 +2178,7 @@ export function DrawingStudio() {
         const wholeStrokeFit = commitStroke(points.slice(), meta);
         if (!wholeStrokeFit) {
           endStroke(event);
-          setSaveState("종이가 가득 찼어요. ‘완성’을 눌러 완성해요");
+          setSaveState("그림이 아주 커졌어요. ‘완성’을 눌러 저장해요");
           return;
         }
         activePoints.current.set(event.pointerId, [points.at(-1)!]);
@@ -2269,9 +2276,10 @@ export function DrawingStudio() {
       const guideLock = guideTraceLocksRef.current.get(event.pointerId);
       const guidedRelease = guideLock ? snapGuideTrace(currentGuideTraces, guideLock, releasePoint) : null;
       const incoming = guidedRelease ? guidedRelease.points : [releasePoint];
+      const gap = strokePointGap(meta.tool, meta.width);
       for (const next of incoming) {
         const last = points.at(-1);
-        if (last && Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= 2.5) points.push(next);
+        if (last && Math.hypot((next.x - last.x) * 1024, (next.y - last.y) * 1024) >= gap) points.push(next);
       }
     }
     activePoints.current.delete(event.pointerId);
@@ -2284,7 +2292,7 @@ export function DrawingStudio() {
     // 한도에 막혀 커밋되지 않으면 미리보기 픽셀을 문서 상태로 되돌린다.
     if (!commitStroke(points, meta)) {
       endStroke(event);
-      setSaveState("종이가 가득 찼어요. ‘완성’을 눌러 완성해요");
+      setSaveState("그림이 아주 커졌어요. ‘완성’을 눌러 저장해요");
       return;
     }
     if ((guidePhase === "practice" || guidePhase === "demo") && lessonGuideAvailable && meta.tool !== "eraser") setGuidePracticeTried(true);
@@ -2375,7 +2383,9 @@ export function DrawingStudio() {
         reflection: { favoritePart: "", favoriteReason: "", spokenDescription: "", storyText },
       });
       if (ok) {
-        location.href = "/student/archive";
+        // 완성하고 나면 아이 자리로 돌아간다(2026-09-25 사용자 지시). 거기서 방금 그린 그림과
+        // 새 그림·그림책을 함께 본다. 보관함은 그 화면의 「내 그림 모두 보기」로 한 번에 간다.
+        location.href = "/student";
         return;
       }
       setCompletionState("error");
@@ -2458,7 +2468,7 @@ export function DrawingStudio() {
       setSaveState("사본은 저장했어요. 정리가 끝나지 않았으니 한 번 더 눌러 주세요");
       return;
     }
-    location.replace(draft.complete ? "/student/archive" : `/student/draw/${createdData.artwork.id}`);
+    location.replace(draft.complete ? "/student" : `/student/draw/${createdData.artwork.id}`);
   }
 
   /* 조건이 맞는 순간에만 몽그리가 먼저 말을 건다. 획을 긋는 도중에는 절대 뜨지 않는다 —
@@ -2519,7 +2529,7 @@ export function DrawingStudio() {
           artworkId: artwork.id,
           expectedRevision: revisionRef.current,
           document: documentStateRef.current,
-          imageDataUrl: imageData(canvasRef.current, 1024),
+          imageDataUrl: documentImage(documentStateRef.current, 1024),
           childChoice,
           openedBy: auto ? "mongri" : "child",
         }),
@@ -2611,7 +2621,7 @@ export function DrawingStudio() {
     try {
       const response = await studentFetch("/api/ai/coaching", {
         method: "POST",
-        body: JSON.stringify({ action: "interpret", artworkId: artwork.id, imageDataUrl: imageData(canvasRef.current, 1024) }),
+        body: JSON.stringify({ action: "interpret", artworkId: artwork.id, imageDataUrl: documentImage(documentStateRef.current, 1024) }),
       });
       const data = (await response.json()) as { interpretation?: StoryInterpretation };
       if (response.ok && data.interpretation) setInterpretation(data.interpretation);
@@ -2959,7 +2969,9 @@ export function DrawingStudio() {
             )}
             {canvasFull && (
               <div className="canvas-full-hint" role="alert">
-                <span aria-hidden="true">🌟</span> 종이가 가득 찼어! ‘완성’을 눌러 완성하자.
+                {/* 「종이가 가득 찼다」는 거짓말이었다 — 여백이 많아도 저장 용량이 먼저 찬다(2026-09-26 운영 보고).
+                    아이가 화면을 보고 납득할 수 있는 말로 바꾼다. */}
+                <span aria-hidden="true">🌟</span> 그림이 아주 커졌어! ‘완성’을 눌러 저장하자.
               </div>
             )}
             <div
@@ -3028,14 +3040,20 @@ export function DrawingStudio() {
             <div className="zoom-controls" role="group" aria-label="확대와 축소">
               <button type="button" aria-label="확대" title="확대" disabled={view.scale >= MAX_SCALE - 0.001} onClick={() => zoomBy(1.5)}>+</button>
               <button type="button" className="zoom-fit" aria-label={`지금 ${Math.round(view.scale * 100)}%, 원래 크기로`} title="원래 크기로" disabled={Math.abs(view.scale - 1) < 0.01} onClick={resetViewToFit}>{Math.round(view.scale * 100)}%</button>
-              <button type="button" aria-label="축소" title="축소" disabled={view.scale <= 1 / span + 0.001} onClick={() => zoomBy(1 / 1.5)}>−</button>
+              <button type="button" aria-label="축소" title="축소" disabled={view.scale <= minScaleFor(span) + 0.001} onClick={() => zoomBy(1 / 1.5)}>−</button>
             </div>
           </div>
         </section>
         {/* 도구 막대(2026-09-14 사용자 결정 — 시안 docs/design-assets/studio-tool-dock/B-crayon-box.webp).
             화면 아래에 떠 있는 크림색 막대에 세워진 도구, 고른 도구는 올라오고 진초록 바탕. 붓 끝·띠는 지금 색으로 칠한다.
             고른 도구를 한 번 더 누르면 굵기 자가 위에 뜬다. 채우기·도형·글씨·입력 방법은 ⋯ 안에 있다. */}
-        <aside className={`tool-dock${dockOpen ? "" : " is-collapsed"}`} aria-label="그리기 도구 모음" style={{ "--dock-color": selectedColor } as React.CSSProperties}>
+        {/* 도화지는 CSS(선택·끌기 금지)와 onDragStart 방어를 **둘 다** 갖고 있다. 막대는 2026-09-23에
+            CSS만 받았고, 그 커밋도 "실기기 재확인이 필요하다"고 적어 두었다 — 아이패드에서 도구가 계속
+            끌린다는 제보(2026-09-26)가 이어졌다. 같은 JS 방어를 막대에도 건다.
+            끌기 이벤트는 위로 올라오므로 막대 하나에 걸면 안의 도구 그림·색 단추가 모두 덮인다. */}
+        <aside className={`tool-dock${dockOpen ? "" : " is-collapsed"}`} aria-label="그리기 도구 모음" style={{ "--dock-color": selectedColor } as React.CSSProperties}
+          onDragStart={(event) => event.preventDefault()}
+          onContextMenu={(event) => event.preventDefault()}>
           {/* 아코디언(2026-09-15 사용자: "누르면 위로 올라가고 내리면 아래로 내려가는 느낌"): 막대가 화면 아래로 미끄러져 내려가고 손잡이 탭만 남는다. */}
           <button
             type="button"
@@ -3354,9 +3372,21 @@ export function DrawingStudio() {
                 <span aria-hidden="true">{completionState === "saving" ? "⏳" : "⭐"}</span>{completionState === "saving" ? "작품을 안전하게 저장 중…" : completionState === "error" ? "다시 저장하기" : "작품 완성"}
               </button>
             </div>
-            {completionState === "saving" && <p className="completion-pending" role="status" aria-live="polite">창을 닫지 않아도 돼요. 그림을 안전하게 보관하고 있어요.</p>}
             {completionState === "error" && <p className="completion-error" role="alert">{completionError}</p>}
           </section>
+        </div>
+      )}
+      {/* 저장하는 동안은 화면 전체를 덮는다(2026-09-25 사용자 요청). 단추 안에서만 도는 표시는
+          아이 눈에 잘 안 띄어 그동안 다른 것을 누르려 든다. 이 막은 모달보다 위(z-index 30)에 있어
+          뒤쪽 누르기를 전부 받아 삼킨다 — 닫기·단추는 이미 disabled라 탭으로도 닿지 않는다. */}
+      {completionState === "saving" && (
+        <div className="saving-veil" role="status" aria-live="assertive">
+          <div className="saving-veil-card">
+            <img src="/brand/mongri/reassuring.png" alt="" aria-hidden="true" width={224} height={224} />
+            <b>그림을 저장하고 있어요</b>
+            <span className="saving-veil-dots" aria-hidden="true"><i /><i /><i /></span>
+            <small>잠깐만 기다려 줘. 창을 닫지 않아도 돼요.</small>
+          </div>
         </div>
       )}
     </main>

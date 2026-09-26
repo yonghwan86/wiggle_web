@@ -1,0 +1,145 @@
+/* 참여 코드 뒤 「그림 자리」 (2026-09-25, 인계 docs/design-assets/student-art-desk-handoff-20260923).
+ *
+ * 토큰은 이 화면 안에만 둔다 — 인계 tokens.css 지시대로 다른 화면의 전역 토큰을 바꾸지 않는다.
+ * 시안의 따뜻한 크림 책상은 국소 바탕이다. */
+.student-art-desk {
+  --desk-cream: #fdf8e6;
+  --desk-paper: #fefdf5;
+  --desk-ink: #173e29;
+  --desk-green: #2f6b3f;
+  --desk-pale-green: #dbf1ba;
+  --desk-yellow: #f6c84b;
+  --desk-card-border: #e8e0cd;
+  --desk-card-shadow: 0 4px 10px rgb(56 40 12 / 12%);
+  --desk-section-radius: 24px;
+  position: relative;
+  min-height: 100dvh;
+  /* 칼럼을 적지 않으면 암묵 auto 칼럼이 안쪽 가로 목록의 max-content까지 부푼다(보관함에서 겪은 것). */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow-x: clip;
+  color: var(--desk-ink);
+  background: var(--desk-cream) url("/student-desk/desk-surface.webp") center / cover no-repeat;
+}
+
+/* ── 모서리 장식 ─────────────────────────────────────────────────────────────
+   본문 뒤에 있고 초점·클릭을 받지 않는다. 좁은 화면에서는 숨긴다 — 정보는 하나도 담겨 있지 않다. */
+/* position은 아래 `.student-art-desk > *`처럼 뭉뚱그린 규칙으로 덮이기 쉽다. 덮이면 높이가 0이 되고
+   overflow:clip이 장식을 통째로 잘라 낸다(2026-09-25 실측: 세 장 모두 사라졌다). 그래서 대상을 콕 집는다. */
+.student-art-desk > .desk-decor { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: clip; }
+.desk-decor > img, .desk-decor > .desk-decor-stationery { position: absolute; object-fit: contain; opacity: .95; }
+.desk-decor-plant { left: -84px; top: 40px; width: clamp(150px, 15vw, 260px); }
+/* 문구 자리를 %로 잡으려면 그림과 같은 상자가 필요하다 — img를 감싸고 비율을 고정한다. */
+.desk-decor-stationery { right: -40px; top: -26px; width: clamp(240px, 26vw, 460px); aspect-ratio: 1536 / 1024; }
+.desk-decor-stationery > img { width: 100%; height: 100%; object-fit: contain; }
+/* 그림 속 메모지는 비어 있다(인계: 글자를 굽지 않았다). 그 위에 HTML로 올린다. */
+.desk-memo { position: absolute; left: 38%; top: 36%; width: 31%; height: 42%; display: grid; place-content: center; transform: rotate(-2deg); color: #86651a; font-size: clamp(9px, .92vw, 15px); font-weight: 900; line-height: 1.4; text-align: center; }
+.desk-decor-notebook { right: -70px; bottom: -60px; width: clamp(170px, 17vw, 300px); }
+/* 시안의 왼쪽 아래 크레용. 가장자리에서 살짝 들어오게 크게 깔고 아래로 흘려 보낸다. */
+.desk-decor-crayons { left: -34px; bottom: -26px; width: clamp(170px, 19vw, 330px); opacity: .92; }
+@media (max-width: 899px) { .desk-decor { display: none; } }
+
+.student-art-desk > .desk-header, .student-art-desk > .desk-body { position: relative; z-index: 1; }
+
+/* ── 머리 ─────────────────────────────────────────────────────────────────── */
+.student-art-desk .desk-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0; padding: 12px clamp(16px, 3vw, 40px); background: none; border: 0;
+}
+.student-art-desk .desk-finish {
+  min-height: 44px; padding: 9px 14px; border: 1px solid #e8c45f; border-radius: 12px;
+  background: var(--desk-yellow); color: #6b4a00; font-size: 15px; font-weight: 900; white-space: nowrap;
+}
+
+.desk-body {
+  min-width: 0; width: min(1320px, 100%); margin-inline: auto;
+  padding: clamp(6px, 1.4vh, 18px) clamp(16px, 3vw, 40px) clamp(28px, 5vh, 56px);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(14px, 2.4vh, 26px); align-content: start;
+}
+
+.desk-title h1 { margin: 0; font-size: clamp(26px, 3.6vw, 44px); letter-spacing: -.045em; color: var(--desk-ink); }
+/* 시안의 노란 밑줄은 제목 길이를 따라가지 않고 짧으며, 안내가 그 오른쪽 같은 줄에 온다. */
+.desk-title p { display: flex; align-items: center; gap: 14px; margin: 9px 0 0; color: #5b6b58; font-size: clamp(14px, 1.3vw, 18px); font-weight: 750; }
+.desk-title-rule { flex: 0 0 auto; width: clamp(56px, 6vw, 96px); height: 6px; border-radius: 999px; background: var(--desk-yellow); }
+
+/* ── 구역 ─────────────────────────────────────────────────────────────────── */
+.desk-section {
+  min-width: 0; padding: clamp(14px, 2vw, 24px);
+  border-radius: var(--desk-section-radius); background: rgb(255 253 243 / 82%);
+  box-shadow: var(--desk-card-shadow);
+}
+.desk-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.desk-section-head h2 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: clamp(19px, 1.9vw, 26px); letter-spacing: -.04em; color: var(--desk-green); }
+.desk-section-head h2 img { width: clamp(22px, 2vw, 28px); height: auto; }
+.desk-more { min-height: 44px; display: inline-flex; align-items: center; color: var(--desk-green); font-size: 14px; font-weight: 800; }
+
+/* 넓으면 한 줄에 펴고, 좁으면 가로로 민다. 390px에서 네 장을 억지로 줄이지 않는다(인계 지시). */
+.desk-art-row, .desk-book-row { display: flex; gap: clamp(10px, 1.4vw, 18px); margin: 0; padding: 2px; list-style: none; overflow-x: auto; overscroll-behavior-x: contain; }
+.desk-art-row > li { flex: 0 0 clamp(200px, 22vw, 260px); }
+.desk-book-row > li { flex: 0 0 clamp(250px, 30vw, 340px); }
+@media (min-width: 1100px) {
+  .desk-art-row { overflow-x: visible; }
+  .desk-art-row > li { flex: 1 1 0; }
+  /* 넓은 화면에서만 새 종이를 줄 끝으로 보낸다(시안 배치). 좁은 화면에서는 DOM 그대로 맨 앞이다. */
+  .desk-art-row > .desk-new-item { order: 1; }
+}
+
+/* ── 그림 카드 ───────────────────────────────────────────────────────────── */
+/* 시안은 책상에 놓인 흰 종이다 — 테두리 없이 그림자만 두고, 그림이 종이 위쪽을 꽉 채운다.
+   종전처럼 둥근 테두리 카드 안에 또 흰 사각형을 두면 이중 액자로 보인다. */
+.desk-art-card, .desk-new-card {
+  display: grid; height: 100%; padding: 9px 11px 11px; border: 0; border-radius: 4px;
+  background: #fff; box-shadow: 0 3px 12px rgb(56 40 12 / 16%); color: var(--desk-ink); text-decoration: none;
+}
+.desk-art-card { grid-template-rows: minmax(0, 1fr) auto; gap: 9px; }
+.desk-art-card:hover, .desk-new-card:hover { box-shadow: 0 6px 18px rgb(56 40 12 / 22%); }
+.desk-art-card:focus-visible, .desk-new-card:focus-visible { outline: 3px solid var(--desk-green); outline-offset: 3px; }
+
+.desk-art-paper { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 3; overflow: hidden; background: #fff; }
+/* 아이 작품에는 필터·반투명 오버레이·강제 자르기를 얹지 않는다 — 원래 비율 그대로 담는다. */
+.desk-art-image { width: 100%; height: 100%; object-fit: contain; }
+.desk-art-image.is-blank { display: grid; place-items: center; font-size: 34px; }
+.desk-art-badge { position: absolute; left: 0; bottom: 8px; padding: 5px 11px; border-radius: 0 999px 999px 0; background: #eef0ec; color: #4a5645; font-size: 12px; font-weight: 800; }
+/* 시안의 「그리는 중」은 진초록 알약이다. 색만으로 구분하지 않으므로 글자는 그대로 둔다. */
+.desk-art-badge.is-drawing { background: var(--desk-green); color: #fff; }
+
+.desk-art-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.desk-art-meta { display: grid; gap: 2px; min-width: 0; }
+.desk-art-meta b { font-size: 15px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desk-art-meta time { color: #5d6f5b; font-size: 12px; font-weight: 700; }
+/* 카드 전체가 링크라 이 줄은 단추가 아니다. 그래도 손가락이 닿는 높이를 지킨다. */
+.desk-art-go { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--desk-green); font-size: 14px; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+
+/* 새 그림 그리기 — 빈 도화지 모양의 주 행동. */
+/* 시안의 새 종이는 점선 상자가 아니라 다른 그림과 같은 흰 종이다 — 큰 연필 하나가 표시다. */
+.desk-new-card { place-content: center; justify-items: center; gap: 14px; min-height: 200px; }
+.desk-new-card img { width: clamp(64px, 7vw, 104px); height: auto; }
+.desk-new-card b { font-size: clamp(17px, 1.7vw, 24px); font-weight: 900; color: var(--desk-green); }
+
+/* ── 그림책 카드 ─────────────────────────────────────────────────────────── */
+/* 시안은 책 자체가 책상에 놓여 있고 제목·쪽 수·행동이 그 오른쪽에 맨몸으로 있다 — 테두리 카드가 아니다. */
+.desk-book-card {
+  display: grid; grid-template-columns: clamp(86px, 9vw, 124px) minmax(0, 1fr); gap: 16px; align-items: center; height: 100%;
+  padding: 8px 10px; border: 0; border-radius: 12px; background: none; color: var(--desk-ink); text-decoration: none;
+}
+.desk-book-card:hover { background: rgb(255 255 255 / 45%); }
+.desk-book-card:focus-visible { outline: 3px solid var(--desk-green); outline-offset: 3px; }
+/* 책은 단일 SQUAREBOOK_HC(243×248mm)라 거의 정사각이다 — 시안의 가로 책 장식보다 실제 비율을 따른다. */
+/* 책이 평면으로 보이지 않게 아주 살짝 눕힌다. 표지 그림은 목록 응답에 없어 틀만 쓴다. */
+.desk-book-frame { display: block; filter: drop-shadow(0 6px 12px rgb(56 40 12 / 26%)); }
+.desk-book-frame img { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1; transform: perspective(600px) rotateY(-11deg); }
+.desk-book-meta { display: grid; gap: 3px; min-width: 0; }
+.desk-book-meta b { font-size: 15px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desk-book-meta small { color: #5d6f5b; font-size: 12px; font-weight: 700; }
+.desk-book-empty { margin: 0; color: #5d6f5b; font-size: 15px; font-weight: 700; line-height: 1.7; }
+.desk-book-empty a { min-height: 44px; display: inline-flex; align-items: center; margin-left: 6px; color: var(--desk-green); font-weight: 800; }
+
+/* 눕힌 기기는 세로가 귀하다 — 여백과 큰 글자를 줄여 한 화면에 넣는다. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .desk-title h1 { font-size: 24px; }
+  .desk-title h1:after { height: 4px; margin-top: 5px; }
+  .desk-title p { margin-top: 5px; font-size: 13px; }
+  .desk-new-card { min-height: 150px; }
+  .desk-art-paper { aspect-ratio: 16 / 9; }
+}

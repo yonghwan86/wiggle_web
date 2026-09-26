@@ -32,7 +32,9 @@ test("Responses request keeps image, strict schema, privacy and coaching invaria
   assert.equal(captured.url, "https://api.openai.com/v1/responses");
   assert.equal(captured.body.store, false); assert.equal(captured.body.safety_identifier, "hashed-student-id");
   assert.equal(captured.body.text.format.type, "json_schema"); assert.equal(captured.body.text.format.strict, true);
-  assert.equal(captured.body.input[0].content[1].type, "input_image"); assert.equal(captured.body.input[0].content[1].detail, "low");
+  assert.equal(captured.body.input[0].content[1].type, "input_image"); /* 2026-09-26(P-014): detail "low"는 긴 변을 512px로 줄여 아이 그림이 알아볼 수 없게 작아졌다.
+  // 보내는 쪽에서 그린 칸만 잘라 크게 담고, 여기서도 줄이지 않는다. */
+  assert.equal(captured.body.input[0].content[1].detail, "high");
   assert.equal(captured.body.model, "gpt-5.6-sol"); assert.equal(captured.body.reasoning.effort, "low");
   assert.match(captured.body.instructions, /아이가 그리는 것을 막지 않는다/); // 2026-09-12: 자동 개입으로 바뀌며 "끼어들지 않는다"가 "막지 않는다"로 바뀌었다 assert.match(captured.body.instructions, /질문은 정확히 하나/); assert.match(captured.body.instructions, /점수, 순위.*평가/);
   assert.doesNotMatch(JSON.stringify(captured.body), /student_x7k29/i);

@@ -1,7 +1,7 @@
 import { bindings } from "@/db/runtime";
 import { familyCookieToken, familyJson, resolveFamilySession } from "@/lib/family-sharing";
 import { buildWeeklyGrowthReport } from "@/lib/growth-reports";
-import { bytesToDataUrl } from "@/lib/image-data";
+import { bytesToDataUrl, isImageMimeType } from "@/lib/image-data";
 import { validateDrawDocument } from "@/lib/drawing-model";
 import { clientIp, rateLimit, sha256 } from "@/lib/security";
 
@@ -14,7 +14,10 @@ async function imageDataUrl(key: string) {
   if (!object || object.size > 3_500_000) return null;
   const bytes = new Uint8Array(await object.arrayBuffer());
   // 바이트 단위 문자열 결합 대신 청크 변환을 쓴다. 가족 화면은 최대 12장을 한 번에 싣는다.
-  return bytesToDataUrl(bytes, "image/png");
+  // 저장된 형식을 그대로 쓴다. 하드코딩해 두면 언젠가 완성본 형식을 바꿀 때 여기만 조용히 깨진다
+  // (2026-09-26 썸네일을 WebP로 옮기며 같은 종류의 자리를 두 곳 더 찾았다). 지금 완성본은 PNG다.
+  const stored = object.httpMetadata?.contentType;
+  return bytesToDataUrl(bytes, isImageMimeType(stored) ? stored : "image/png");
 }
 
 function publicTimelapseOps(serialized: string) {

@@ -185,6 +185,96 @@
       "approvedFor": [
         "좁은 화면 대기 안내 상자의 작은 몽그리 얼굴(장식, alt=\"\"). 표시 폭 48~56px, 좁은 화면 44px."
       ]
+    },
+    {
+      "path": "/student-desk/book-cover-frame-green.svg",
+      "source": "코덱스 인계 student-art-desk-handoff-20260923/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/student-art-desk-handoff-20260923/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "D6285FF6EC84CA5C43288C5FB52DC1A28F6ADAB1C466417A7A4A7AAA5DFAA3DC",
+      "approvedFor": [
+        "참여 코드 뒤 「그림 자리」 화면(/student)의 모서리 장식·아이콘·빈 책 틀. 글자·아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/student-desk/book-cover-frame-yellow.svg",
+      "source": "코덱스 인계 student-art-desk-handoff-20260923/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/student-art-desk-handoff-20260923/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "7E09A58D28D216185A4279C06CF3D55937C0AEC61FD2407FC55381657348AA11",
+      "approvedFor": [
+        "참여 코드 뒤 「그림 자리」 화면(/student)의 모서리 장식·아이콘·빈 책 틀. 글자·아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/student-desk/desk-surface.webp",
+      "source": "코덱스 인계 student-art-desk-handoff-20260923/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/student-art-desk-handoff-20260923/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "55F135D2A5F77BCCAB19E4060EB2C9FDC074030A741F9C3C54BD7FAED106BD98",
+      "approvedFor": [
+        "참여 코드 뒤 「그림 자리」 화면(/student)의 모서리 장식·아이콘·빈 책 틀. 글자·아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/student-desk/icon-my-art.svg",
+      "source": "코덱스 인계 student-art-desk-handoff-20260923/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/student-art-desk-handoff-20260923/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "8CC078C2D19B3C35F771DEAA24A9EEC5FCFAFAE9D8A8EECC023ED10CD6BAB877",
+      "approvedFor": [
+        "참여 코드 뒤 「그림 자리」 화면(/student)의 모서리 장식·아이콘·빈 책 틀. 글자·아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/student-desk/icon-my-books.svg",
+      "source": "코덱스 인계 student-art-desk-handoff-20260923/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/student-art-desk-handoff-20260923/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "EB7CC01B991527627BD04D609685626F142928E01EF0073129B046EF3ABE28BE",
+      "approvedFor": [
+        "참여 코드 뒤 「그림 자리」 화면(/student)의 모서리 장식·아이콘·빈 책 틀. 글자·아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/student-desk/icon-new-drawing.svg",
+      "source": "코덱스 인계 student-art-desk-handoff-20260923/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/student-art-desk-handoff-20260923/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "5D4EF10E7C3B04355CB8C5D301AB2A14FD2AE2FD4FF31E3AC4C75B6F6C0263B5",
+      "approvedFor": [
+        "참여 코드 뒤 「그림 자리」 화면(/student)의 모서리 장식·아이콘·빈 책 틀. 글자·아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/student-desk/notebook-bottom-right.webp",
+      "source": "코덱스 인계 student-art-desk-handoff-20260923/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/student-art-desk-handoff-20260923/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "5938F38F83B71D9A6A68A3534265F53CE1C1ECE32BCC17AC7DFA75BD432D0CCA",
+      "approvedFor": [
+        "참여 코드 뒤 「그림 자리」 화면(/student)의 모서리 장식·아이콘·빈 책 틀. 글자·아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/student-desk/plant-left.webp",
+      "source": "코덱스 인계 student-art-desk-handoff-20260923/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/student-art-desk-handoff-20260923/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "6351B143EA296C5ADA27ADD1A972D6A9EB2B3A0A98E38C235410F175B270F1D9",
+      "approvedFor": [
+        "참여 코드 뒤 「그림 자리」 화면(/student)의 모서리 장식·아이콘·빈 책 틀. 글자·아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/student-desk/stationery-top-right.webp",
+      "source": "코덱스 인계 student-art-desk-handoff-20260923/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/student-art-desk-handoff-20260923/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "FF37A23602144725527FB1B7C8D753729FD343FE6EB7DD1B0592CA7482ED70C9",
+      "approvedFor": [
+        "참여 코드 뒤 「그림 자리」 화면(/student)의 모서리 장식·아이콘·빈 책 틀. 글자·아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/student-desk/crayons-edge.webp",
+      "source": "코덱스 인계 student-art-desk-handoff-20260923/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/student-art-desk-handoff-20260923/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "5A0AA3871E23928C07241CCA156DD4B01E19EE5D477C85E6F2C51B59D2AC6B13",
+      "approvedFor": [
+        "참여 코드 뒤 「그림 자리」 화면(/student) 왼쪽 아래 크레용 장식. 글자·아이 그림은 들어 있지 않다."
+      ]
     }
   ],
   "notApproved": "All other wiggle_draw assets remain outside wiggle_web until provenance and service-use permission are reviewed."

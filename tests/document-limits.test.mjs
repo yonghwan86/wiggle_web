@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import { estimateDocumentBytes, estimateStrokeBytes, MAX_DOCUMENT_BYTES, MAX_STROKE_POINTS, validateDrawDocument } from "../lib/drawing-model.ts";
 
 const stroke = (suffix, pointCount) => ({
@@ -154,4 +155,19 @@ test("malformed points are rejected instead of throwing", () => {
     const document = documentWith([{ ...stroke("bad", 1), points }]);
     assert.equal(validateDrawDocument(document), null, `거부되어야 함: ${JSON.stringify(points)}`);
   }
+});
+
+test("저장 한도를 올려도 몽그리가 같은 한도를 본다", async () => {
+  /* 2026-09-26 1.25MB → 2.5MB. 코칭 경로에 숫자가 따로 박혀 있으면 그림은 저장되는데
+     몽그리만 413 「현재 그림을 확인하지 못했어요」로 막힌다. 두 곳이 같은 상수를 써야 한다. */
+  const coaching = await readFile(new URL("../app/api/ai/coaching/route.ts", import.meta.url), "utf8");
+  assert.match(coaching, /JSON\.stringify\(document\)\.length > MAX_DOCUMENT_BYTES/);
+  assert.doesNotMatch(coaching, /1_250_000/, "숫자를 다시 박아 두면 안 된다");
+  const save = await readFile(new URL("../app/api/artworks/[id]/route.ts", import.meta.url), "utf8");
+  assert.match(save, /serialized\.length > MAX_DOCUMENT_BYTES/);
+  assert.equal(MAX_DOCUMENT_BYTES, 2_500_000);
+  // 완성 본문은 문서 + 썸네일뿐이다(완성 PNG는 별도 업로드) — Vercel 4.5MB 한도 아래로 남는다.
+  const transmit = await readFile(new URL("../lib/save-transmit.ts", import.meta.url), "utf8");
+  assert.match(transmit, /bodyWithKey: \(key: string\) => JSON\.stringify\(\{ \.\.\.rest, finalImageKey: key \}\)/);
+  assert.ok(MAX_DOCUMENT_BYTES + 700_000 < 4_500_000, "문서 + 썸네일이 본문 한도 아래여야 한다");
 });

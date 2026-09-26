@@ -2,37 +2,14 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useCopyFeedback } from "./useCopyFeedback";
-import { Check, Copy, Download, MoreHorizontal, Plus, Printer, QrCode, RefreshCw, Search, Upload, X } from "lucide-react";
-import { MAX_REAL_NAME_LENGTH, MAX_SEAT_NUMBER, parseRosterRows, RosterRow, rosterTextToRows } from "@/lib/roster";
+import { Check, Copy, Download, MoreHorizontal, Plus, Printer, QrCode, RefreshCw, Search, Upload } from "lucide-react";
+import { MAX_SEAT_NUMBER, parseRosterRows, RosterRow, rosterTextToRows } from "@/lib/roster";
 import { readRosterFile } from "@/lib/roster-file";
 import { buildRosterTemplate } from "@/lib/xlsx-write";
+import { blankRows, RosterRowsEditor, seatAfter, withSeats } from "./RosterRowsEditor";
 import { WorkspaceDialog, WorkspaceProps } from "./TeacherWorkspace";
 import { TeacherRosterPrint } from "./TeacherRosterPrint";
 import "./TeacherRosterSettings.css";
-
-function blankRows(start: number, count = 5): RosterRow[] {
-  return Array.from({ length: count }, (_, index) => ({ seat: String(Math.min(MAX_SEAT_NUMBER, start + index)), name: "" }));
-}
-
-/** 비어 있는 번호 칸을 앞 줄 다음 번호로 채운다. 이름만 있는 표를 붙여 넣어도 번호가 생긴다. */
-function withSeats(list: RosterRow[], start: number): RosterRow[] {
-  let seat = start;
-  return list.map((row) => {
-    const value = Number(row.seat);
-    if (row.seat.trim() && Number.isInteger(value) && value > 0) { seat = value + 1; return row; }
-    const filled = { ...row, seat: String(Math.min(MAX_SEAT_NUMBER, seat)) };
-    seat += 1;
-    return filled;
-  });
-}
-
-function seatAfter(list: RosterRow[], fallback: number) {
-  for (let index = list.length - 1; index >= 0; index -= 1) {
-    const value = Number(list[index].seat);
-    if (list[index].seat.trim() && Number.isInteger(value) && value > 0) return Math.min(MAX_SEAT_NUMBER, value + 1);
-  }
-  return fallback;
-}
 
 export function TeacherRosterSettings({ data, onAction, onArchive, onRestore, onQr, onDeleteClassroom, busyStudentId, deletingClassroom }: WorkspaceProps) {
   const { classroom: room, students, archivedStudents, familyLinks } = data;
@@ -52,26 +29,6 @@ export function TeacherRosterSettings({ data, onAction, onArchive, onRestore, on
   // 이어 붙이는 학급이면 마지막 번호 다음부터 시작한다. 선생님이 번호를 다시 세지 않는다.
   const firstSeat = Math.min(MAX_SEAT_NUMBER, students.reduce((max, student) => Math.max(max, student.seatNumber ?? 0), 0) + 1);
   function openAddDialog() { setError(""); setFileNotice(""); setRows(blankRows(firstSeat)); setDialog("add"); }
-  function editRow(index: number, patch: Partial<RosterRow>) {
-    setRows((current) => {
-      const next = current.map((row, at) => (at === index ? { ...row, ...patch } : row));
-      // 마지막 줄을 쓰기 시작하면 다음 줄을 미리 연다. 25명을 넣으며 `한 명 더`를 25번 누르지 않는다.
-      const last = next[next.length - 1];
-      if (index === next.length - 1 && last.name.trim()) next.push(...blankRows(seatAfter(next, firstSeat), 1));
-      return next;
-    });
-  }
-  /** 엑셀에서 복사한 표를 이름 칸에 붙여 넣으면 그 줄부터 칸으로 펼친다. */
-  function pasteRows(index: number, text: string) {
-    const pasted = rosterTextToRows(text);
-    if (pasted.length < 2) return false;
-    setRows((current) => {
-      const head = current.slice(0, index);
-      const filled = withSeats(pasted, seatAfter(head, firstSeat));
-      return [...head, ...filled, ...blankRows(seatAfter(filled, firstSeat), 1)];
-    });
-    return true;
-  }
   /* 인쇄는 팝업 대신 화면 안의 시트 + 브라우저 인쇄다. window.open에 noopener를 주면
    * 규격상 null이 돌아와, 팝업을 허용해 둔 브라우저에서도 종전 방식은 늘 실패했다. */
   const [printOpen, setPrintOpen] = useState(false);
@@ -143,16 +100,7 @@ export function TeacherRosterSettings({ data, onAction, onArchive, onRestore, on
     <p className="sr-only" role="status">{copiedLabel ? `${copiedLabel}를 복사했어요.` : ""}</p>
     {notice && <div className="trs-notice" role="status">{notice}<button aria-label="알림 닫기" onClick={() => setNotice("")}>닫기</button></div>}
     {dialog && <WorkspaceDialog title={dialog === "add" ? "명단에 학생 추가" : "번호·이름 수정"} onClose={() => { if (!busy) { setDialog(null); setFileNotice(""); } }}><form onSubmit={save}>{dialog === "add" ? <><div className="trs-import"><label className="trs-import-button"><Upload size={18} />엑셀·CSV 파일 불러오기<input type="file" accept=".xlsx,.csv,.tsv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void importFile(file); }} /></label><small>엑셀에서 표를 복사해 이름 칸에 붙여 넣어도 돼요.</small><button type="button" className="trs-template-button" onClick={downloadTemplate}><Download size={15} />엑셀 양식 내려받기</button></div>{fileNotice && <p className="trs-import-notice" role="status">{fileNotice}</p>}
-      <div className="trs-rows" role="group" aria-label="학생 번호와 이름">
-        <div className="trs-rows-head" aria-hidden="true"><span>번호</span><span>이름</span><span /></div>
-        {rows.map((row, index) => <div className="trs-row" key={index}>
-          <input className="trs-row-seat" type="number" inputMode="numeric" min={1} max={MAX_SEAT_NUMBER} aria-label={`${index + 1}번째 학생 번호`} value={row.seat} onChange={(event) => { setFileNotice(""); editRow(index, { seat: event.target.value }); }} />
-          <input className="trs-row-name" maxLength={MAX_REAL_NAME_LENGTH} aria-label={`${index + 1}번째 학생 이름`} value={row.name} spellCheck={false}
-            onChange={(event) => { setFileNotice(""); editRow(index, { name: event.target.value }); }}
-            onPaste={(event) => { const text = event.clipboardData.getData("text"); if (pasteRows(index, text)) { event.preventDefault(); setFileNotice(""); } }} />
-          <button type="button" className="trs-row-remove" aria-label={`${index + 1}번째 줄 지우기`} disabled={rows.length < 2} onClick={() => setRows((current) => current.filter((_, at) => at !== index))}><X size={16} /></button>
-        </div>)}
-      </div>
-      <div className="trs-rows-foot"><button type="button" className="trs-row-add" onClick={() => setRows((current) => [...current, ...blankRows(seatAfter(current, firstSeat), 1)])}><Plus size={15} />학생 한 명 더</button><small>{parsed.entries.length > 0 ? `${parsed.entries.length}명 확인` : "번호와 이름을 칸에 적어 주세요."}</small></div>{parsed.errors.length > 0 && <ul className="tcw-error">{parsed.errors.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul>}</> : <><label>번호<input type="number" min={1} max={99} required value={seat} onChange={(event) => setSeat(event.target.value)} /></label><label>이름<input required maxLength={20} value={name} onChange={(event) => setName(event.target.value)} /></label></>}<p className="trs-privacy">이름은 선생님만 볼 수 있어요. 학생 화면, 가족 공유, AI에는 전달되지 않아요.</p>{error && <p className="tcw-error" role="alert">{error}</p>}<div className="trs-form-actions"><button type="button" disabled={busy} onClick={() => setDialog(null)}>취소</button><button className="tcw-primary" disabled={busy || (dialog === "add" && (!parsed.entries.length || parsed.errors.length > 0))}>{busy ? "저장 중…" : "저장"}</button></div></form></WorkspaceDialog>}
+      <RosterRowsEditor rows={rows} setRows={setRows} firstSeat={firstSeat} onEdit={() => setFileNotice("")} />
+</> : <><label>번호<input type="number" min={1} max={99} required value={seat} onChange={(event) => setSeat(event.target.value)} /></label><label>이름<input required maxLength={20} value={name} onChange={(event) => setName(event.target.value)} /></label></>}<p className="trs-privacy">이름은 선생님만 볼 수 있어요. 학생 화면, 가족 공유, AI에는 전달되지 않아요.</p>{error && <p className="tcw-error" role="alert">{error}</p>}<div className="trs-form-actions"><button type="button" disabled={busy} onClick={() => setDialog(null)}>취소</button><button className="tcw-primary" disabled={busy || (dialog === "add" && (!parsed.entries.length || parsed.errors.length > 0))}>{busy ? "저장 중…" : "저장"}</button></div></form></WorkspaceDialog>}
   </section>;
 }

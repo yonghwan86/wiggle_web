@@ -228,7 +228,9 @@ test("drawing studio wires hydration, online flush, conflict pause and local-dra
   assert.match(studio, /resolveArtworkDraftDisposition\(localSaves, artworkUrl, data\.artwork\.status === "complete"\)/);
   assert.match(studio, /if \(artworkUrl && !loadDraft\) void flushSaves\(profile\.studentId, artworkUrl\)/);
   assert.match(studio, /resolveArtworkDraftDisposition\(flushed\.remaining, url, flushed\.completedUrls\.includes\(url\)\)/);
-  assert.match(studio, /disposition\.action === "archive"[\s\S]*location\.replace\("\/student\/archive"\)/);
+  /* 이미 완성된 그림이면 스튜디오에 머물지 않고 나간다. 도착지는 2026-09-25부터 「그림 자리」(/student)다 —
+     완성한 그림·새 그림·그림책이 함께 있는 아이 자리이고, 보관함은 거기서 한 번에 간다. */
+  assert.match(studio, /disposition\.action === "archive"[\s\S]*location\.replace\("\/student"\)/);
   assert.match(studio, /loadingKeyRef\.current === loadKey \|\| hydratedKeyRef\.current === loadKey/);
   assert.match(studio, /conflictBody[\s\S]*document:\s*documentStateRef\.current,\s*currentStep:\s*currentStepRef\.current/);
   assert.match(studio, /if \(existingDraft\)[\s\S]*if \(options\?\.complete\)[\s\S]*complete: true[\s\S]*conflict: true/);

@@ -10,22 +10,32 @@ export type CanvasView = { scale: number; x: number; y: number };
 export const IDENTITY_VIEW: CanvasView = { scale: 1, x: 0, y: 0 };
 export const MIN_SCALE = 1;
 export const MAX_SCALE = 4;
-/* 넓은 도화지(2026-09-20)는 100%가 곧 "도화지 전체"가 아니다 — 끝까지 축소하면 1/span까지 내려간다.
+/* 넓은 도화지(2026-09-20)는 100%가 곧 "도화지 전체"가 아니다 — 도화지 전체가 틀에 맞는 배율이 1/span이다.
+ * 거기서 한 칸(단추 한 번 = 1.5배) 더 줄일 수 있다: 종이 끝과 그 바깥 바탕이 보인다
+ * (2026-09-23 사용자 요청 "막 축소를 많이 하면 도화지가 아닌 부분도 보이게"). 옛 작품(span 1)도 같은 규칙이다.
  * 그래서 아래 계산들은 배율 한계를 인자로 받는다. 넘기지 않으면 예전처럼 1~4배다. */
+export const OVERVIEW_STEP = 1.5;
+/** 그 도화지에서 더 줄일 수 없는 배율. 도화지 전체가 보이는 배율보다 한 칸 아래다. */
+export const minScaleFor = (span: number) => 1 / span / OVERVIEW_STEP;
 export type ScaleLimits = { min?: number; max?: number };
 const limitScale = (scale: number, limits?: ScaleLimits) =>
   Math.max(limits?.min ?? MIN_SCALE, Math.min(limits?.max ?? MAX_SCALE, scale));
 
 type Touch = { x: number; y: number };
 
-// 확대 배율과 이동량을 틀 안에 가둔다. 종이 가장자리가 틀 안쪽으로 끌려 들어와
-// 빈 바탕이 보이는 상태를 만들지 않는다.
+/* 한 축의 이동량. 종이가 틀보다 크면 가장자리가 틀 안으로 끌려 들어오지 않게 가두고,
+ * 작으면 가운데에 놓는다 — 끝까지 축소해 종이 바깥까지 보는 상태다(2026-09-23).
+ * 종전에는 작을 때 0으로 붙여 종이가 왼쪽 위에 치우쳤다. */
+const clampAxis = (offset: number, frame: number, paper: number) =>
+  paper <= frame ? (frame - paper) / 2 : Math.max(frame - paper, Math.min(0, offset));
+
+// 확대 배율과 이동량을 틀에 맞춘다.
 export function clampView(view: CanvasView, frameWidth: number, frameHeight = frameWidth, paperWidth = frameWidth, paperHeight = frameHeight, limits?: ScaleLimits): CanvasView {
   const scale = limitScale(view.scale, limits);
   return {
     scale,
-    x: Math.max(Math.min(0, frameWidth - paperWidth * scale), Math.min(0, view.x)),
-    y: Math.max(Math.min(0, frameHeight - paperHeight * scale), Math.min(0, view.y)),
+    x: clampAxis(view.x, frameWidth, paperWidth * scale),
+    y: clampAxis(view.y, frameHeight, paperHeight * scale),
   };
 }
 

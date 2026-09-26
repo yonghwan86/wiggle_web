@@ -170,3 +170,27 @@ test("참여 코드표는 팝업 없이 브라우저 인쇄로 나가고, 선생
   assert.match(css, /body:has\(\.roster-print\) \{ overflow:visible!important; \}/);
   assert.match(css, /\.roster-print-sheet \+ \.roster-print-sheet \{ margin-top:0; break-before:page; \}/);
 });
+
+test("학급을 만들 때와 만든 뒤가 같은 명단 편집기를 쓴다", async () => {
+  const [app, settings, editor, css] = await Promise.all([
+    read("../app/components/TeacherApp.tsx"),
+    read("../app/components/TeacherRosterSettings.tsx"),
+    read("../app/components/RosterRowsEditor.tsx"),
+    read("../app/globals.css"),
+  ]);
+  // 2026-09-23 사용자 요청. 입력이 두 가지면 선생님이 같은 일을 두 번 배운다 —
+  // 만들기 폼의 "한 줄에 번호 이름" 텍스트 상자를 없애고 두 화면이 한 컴포넌트를 쓴다.
+  assert.match(app, /<RosterRowsEditor rows=\{newRows\} setRows=\{setNewRows\} firstSeat=\{1\} \/>/);
+  assert.match(settings, /<RosterRowsEditor rows=\{rows\} setRows=\{setRows\}/);
+  // 만들기 폼 안에 텍스트 상자가 되살아나면 안 된다(파일 다른 곳의 메시지 입력은 그대로 둔다).
+  const form = app.slice(app.indexOf('<form className="create-class"'), app.indexOf("{error && <p className=\"error-box\""));
+  assert.doesNotMatch(form, /<textarea/);
+  assert.doesNotMatch(app, /parseRosterText|function RosterField/);
+  // 편집기가 제 스타일을 들고 다닌다 — 설정 화면을 함께 묶지 않아도 모양이 선다.
+  assert.match(editor, /import "\.\/TeacherRosterSettings\.css";/);
+  // 그 CSS의 색 토큰·칸 크기는 .teacher-workspace 안에서만 걸린다. 대시보드는 그 밖이라 다시 준다.
+  assert.match(css, /\.create-class-roster \{ --tw-muted:#68716c; --tw-green:#315d46; --tw-line:#dce1de; \}/);
+  assert.match(css, /\.create-class-roster \.trs-row input \{ min-height:44px; width:100%; \}/);
+  // 이름을 다 적기 전에는 학급을 만들 수 없다.
+  assert.match(app, /if \(!parsed\.entries\.length\) \{ setError\("번호와 이름을 입력해 주세요\."\); return; \}/);
+});

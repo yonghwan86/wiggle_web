@@ -98,9 +98,32 @@ export const MAX_TEXT_GRAPHEMES = {
   speech: 30,
 } as const;
 // 서버가 거부하는 한도. 클라이언트가 같은 값을 미리 지켜야 저장이 영구 실패하지 않는다.
+/* 도구별로 화면에 그려지는 굵기 배율. 렌더러(draw-renderer)와 점 간격 계산이 같은 값을 써야
+ * "보이는 굵기"가 어긋나지 않는다. 마커는 넓게, 수채붓은 두 배로 그어진다. */
+export const TOOL_DRAWN_WIDTH_SCALE: Record<string, number> = { marker: 1.6, watercolor: 2 };
+export const drawnStrokeWidth = (tool: string | undefined, width: number) => width * (TOOL_DRAWN_WIDTH_SCALE[tool ?? ""] ?? 1);
+
+/* 획에 점을 하나 더 담기까지 필요한 최소 이동 거리(도화지 단위, 가로 1024 기준).
+ *
+ * 2026-09-26: 종전에는 굵기와 상관없이 2.5로 고정이었다. 그래서 굵은 붓으로 넓은 면을 칠하면
+ * 화면엔 덩어리 하나인데 점이 수만 개 쌓여 저장 한도(1.25MB)에 먼저 닿았다 — 아이는 여백이
+ * 많은데도 "종이가 가득 찼다"는 말을 들었다(운영 실사용 보고).
+ * 렌더러는 점을 찍지 않고 둥근 이음으로 **이어** 그리므로, 간격이 굵기에 비해 작을수록 낭비다.
+ * 보이는 굵기의 1/4까지는 눈에 띄지 않는다(반지름 r인 곡선에서 벗어남 ≈ 간격²/8r).
+ * 가는 연필은 바닥값 2.5가 그대로 걸려 예전과 같은 밀도를 유지한다. */
+export const MIN_POINT_GAP = 2.5;
+export const POINT_GAP_WIDTH_RATIO = 0.25;
+export function strokePointGap(tool: string | undefined, width: number) {
+  return Math.max(MIN_POINT_GAP, drawnStrokeWidth(tool, width) * POINT_GAP_WIDTH_RATIO);
+}
+
 export const MAX_DOCUMENT_OPS = 5000;
 export const MAX_STROKE_POINTS = 12000;
-export const MAX_DOCUMENT_BYTES = 1_250_000;
+/* 한 작품의 동작 데이터 상한. 서버가 이 값으로 413을 내고, 클라이언트는 10만 바이트 앞서 멈춘다.
+ * 2026-09-26 1.25MB → 2.5MB(사용자 결정). 완성 PNG는 별도 바이너리로 올라가고 본문에는 키만 실리므로
+ * (lib/save-transmit.ts splitCompletionBody) 최악 본문은 문서 2.5MB + 썸네일 base64 ≈ 3.2MB로
+ * Vercel 4.5MB 한도 아래다. 같은 날 점 간격을 굵기에 맞춘 것과 합쳐 그릴 수 있는 양이 크게 는다. */
+export const MAX_DOCUMENT_BYTES = 2_500_000;
 // 좌표를 소수 4자리로 줄이면 1024px 캔버스에서 0.1px 미만 오차로 직렬화 크기를 크게 줄인다.
 export const POINT_PRECISION = 4;
 

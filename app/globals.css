@@ -205,7 +205,10 @@ legend small { color:var(--primary-dark); }
 .grimi-collapse { min-height:44px; margin-left:auto; padding:8px 12px; border:2px solid #e1c14d; border-radius:13px; background:#fff7c8; color:#654d00; font-size:13px; font-weight:900; white-space:nowrap; cursor:pointer; }
 .grimi-peek { display:grid; gap:8px; padding:13px; margin-bottom:10px; border-radius:14px; background:#edfbef; }
 .grimi-peek small { color:var(--primary-dark); font-weight:900; }
-.grimi-peek b { line-height:1.45; }.grimi-head>div { display:flex; gap:8px; align-items:center; font-size:18px; }.grimi-head>button:not(.grimi-collapse) { border:0; background:#f5edcf; width:34px; height:34px; border-radius:50%; font-size:21px; }
+.grimi-peek b { line-height:1.45; }.grimi-head>div { display:flex; gap:8px; align-items:center; font-size:18px; }
+/* 이 원형 규칙은 닫기(×) 전용이다. :not()을 빼면 글자 단추인 접기(.grimi-collapse)까지 잡아
+   폭 48px에 가두고, 「✏️ 그리러 가기」는 135px이 필요해 글자가 잘린다(844×390에서 실측). */
+.grimi-head>button:not(.grimi-collapse) { border:0; background:#f5edcf; width:34px; height:34px; border-radius:50%; font-size:21px; }
 .grimi-thinking { min-height:130px; display:flex; flex-wrap:wrap; align-content:center; justify-content:center; gap:6px; color:#b18c14; }.grimi-thinking span { animation:grimi-pulse 1s infinite alternate; }.grimi-thinking span:nth-child(2) { animation-delay:.2s; }.grimi-thinking span:nth-child(3) { animation-delay:.4s; }.grimi-thinking p { width:100%; text-align:center; color:var(--secondary); font-weight:800; }
 @keyframes grimi-pulse { to { transform:translateY(-5px); opacity:.35; } }
 .grimi-coaching h2 { font-size:19px; line-height:1.45; margin:6px 0 15px; }/* 관찰 한마디: 판정이 아니라 "네 그림을 이렇게 봤어"를 먼저 건넨다(2026-09-23). */.grimi-observed { margin:0 0 14px; padding:11px 13px; border-radius:14px; background:#fff6cf; font-size:16px; font-weight:800; line-height:1.5; }.grimi-again { margin-top:14px; }.grimi-chips { display:flex; flex-wrap:wrap; gap:7px; }.grimi-chips button { border:2px solid #f0d869; background:#fff; min-height:44px; border-radius:13px; padding:8px 10px; font-weight:900; }.grimi-chips button[aria-pressed=true] { background:#fff1a9; border-color:#d7aa00; }.grimi-chips span { margin-right:5px; }
@@ -813,7 +816,10 @@ code,pre { max-width:100%; overflow-x:auto; white-space:nowrap; word-break:norma
 @media (prefers-reduced-motion:reduce) { *,*:before,*:after { scroll-behavior:auto!important; transition:none!important; } }
 
 /* 2026-08-09 어린이 태블릿 입력·도구 개선 */
-.canvas-wrap,.canvas-stack,.draw-canvas,.guide-canvas {
+/* 2026-09-23 도구 막대까지 넓혔다. 막대는 이 규칙 밖에 있어서, 아이패드에서 도구 그림을 누르고
+   있으면 iOS가 "선택·드래그 항목"으로 잡아 도구 줄이 파랗게 뜬 채 끌려다녔다(사용자 실기기 제보).
+   img의 draggable={false}는 HTML5 끌기만 막고 이 iOS 동작은 못 막는다. */
+.canvas-wrap,.canvas-stack,.draw-canvas,.guide-canvas,.tool-dock,.tool-dock *,.zoom-controls,.zoom-controls * {
   -webkit-touch-callout:none;
   -webkit-user-select:none;
   user-select:none;
@@ -842,6 +848,26 @@ code,pre { max-width:100%; overflow-x:auto; white-space:nowrap; word-break:norma
 .history-row button>b { font-size:13px; }.history-row button:disabled { opacity:.45; }
 .completion-pending,.completion-error { margin:12px 0 0; padding:11px 13px; border-radius:12px; font-weight:800; line-height:1.45; text-align:center; }
 .completion-pending { color:#1d6725; background:#eafaec; }.completion-error { color:#a33434; background:#fff0f0; }
+
+/* ── 저장하는 동안 화면을 덮는 막 (2026-09-25 사용자 요청) ────────────────────────
+   종전에는 단추 안에서만 표시가 돌아 아이가 눈치채지 못하고 다른 것을 누르려 했다.
+   소감 모달(z-index 20)보다 위에 있어 뒤쪽 누르기를 전부 받아 삼킨다. */
+.saving-veil { position:fixed; inset:0; z-index:30; display:grid; place-items:center; padding:20px; background:rgba(16,38,20,.62); backdrop-filter:blur(2px); }
+.saving-veil-card { display:grid; justify-items:center; gap:10px; width:min(320px,100%); padding:26px 22px 22px; border-radius:26px; background:#fffdf1; box-shadow:0 24px 60px rgba(0,0,0,.28); text-align:center; }
+.saving-veil-card>img { width:clamp(92px,22vw,124px); height:auto; }
+.saving-veil-card>b { font-size:clamp(18px,4.6vw,22px); font-weight:900; color:#1d4b2a; }
+.saving-veil-card>small { color:#5d6f5b; font-size:14px; font-weight:750; line-height:1.55; }
+.saving-veil-dots { display:flex; gap:7px; }
+.saving-veil-dots>i { width:10px; height:10px; border-radius:50%; background:#8fbf7a; animation:saving-veil-bounce 1s ease-in-out infinite; }
+.saving-veil-dots>i:nth-child(2) { animation-delay:.16s; }
+.saving-veil-dots>i:nth-child(3) { animation-delay:.32s; }
+@keyframes saving-veil-bounce { 0%,60%,100% { transform:translateY(0); opacity:.45; } 30% { transform:translateY(-7px); opacity:1; } }
+/* 움직임을 줄이는 기기에서는 튀지 않고 밝기만 번갈아 바뀐다 — 기다리는 중이라는 신호는 남긴다. */
+@media (prefers-reduced-motion: reduce) {
+  .saving-veil { backdrop-filter:none; }
+  .saving-veil-dots>i { animation:saving-veil-fade 1.4s ease-in-out infinite; }
+  @keyframes saving-veil-fade { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+}
 .reflection-modal button:disabled { cursor:not-allowed; }
 
 @media (max-width:720px) {
@@ -1680,10 +1706,6 @@ body {
 /* ── 2026-09-07 교사 학급 명단 ───────────────────────────────────────────────
  * 번호와 실명은 담임 교사 화면에만 나타난다. 학생 화면·가족 공유·AI 요청에는 싣지 않는다.
  */
-.roster-field { display:grid; gap:6px; }
-.roster-field textarea { min-height:120px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; font-size:16px; line-height:1.6; resize:vertical; }
-.roster-hint { color:var(--secondary); font-size:12px; font-weight:800; }
-.roster-errors { margin:0; padding-left:18px; color:#9f2f2f; font-size:12px; font-weight:800; }
 .roster-privacy { margin:2px 0 0; color:var(--secondary); font-size:12px; font-weight:750; line-height:1.5; }
 .roster-add { margin-top:18px; padding:16px; display:grid; gap:10px; border:1px solid var(--border); border-radius:18px; background:#fff; }
 .roster-add button { justify-self:start; }
@@ -2072,7 +2094,11 @@ body {
  * 사용자: "도화지 크기는 화면을 꽉채우지 안 잖아". .canvas-wrap은 이제 도화지 비율과 상관없이 자리를 꽉 채우는 틀이고,
  * 그 안의 .canvas-stack(종이)은 틀을 빈틈 없이 덮는 크기(coverPaper)를 JS가 정한다. 이미 그린 그림이 틀보다 옆으로 좁은
  * 비율이면 종이가 틀 폭에 맞춰 세로로 넘치고 스크롤·두 손가락으로 옮겨 본다(세로로 긴 틀은 종이를 늘려 딱 맞춘다). */
-.studio .canvas-zone .canvas-wrap,.studio .canvas-zone.has-canvas-status .canvas-wrap { width:100%; height:100%; max-width:none; max-height:none; aspect-ratio:auto; background:#fff; overflow:hidden; overflow:clip; }
+.studio .canvas-zone .canvas-wrap,.studio .canvas-zone.has-canvas-status .canvas-wrap { width:100%; height:100%; max-width:none; max-height:none; aspect-ratio:auto; background:var(--paper-backdrop); overflow:hidden; overflow:clip; }
+/* 틀 바탕(2026-09-23). 도화지 전체가 보이는 배율보다 더 줄이면 종이가 틀보다 작아지는데,
+   바탕이 종이와 같은 흰색이면 어디까지가 종이인지 보이지 않는다. 그보다 더 줄일 수 없을 때는
+   종이가 틀을 덮으므로 이 색은 나타나지 않는다. */
+.studio { --paper-backdrop:#e4e9e3; }
 /* clip: 넘친 종이가 있으면 hidden 틀은 스크립트·초점 이동으로 몰래 스크롤돼 transform과 어긋난다. clip은 스크롤 자체가 없다. */
 .studio .canvas-stack { inset:auto; left:0; top:0; }
 /* Keep canvas text layers below the full-screen preview and other dialogs. */
@@ -2100,14 +2126,17 @@ body {
    그래서 책은 그 비율(1810/869)을 지키고, 쪽 내용은 그 사각형 안에 얹는다. 쪽을 따로 늘리지 않는다.
 
    반응형: 760px 미만에서는 양면 책을 억지로 줄이지 않고 한 장 레이아웃으로 갈아탄다(인계 지시). */
-.archive-book-page { min-height:100dvh; display:grid; grid-template-rows:auto auto minmax(0,1fr); background:#d9e7cf; }
+/* 칼럼을 적지 않으면 암묵 `auto` 칼럼이 안쪽 썸네일 줄의 max-content(850px)까지 부푼다.
+   html이 잘라 내 가로 스크롤은 안 생기고 내용만 오른쪽으로 사라진다 — 390px에서 실제로 그랬다
+   (2026-09-23 실측: 뷰포트 390 / 머리·무대 882). 세 단계 모두 줄어들 수 있는 칼럼을 준다. */
+.archive-book-page { min-height:100dvh; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto minmax(0,1fr); background:#d9e7cf; }
 .archive-book-page>.app-header { margin:0; padding:12px clamp(16px,2.2vw,34px); background:#fcfaf3; border-bottom:1px solid #cbdcbf; }
 .archive-book-error { margin:12px clamp(16px,2.2vw,34px) 0; }
 .archive-finish { background:#ffd25c; border-color:#e8bf50; color:#6b4a00; font-weight:900; }
-.archive-stage { display:grid; place-items:center; min-height:0; padding:clamp(12px,2.2vh,28px) clamp(16px,3vw,64px) clamp(16px,3vh,40px); }
+.archive-stage { display:grid; grid-template-columns:minmax(0,1fr); place-items:center; min-height:0; padding:clamp(12px,2.2vh,28px) clamp(16px,3vw,64px) clamp(16px,3vh,40px); }
 
 /* ── 좁은 화면(기본): 한 장 레이아웃. 책 그림을 쓰지 않는다 ───────────────────── */
-.archive-book { width:min(1500px,100%); display:grid; gap:14px; }
+.archive-book { width:min(1500px,100%); display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
 .archive-book-shell { display:none; }
 .archive-book-list>h1 { position:relative; margin:0 0 16px; font-size:clamp(20px,2.1vw,32px); letter-spacing:-.045em; color:#184b35; }
 .archive-book-list>h1:after { content:""; position:absolute; left:0; bottom:-9px; width:72px; height:5px; border-radius:999px; background:#ffd25c; }
@@ -2247,3 +2276,16 @@ body {
   .entry-code-layout.is-waiting>.entry-wait-panel { display:none; }
 }
 @media (min-width:760px) { .entry-wait-inline>img { width:56px; height:56px; } }
+
+/* 학급 만들기 폼의 명단 칸(2026-09-23). 만든 뒤 학생을 더할 때와 같은 편집기를 쓴다 —
+   입력이 두 가지면 선생님이 두 번 배운다. 모양은 설정 화면 것(TeacherRosterSettings.css)을 따른다. */
+.create-class-roster { display:grid; gap:8px; }
+.create-class-roster-label { font-weight:800; }
+/* 편집기 CSS의 색 토큰과 칸 크기는 `.teacher-workspace` 안에서만 걸려 있다. 대시보드는 그 밖이라
+   여기서 같은 값을 다시 준다 — 없으면 테두리가 사라지고 칸 높이가 44px 아래로 내려간다. */
+.create-class-roster { --tw-muted:#68716c; --tw-green:#315d46; --tw-line:#dce1de; }
+.create-class-roster .trs-row input { min-height:44px; width:100%; }
+.create-class-roster .trs-row-seat { font-variant-numeric:tabular-nums; text-align:center; }
+.create-class-roster .trs-row-remove { display:flex; align-items:center; justify-content:center; min-height:44px; padding:0; border:0; background:none; color:var(--tw-muted); }
+.create-class-roster .trs-row-remove:disabled { opacity:.3; }
+.create-class-roster .trs-row-add { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:8px 12px; border:1px solid var(--tw-line); border-radius:6px; background:#fff; font-size:14px; font-weight:600; cursor:pointer; }

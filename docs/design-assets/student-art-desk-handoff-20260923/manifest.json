@@ -1,0 +1,138 @@
+{
+  "package": "student-art-desk-handoff-20260923",
+  "createdAt": "2026-09-24",
+  "imageGeneration": "built-in ImageGen, one call per raster asset; final prompts in PROVENANCE.md",
+  "items": [
+    {
+      "path": "assets/book-cover-frame-green.svg",
+      "bytes": 582,
+      "sha256": "d6285ff6ec84ca5c43288c5fb52dc1a28f6adab1c466417a7a4a7aaa5dfaa3dc"
+    },
+    {
+      "path": "assets/book-cover-frame-yellow.svg",
+      "bytes": 582,
+      "sha256": "7e09a58d28d216185a4279c06cf3d55937c0aec61fd2407fc55381657348aa11"
+    },
+    {
+      "path": "assets/crayons-edge.png",
+      "bytes": 1804440,
+      "sha256": "75815756816c644440704447fea34581cce6378b27e31da13fee0997a4004767",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGBA",
+      "transparent": true,
+      "transparentCorners": true
+    },
+    {
+      "path": "assets/crayons-edge.webp",
+      "bytes": 196606,
+      "sha256": "5a0aa3871e23928c07241cca156dd4b01e19ee5d477c85e6f2c51b59d2ac6b13",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGBA",
+      "transparent": true,
+      "transparentCorners": true
+    },
+    {
+      "path": "assets/desk-surface.png",
+      "bytes": 1568124,
+      "sha256": "584c86ae04f3291791800fe932cf925ec4b860e618b4cdad98ad75a242026f07",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/desk-surface.webp",
+      "bytes": 20370,
+      "sha256": "55f135d2a5f77bccab19e4060eb2c9fdc074030a741f9c3c54bd7faed106bd98",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/icon-my-art.svg",
+      "bytes": 424,
+      "sha256": "8cc078c2d19b3c35f771deaa24a9eec5fcfafae9d8a8eecc023ed10cd6bab877"
+    },
+    {
+      "path": "assets/icon-my-books.svg",
+      "bytes": 368,
+      "sha256": "eb7cc01b991527627bd04d609685626f142928e01ef0073129b046ef3abe28be"
+    },
+    {
+      "path": "assets/icon-new-drawing.svg",
+      "bytes": 625,
+      "sha256": "5d4ef10e7c3b04355cb8c5d301ab2a14fd2ae2fd4ff31e3ac4c75b6f6c0263b5"
+    },
+    {
+      "path": "assets/notebook-bottom-right.png",
+      "bytes": 1163454,
+      "sha256": "06bc8b62b1334325006d6a6b883df983276b254da2404a39c21d1a658ba02cac",
+      "width": 1222,
+      "height": 1287,
+      "mode": "RGBA",
+      "transparent": true,
+      "transparentCorners": true
+    },
+    {
+      "path": "assets/notebook-bottom-right.webp",
+      "bytes": 128468,
+      "sha256": "5938f38f83b71d9a6a68a3534265f53ce1c1ece32bcc17ac7dfa75bd432d0cca",
+      "width": 1222,
+      "height": 1287,
+      "mode": "RGBA",
+      "transparent": true,
+      "transparentCorners": true
+    },
+    {
+      "path": "assets/plant-left.png",
+      "bytes": 1665499,
+      "sha256": "fb0eeef66696b79e794aabb88e089c1aa705c22561eace199b61277710e818b0",
+      "width": 1295,
+      "height": 1214,
+      "mode": "RGBA",
+      "transparent": true,
+      "transparentCorners": true
+    },
+    {
+      "path": "assets/plant-left.webp",
+      "bytes": 271720,
+      "sha256": "6351b143ea296c5ada27add1a972d6a9eb2b3a0a98e38c235410f175b270f1d9",
+      "width": 1295,
+      "height": 1214,
+      "mode": "RGBA",
+      "transparent": true,
+      "transparentCorners": true
+    },
+    {
+      "path": "assets/stationery-top-right.png",
+      "bytes": 1712734,
+      "sha256": "2b16a9b08aaab996a2e531271db1ab3887ef5895b57d92d8ba57b6c580d2f05a",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGBA",
+      "transparent": true,
+      "transparentCorners": true
+    },
+    {
+      "path": "assets/stationery-top-right.webp",
+      "bytes": 128644,
+      "sha256": "ff37a23602144725527fb1b7c8d753729fd343fe6eb7dd1b0592ca7482ed70c9",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGBA",
+      "transparent": true,
+      "transparentCorners": true
+    },
+    {
+      "path": "reference/selected-art-desk.png",
+      "bytes": 2038316,
+      "sha256": "a792016361d47a597330f02852e87e08a956c5ad1b6bf9f170e9d1e0fcb7b3eb",
+      "width": 1536,
+      "height": 1024,
+      "role": "selected mockup reference; not a deployable page background"
+    }
+  ]
+}

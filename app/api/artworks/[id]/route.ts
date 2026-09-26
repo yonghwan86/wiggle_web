@@ -9,17 +9,23 @@ async function ownedArtwork(artworkId: string, studentId: string) {
   return bindings().DB.prepare(`SELECT id, student_id AS studentId, classroom_id AS classroomId, title, topic, learning_mode AS learningMode, lesson_slug AS lessonSlug, guide_variant AS guideVariant, intent, ops_json AS opsJson, current_step AS currentStep, revision, status, version_count AS versionCount, thumbnail_key AS thumbnailKey, final_image_key AS finalImageKey, updated_at AS updatedAt, completed_at AS completedAt FROM artworks WHERE id = ? AND student_id = ?`).bind(artworkId, studentId).first<Artwork>();
 }
 
-function decodeImage(dataUrl: unknown, maxBytes: number) {
+/* 썸네일은 2026-09-26부터 WebP 무손실로 올라온다(자동 저장마다 실려 반복 비용이 크다).
+ * 완성본은 PNG 그대로다. 굽지 못하는 기기는 썸네일도 PNG로 보내므로 둘 다 받는다.
+ * 옛 작품의 썸네일은 이미 PNG로 저장돼 있고, 서빙은 저장된 contentType을 그대로 쓰므로 그대로 열린다. */
+const THUMBNAIL_TYPES = ["image/webp", "image/png"] as const;
+const FINAL_TYPES = ["image/png"] as const;
+
+function decodeImage(dataUrl: unknown, maxBytes: number, allowed: readonly string[] = FINAL_TYPES) {
   if (typeof dataUrl !== "string") return null;
   // 정규식만으로는 atob가 거부하는 문자열("A", "====")도 통과한다. 그 예외가 밖으로 나가면
   // 잘못된 입력이 400이 아니라 처리되지 않은 500이 된다.
-  const match = /^data:image\/png;base64,([A-Za-z0-9+/]{4,}={0,2})$/.exec(dataUrl);
-  if (!match || match[1].length % 4 !== 0) return null;
+  const match = /^data:(image\/(?:png|webp));base64,([A-Za-z0-9+/]{4,}={0,2})$/.exec(dataUrl);
+  if (!match || !allowed.includes(match[1]) || match[2].length % 4 !== 0) return null;
   let binary: string;
-  try { binary = atob(match[1]); } catch { return null; }
+  try { binary = atob(match[2]); } catch { return null; }
   if (binary.length > maxBytes) return null;
   const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  return { bytes, contentType: match[1] };
 }
 
 // 별도 업로드된 완성 그림 후보 키는 이 학생·이 작품의 업로드 프리픽스만 허용한다.
@@ -78,7 +84,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   // 2026-09-20 사용자 지시로 "마음에 드는 곳·왜 마음에 들어" 고르기를 없앴다. 소감은 더 이상 완성의 조건이 아니다
   // (몽그리 짐작을 고친 문장 storyText만 남는다). 옛 기록은 그대로 두고, 빈 값으로도 완성이 저장된다.
 
-  const newRevision = artwork.revision + 1; const thumbnail = decodeImage(payload.thumbnailDataUrl, 500_000); const finalImage = complete ? decodeImage(payload.finalDataUrl, 3_500_000) : null;
+  const newRevision = artwork.revision + 1; const thumbnail = decodeImage(payload.thumbnailDataUrl, 500_000, THUMBNAIL_TYPES); const finalImage = complete ? decodeImage(payload.finalDataUrl, 3_500_000) : null;
   if (payload.thumbnailDataUrl && !thumbnail) return jsonError("썸네일 파일을 확인해 주세요.", 413);
   // Vercel 4.5MB 본문 한도 대응: 완성 PNG는 별도 바이너리 업로드로 먼저 올라오고,
   // 이 요청은 그 후보 키만 참조할 수 있다. 실제 존재·크기를 저장소에서 확인한다.
@@ -89,17 +95,19 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     if (!uploaded || uploaded.size > 3_500_000) return jsonError("완성 그림 파일을 확인해 주세요.", 413);
   }
   const nonce = randomToken(10);
-  const thumbnailKey = thumbnail ? `students/${student.id}/artworks/${artworkId}/objects/r${newRevision}-${requestId}-${nonce}-thumb.png` : null;
+  // 확장자도 실제 형식을 따른다 — WebP를 .png로 두면 저장소를 들여다보는 사람이 속는다.
+  const thumbnailKey = thumbnail ? `students/${student.id}/artworks/${artworkId}/objects/r${newRevision}-${requestId}-${nonce}-thumb.${thumbnail.contentType === "image/webp" ? "webp" : "png"}` : null;
   const finalKey = finalImage ? `students/${student.id}/artworks/${artworkId}/objects/r${newRevision}-${requestId}-${nonce}-final.png` : uploadedFinalKey;
   // 같은 키를 candidate → committed로 두 번 put하면 이미지 인코딩 크기만큼 R2 업로드를
   // 매 저장마다 두 번 기다린다. 객체는 DB가 그 키를 가리키기 전에는 외부에서 발견할 수 없으므로
   // 한 번만 쓰고, DB 커밋 실패 시 아래 보상 삭제로 회수한다.
   await settleUploadsBeforeCleanup([
       thumbnail && thumbnailKey
-        ? bindings().ARTWORKS.put(thumbnailKey, thumbnail, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=60" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "thumbnail" } })
+        // 저장하는 형식을 그대로 적는다 — 하드코딩하면 WebP를 PNG라고 적어 보내 그림이 깨진다.
+        ? bindings().ARTWORKS.put(thumbnailKey, thumbnail.bytes, { httpMetadata: { contentType: thumbnail.contentType, cacheControl: "private, max-age=60" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "thumbnail" } })
         : Promise.resolve(),
       finalImage && finalKey
-        ? bindings().ARTWORKS.put(finalKey, finalImage, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=300" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "final" } })
+        ? bindings().ARTWORKS.put(finalKey, finalImage.bytes, { httpMetadata: { contentType: finalImage.contentType, cacheControl: "private, max-age=300" }, customMetadata: { studentId: student.id, artworkId, requestId, state: "committed", revision: String(newRevision), kind: "final" } })
         : Promise.resolve(),
     ], () => removeCandidates([thumbnailKey, finalKey]));
 
