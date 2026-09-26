@@ -84,3 +84,24 @@ test("장식 에셋이 자산 목록에 등록되어 있다", async () => {
     assert.ok(paths.has(file), `${file}이 asset-manifest.json에 없다`);
   }
 });
+
+test("아이의 집은 「그림 자리」다 — 모든 화면이 거기로 돌아온다", async () => {
+  /* 2026-09-26 사용자 지적: 「내 그림」을 누르면 아직 옛 보관함이 떴다. 그림 자리가 생긴 뒤로
+     아이의 집은 거기다(내 그림·새 그림·내 그림책이 함께 있다). 보관함은 지우지 않고
+     「내 그림 모두 보기」로 한 번에 가는 자리로 남긴다(인계 지시: 기존 보관함을 잃지 않는다). */
+  const [studio, detail, books, archive, desk] = await Promise.all([
+    read("../app/components/DrawingStudio.tsx"),
+    read("../app/components/ArtworkDetail.tsx"),
+    read("../app/components/StorybookLibrary.tsx"),
+    read("../app/components/Archive.tsx"),
+    read("../app/components/StudentArtDesk.tsx"),
+  ]);
+  assert.match(studio, /className="icon-button studio-back" href="\/student" aria-label="내 그림 자리로 나가기"/);
+  assert.match(detail, /<a className="small-button" href="\/student">← 내 그림 자리<\/a>/);
+  assert.match(books, /<a className="small-button" href="\/student">← 내 그림 자리<\/a>/);
+  // 보관함은 들어가는 길만 있고 나오는 길이 없어 막다른 곳이었다.
+  assert.match(archive, /<a className="small-button" href="\/student">.{0,60}내 그림 자리<\/a>/s);
+  // 보관함 자체는 그대로 살아 있다 — 그림 자리에서 한 번에 간다.
+  assert.match(desk, /href="\/student\/archive"/);
+  assert.match(detail, /href="\/student\/archive">다른 그림 보기/);
+});

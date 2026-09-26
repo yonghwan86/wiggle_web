@@ -10,7 +10,7 @@ export type StudentCoaching = {
 export type TeacherCoachingDraft = { body: string; observation: string; nextAction: string };
 /** 틀리는 해석자(product-decisions 학습 과정 4항). 몽그리가 먼저 짐작을 내놓고 아이가 고친다. */
 export type StoryInterpretation = { guess: string; choices: CoachingChoice[] };
-export type OpenAIKind = "student_coaching" | "teacher_draft" | "story_interpretation";
+export type OpenAIKind = "student_coaching" | "teacher_draft" | "story_interpretation" | "reply_next_action";
 
 export const STUDENT_COACHING_INSTRUCTIONS = `너는 초등학교 3~6학년 아이를 돕는 그림 코치 '몽그리'다.
 이번 한 번에만 답한다. 아이가 불렀는지 네가 먼저 말을 걸었는지는 맥락의 opened_by가 알려 준다.
@@ -18,15 +18,30 @@ export const STUDENT_COACHING_INSTRUCTIONS = `너는 초등학교 3~6학년 아�
 아이가 그리는 것을 막지 않는다. 계속 그리라고 재촉하거나 답을 요구하지 않는다.
 그림을 대신 완성하거나 원본 선을 수정한다고 말하지 않는다. 점수, 순위, 칭찬 판정, 평가, 재능 진단, 실패 표현을 쓰지 않는다.
 멋진 그림, 훌륭한 창의력, 잘 그렸어요, 예쁜 그림, 천재, 재능, 소질 같은 판정과 정답, 반드시 따라, exact answer, follow 같은 강요 표현을 어느 필드에도 쓰지 않는다.
+맥락의 firstTurn이 true면 이 그림에 처음 말을 거는 자리다. 무엇인지 알아맞히려 하지 말고
+무엇을 그리고 있는지 아이에게 묻는다("이 동그란 건 뭐야?"). 네가 보기에 그럴듯한 것들을 choices로 주어
+아이가 고르거나 자기 말로 고칠 수 있게 한다. 아이가 알려 준 답은 다음 차례의 맥락으로 돌아온다.
 보이는 대상을 확신할 수 없으면 추측하거나 단정하지 말고 uncertain=true로 두고 질문한다.
 uncertain=true이면 next_action도 그 대상을 단정하지 않는 말로 쓴다.
 질문은 정확히 하나만, 짧고 쉬운 한국어로 쓴다. 답 선택은 정답 없는 칩 2~4개다.
 아이가 이미 그린 것과 아이가 고른 답이 먼저다. 너는 그것을 잇는 확장 협업자다.
-아이가 그린 것에서 출발한 행동 하나만 제안하고, 새 주제로 옮기지 않는다.
-새 소재나 새 주제를 네가 가져오지 않는다. 무엇을 그릴지는 선생님이 교실에서 정한다.
+아이가 그린 것이나 아이가 알려 준 답에서 출발해 행동 하나만 제안한다. 그 대상을 더 그려 넣어도 좋고,
+옆에 어울리는 것을 하나 더해도 좋다(2026-09-26 사용자 결정: 깊이·옆 어느 쪽이든 상관없다).
 아이 그림에 없는 것을 있다고 말하지 않는다.
 next_action에는 아이가 바로 선, 모양, 색, 위치 또는 새 요소를 그려 볼 수 있는 행동 하나를 넣는다.
 growth_event는 진단이 아니라 관찰 가능한 과정 한 문장으로 쓴다.`;
+
+/* 아이가 카드에서 답한 직후, 「이제 그려 볼 일」 한 줄만 아이 말에 맞춰 다시 쓴다.
+ * 질문을 새로 하지 않는 이유: 카드가 도화지를 가리고 있고 "한 번에 하나만 묻는다"가 제품 원칙이다.
+ * 물어만 보고 답을 쓰지 않으면 아이 눈에는 답해도 아무 일이 없는 것과 같다(2026-09-26). */
+export const REPLY_NEXT_ACTION_INSTRUCTIONS = `너는 초등학교 3~6학년 아이를 돕는 그림 코치 '몽그리'다.
+방금 아이가 네 질문에 답했다. 새로 묻지 말고, 아이가 지금 바로 해 볼 행동 하나만 한 문장으로 쓴다.
+아이가 알려 준 답을 출발점으로 삼는다. 그 대상을 더 그려 넣어도 좋고, 옆에 어울리는 것을 하나 더해도 좋다.
+아이가 그리는 것을 막지 않는다. 계속 그리라고 재촉하거나 또 답을 요구하지 않는다.
+그림을 대신 완성하거나 원본 선을 수정한다고 말하지 않는다.
+점수, 순위, 칭찬 판정, 평가, 재능 진단, 실패 표현을 쓰지 않는다.
+멋진 그림, 훌륭한 창의력, 잘 그렸어요, 예쁜 그림, 천재, 재능, 소질 같은 판정과 정답, 반드시 따라 같은 강요 표현을 쓰지 않는다.
+아이가 바로 선, 모양, 색, 위치 또는 새 요소를 그려 볼 수 있는 행동이어야 한다. 물음표를 쓰지 않아도 된다.`
 
 export const STORY_INTERPRETATION_INSTRUCTIONS = `너는 아이가 그림을 다 그린 뒤 이야기를 끌어내는 그림 친구 '몽그리'다.
 아이가 무엇을 그렸는지 단정하지 않는다. 네 눈에 그렇게 보였다는 짐작 하나만 내놓는다.
@@ -74,12 +89,17 @@ export const OPENAI_SCHEMAS = {
     type: "object", additionalProperties: false, required: ["body", "observation", "next_action"],
     properties: { body: { type: "string" }, observation: { type: "string" }, next_action: { type: "string" } },
   },
+  reply_next_action: {
+    type: "object", additionalProperties: false, required: ["next_action"],
+    properties: { next_action: { type: "string" } },
+  },
 } as const;
 
 const instructionsByKind = {
   student_coaching: STUDENT_COACHING_INSTRUCTIONS,
   story_interpretation: STORY_INTERPRETATION_INSTRUCTIONS,
   teacher_draft: TEACHER_DRAFT_INSTRUCTIONS,
+  reply_next_action: REPLY_NEXT_ACTION_INSTRUCTIONS,
 };
 
 const forbiddenMeaningPatterns = [
@@ -273,6 +293,15 @@ export function validateTeacherDraft(value: unknown): TeacherCoachingDraft | nul
   return { body, observation, nextAction };
 }
 
+/* 답을 들은 뒤 다시 쓰는 「이제 그려 볼 일」 한 줄. 검사는 코칭의 next_action과 **같은 것**을 쓴다 —
+ * 규칙이 갈라지면 한쪽에만 안전 검사가 남는 구멍이 생긴다(칩 검사를 공유하는 이유와 같다). */
+export function validateReplyNextAction(value: unknown): { nextAction: string } | null {
+  const item = record(value); if (!item) return null;
+  const nextAction = shortText(item.next_action, 90);
+  if (!nextAction || !drawingActionPattern.test(nextAction) || !isChildSafeCoachingText(nextAction)) return null;
+  return { nextAction };
+}
+
 export class AIServiceError extends Error {
   code: "AI_CONFIG" | "AI_TIMEOUT" | "AI_BUSY" | "AI_REFUSAL" | "AI_RESPONSE_INVALID" | "AI_UNAVAILABLE";
   status: number;
@@ -296,7 +325,9 @@ function outputText(response: Record<string, unknown>) {
 export async function requestStructuredOpenAI(options: {
   kind: OpenAIKind;
   prompt: string;
-  imageDataUrl: string;
+  /* 없이도 부를 수 있다. 답에 맞춘 제안 한 줄은 글자만으로 충분하고, 그림을 실으면
+   * 아이가 「이렇게 답할래」를 누른 뒤 더 오래 기다린다. */
+  imageDataUrl?: string;
   safetyIdentifier: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -313,10 +344,10 @@ export async function requestStructuredOpenAI(options: {
     instructions: instructionsByKind[options.kind],
     input: [{ role: "user", content: [
       { type: "input_text", text: options.prompt },
+      ...(options.imageDataUrl ? [{ type: "input_image", image_url: options.imageDataUrl, detail: "high" }] : []),
       /* detail:"low"는 긴 변 512px로 줄인다. 넓은 도화지(span 3)를 통째로 보내던 때에는
          340×290짜리 집이 모델 눈에 57×48px(넓이의 5.6%)로 들어가 알아볼 수가 없었다
          (2026-09-26 실측). 보내는 쪽에서 그린 칸만 잘라 크게 담고, 여기서도 줄이지 않는다. */
-      { type: "input_image", image_url: options.imageDataUrl, detail: "high" },
     ] }],
     text: { verbosity: "low", format: { type: "json_schema", name: `wiggle_${options.kind}`, strict: true, schema: OPENAI_SCHEMAS[options.kind] } },
     reasoning: { effort: "low" },
@@ -341,6 +372,7 @@ export async function requestStructuredOpenAI(options: {
     let parsed: unknown; try { parsed = JSON.parse(text); } catch { throw new AIServiceError("AI_RESPONSE_INVALID", "몽그리의 답을 확인하지 못했어요.", 502); }
     const value = options.kind === "student_coaching" ? validateStudentCoaching(parsed)
       : options.kind === "story_interpretation" ? validateStoryInterpretation(parsed)
+      : options.kind === "reply_next_action" ? validateReplyNextAction(parsed)
       : validateTeacherDraft(parsed);
     if (!value) throw new AIServiceError("AI_RESPONSE_INVALID", "몽그리의 답을 확인하지 못했어요.", 502);
     return { value, model, schemaValid: true as const };

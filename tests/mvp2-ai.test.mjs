@@ -132,7 +132,13 @@ test("prompts and routes preserve child agency, teacher approval and structured 
   assert.match(studentRoute, /studentFromRequest/); assert.match(studentRoute, /WHERE id = \? AND student_id = \?/); assert.match(studentRoute, /recordCoachingBefore/); assert.match(coachingStore, /coaching_before/); assert.match(coachingStore, /coaching_after/); assert.match(studentRoute, /recentEvents/); assert.match(studentRoute, /rateLimit/); assert.doesNotMatch(studentRoute, /drawing_guide|finishGuide/);
   assert.match(teacherRoute, /requireTeacher/); assert.match(teacherRoute, /c\.teacher_id = \?/); assert.match(teacherMessages, /status = 'draft'/); assert.match(teacherMessages, /status = 'approved'/); assert.match(teacherMessages, /INSERT INTO teacher_messages/); assert.match(teacherRoute, /approveTeacherDraftMessage/);
   assert.match(schema, /coachingEventDetails/); assert.match(schema, /teacherCoachingDrafts/); assert.match(runtime, /coaching_event_details/); assert.match(runtime, /teacher_coaching_drafts/);
-  assert.match(studio, /몽그리 부르기/); assert.match(studio, /그냥 내 마음대로 그릴래/); assert.doesNotMatch(studio, /TimelapsePlayer/); assert.match(teacherUi, /수정한 뒤 승인해서 보내기/);
+  assert.match(studio, /몽그리 부르기/);
+  /* 「그냥 내 마음대로 그릴래」는 2026-09-26에 없앴다 — 머리의 ×와 같은 dismissGrimi를 불러 중복이었다.
+     지켜야 할 것은 "답하지 않고 나갈 길이 있다"이고, 그 길은 ×와 「그리러 가기」로 남는다. */
+  assert.match(studio, /aria-label="몽그리 닫기"/);
+  assert.match(studio, /className="grimi-collapse grimi-go-draw"/);
+  // 문구가 주석에 남아 있을 수 있으므로 **단추가 없는지**를 본다(설명까지 막으면 이유를 못 적는다).
+  assert.doesNotMatch(studio, /className="text-button free-exit"/); assert.doesNotMatch(studio, /TimelapsePlayer/); assert.match(teacherUi, /수정한 뒤 승인해서 보내기/);
   assert.match(renderer, /op\.type === "fill"/); assert.match(renderer, /op\.type === "shape"/); assert.match(renderer, /op\.type === "sticker"/); assert.match(timelapse, /setInterval/); assert.match(timelapse, /clearInterval/); assert.doesNotMatch(timelapse, /document\.ops\.slice\(0, frame\)/);
 });
 
@@ -148,7 +154,8 @@ test("몽그리의 두 역할이 그림과 아이 말에만 기대어 답한다 
   // 확장 협업자: 아이가 먼저이고 몽그리가 뒤따른다.
   // 스키마가 next_action을 필수로 강제하므로 "앞서 끌고 가지 않는다"로 부정하지 않는다(2026-09-12 정정).
   assert.match(prompts, /그것을 잇는 확장 협업자다/);
-  assert.match(prompts, /새 소재나 새 주제를 네가 가져오지 않는다/);
+  // 2026-09-26 사용자 결정으로 「새 소재·새 주제 금지」는 뺐다. 남는 계약은 출발점이 아이라는 것이다.
+  assert.match(prompts, /아이가 그린 것이나 아이가 알려 준 답에서 출발해/);
 
   // 틀리는 해석자: 완성 순간에만 부르고, 실패해도 완성을 막지 않는다.
   assert.match(route, /action === "interpret"/);

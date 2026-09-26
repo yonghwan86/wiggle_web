@@ -67,7 +67,7 @@ export function ArtworkDetail() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "그림책을 만들지 못했어요."); setMakingBook(false); }
   }
 
-  return <main className="app-shell artwork-detail-page"><header className="app-header"><Logo /><a className="small-button" href="/student/archive">← 내 그림</a></header>
+  return <main className="app-shell artwork-detail-page"><header className="app-header"><Logo /><a className="small-button" href="/student">← 내 그림 자리</a></header>
     {!artwork && !error && <div className="loading-card">완성한 그림을 펼치는 중…</div>}{error && <p className="error-box" role="alert">{error}</p>}
     {artwork && <article className="artwork-detail-card"><div className="artwork-detail-copy"><p className="eyebrow">🌟 완성한 작품</p><h1>{artwork.title}</h1><p>{artwork.intent}</p><p className="artwork-readonly-note">🔒 읽기 전용 · 완성한 그림은 그대로 안전하게 보관돼요.</p><time dateTime={artwork.completedAt ?? artwork.updatedAt}>{new Date(artwork.completedAt ?? artwork.updatedAt).toLocaleDateString("ko-KR")}</time></div>
       <div className="artwork-detail-image">{imageUrl ? <img src={imageUrl} alt={`${artwork.title} 완성 그림`} /> : <span>그림을 불러오는 중…</span>}</div>

@@ -275,6 +275,33 @@
       "approvedFor": [
         "참여 코드 뒤 「그림 자리」 화면(/student) 왼쪽 아래 크레용 장식. 글자·아이 그림은 들어 있지 않다."
       ]
+    },
+    {
+      "path": "/mongri-card/crayon-frame.webp",
+      "source": "코덱스 인계 mongri-floating-handoff-20260926/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/mongri-floating-handoff-20260926/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "337A0A8E397AF316B81E1133CDCA78127DFCDD84BCF8A1E6A1FDBECA183D5C84",
+      "approvedFor": [
+        "몽그리 플로팅 카드의 크레용 테두리·이름 칠·밑줄 장식. 글자와 아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/mongri-card/green-underline.webp",
+      "source": "코덱스 인계 mongri-floating-handoff-20260926/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/mongri-floating-handoff-20260926/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "2E945BEAD17AAD21C5B24D5DFBF877C39F451F7FA2EF4D724D30A3AF37D1DC62",
+      "approvedFor": [
+        "몽그리 플로팅 카드의 크레용 테두리·이름 칠·밑줄 장식. 글자와 아이 그림은 들어 있지 않다."
+      ]
+    },
+    {
+      "path": "/mongri-card/name-swash.webp",
+      "source": "코덱스 인계 mongri-floating-handoff-20260926/assets/ (ImageGen 생성, 프롬프트·출처는 docs/design-assets/mongri-floating-handoff-20260926/PROVENANCE.md). 재인코딩 없이 그대로 복사했다.",
+      "sourceRole": "codex handoff",
+      "sha256": "76731202305078D78AAD7E3C7B64D19E8A05DE0E7255B760E8CEEE9C2D3F8DA6",
+      "approvedFor": [
+        "몽그리 플로팅 카드의 크레용 테두리·이름 칠·밑줄 장식. 글자와 아이 그림은 들어 있지 않다."
+      ]
     }
   ],
   "notApproved": "All other wiggle_draw assets remain outside wiggle_web until provenance and service-use permission are reviewed."

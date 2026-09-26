@@ -191,6 +191,9 @@ export function Archive() {
    * 시안 전체를 배경으로 깔고 투명 버튼을 얹지 않는다. 「새 그림」은 인계 지시대로 뺐다. */
   return <main className="archive-book-page">
     <header className="app-header"><Logo /><nav className="archive-actions" aria-label="내 그림 메뉴">
+      {/* 2026-09-26: 아이의 집이 「그림 자리」(/student)가 되면서 여기로 들어오는 길은 생겼는데
+          돌아가는 길이 없어 막다른 곳이 됐다. 먼저 두어 되돌아가기가 첫 선택이 되게 한다. */}
+      <a className="small-button" href="/student"><span aria-hidden="true">←</span>내 그림 자리</a>
       <a className="small-button" href="/student/books"><span aria-hidden="true">📖</span>그림책</a>
       <button type="button" className="small-button archive-finish" onClick={() => void leaveClass()} disabled={leaving}><span aria-hidden="true">📕</span>{leaving ? "나가는 중…" : "수업 마치기"}</button>
     </nav></header>

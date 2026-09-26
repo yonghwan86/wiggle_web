@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "purpose": "Selected Mongri upper-left floating card design and implementation handoff",
+  "assets": [
+    {
+      "path": "assets/crayon-frame.webp",
+      "width": 1536,
+      "height": 665,
+      "bytes": 220804,
+      "alpha": true,
+      "sha256": "337A0A8E397AF316B81E1133CDCA78127DFCDD84BCF8A1E6A1FDBECA183D5C84"
+    },
+    {
+      "path": "assets/name-swash.webp",
+      "width": 640,
+      "height": 213,
+      "bytes": 86240,
+      "alpha": true,
+      "sha256": "76731202305078D78AAD7E3C7B64D19E8A05DE0E7255B760E8CEEE9C2D3F8DA6"
+    },
+    {
+      "path": "assets/green-underline.webp",
+      "width": 960,
+      "height": 320,
+      "bytes": 54548,
+      "alpha": true,
+      "sha256": "2E945BEAD17AAD21C5B24D5DFBF877C39F451F7FA2EF4D724D30A3AF37D1DC62"
+    }
+  ],
+  "references": [
+    {
+      "path": "reference/selected-floating-answer.png",
+      "width": 1504,
+      "height": 1046,
+      "bytes": 1533154,
+      "sha256": "FD08C2D8EC40717ACA92D70B20B5B021CFD35507B8988FD9F8D158CF974EA69E"
+    },
+    {
+      "path": "reference/selected-floating-base.png",
+      "width": 1504,
+      "height": 1046,
+      "bytes": 1338584,
+      "sha256": "7BB24175DE1A0D3AF76B82F6D6DCFCEEF57F497556A542FB948F09032102BB52"
+    },
+    {
+      "path": "reference/current-floating-1180x820.png",
+      "width": 2360,
+      "height": 1640,
+      "bytes": 290508,
+      "sha256": "7FB2C27B16C6A6E5382AE66E7E152E7286AA45DDB5D9A72E682A5A51AB005F1F"
+    }
+  ]
+}

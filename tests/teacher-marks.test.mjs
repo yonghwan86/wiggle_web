@@ -181,3 +181,19 @@ test("화면 연결: 표시는 아이 원본과 따로 된 캔버스이고 저�
   assert.doesNotMatch(studio, /\}, \[artwork, conflictDraft, documentState, editVersion, save, teacherViewing\]\);/);
   assert.match(liveView, /\}, 1000\);/);
 });
+
+test("선생님이 보고 있다는 알림은 5초만 뜨고 사라진다", async () => {
+  const studio = await readFile(new URL("../app/components/DrawingStudio.tsx", import.meta.url), "utf8");
+  /* 2026-09-26 사용자 지적: 선생님이 보는 동안 배너가 내내 떠 있어 그림을 가렸다.
+     알림은 알림이고 상태가 아니다. 자동 저장 간격·자동 호출 억제가 쓰는 teacherViewing은
+     그대로 두고, **배너 표시만** 따로 둔 5초짜리로 가른다. */
+  assert.match(studio, /선생님이 내 도화지를 보고 있어요\./);
+  assert.doesNotMatch(studio, /선생님이 지금 내 그림을 보고 있어요/);
+  assert.match(studio, /\{viewingNoticeOpen && !visibleMark && \(/);
+  assert.match(studio, /setTimeout\(\(\) => setViewingNoticeOpen\(false\), 5000\)/);
+  // 보기가 끝나면 되돌려, 다시 볼 때 알림이 한 번 더 뜬다.
+  assert.match(studio, /if \(!teacherViewing\) \{ setViewingNoticeOpen\(false\); return; \}/);
+  // 배너를 끄는 것이 저장 간격·자동 호출 억제까지 끄면 안 된다.
+  assert.match(studio, /const watched = teacherViewingRef\.current;/);
+  assert.match(studio, /teacherViewing \|\| handRaised\) return false/);
+});

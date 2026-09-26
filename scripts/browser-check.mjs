@@ -138,6 +138,9 @@ const STUB_INTERPRETATION = {
   },
 };
 
+// 답을 들은 뒤 몽그리가 다시 쓰는 줄. 종전 next_action과 글자가 달라야 바뀐 것을 잴 수 있다.
+const STUB_REPLY_NEXT_ACTION = "그 옆에 어울리는 것을 하나 더 그려 넣어 볼까";
+
 async function stubCoaching(cdp, session) {
   cdp.on("Fetch.requestPaused", async (params, eventSession) => {
     const target = eventSession ?? session;
@@ -147,7 +150,11 @@ async function stubCoaching(cdp, session) {
         // 코칭 응답이 대신 돌아가는 일이 없다.
         let action = "";
         try { action = JSON.parse(params.request.postData ?? "{}").action ?? ""; } catch { action = ""; }
-        const payload = action === "interpret" ? STUB_INTERPRETATION : STUB_COACHING;
+        /* `reply`는 답을 저장하고 「이제 그려 볼 일」 한 줄만 새로 돌려준다(2026-09-26).
+           코칭 응답을 그대로 돌려주면 화면이 줄을 바꾸지 않아 그 계약을 검사할 수 없다. */
+        const payload = action === "interpret" ? STUB_INTERPRETATION
+          : action === "reply" ? { ok: true, answer: "", nextAction: STUB_REPLY_NEXT_ACTION }
+          : STUB_COACHING;
         const body = Buffer.from(JSON.stringify(payload)).toString("base64");
         await cdp.send("Fetch.fulfillRequest", { requestId: params.requestId, responseCode: 200, responseHeaders: [{ name: "content-type", value: "application/json" }], body }, target);
         return;
@@ -668,11 +675,11 @@ async function main() {
           const panel = document.querySelector('.grimi-panel');
           if (!panel) return { error: 'no-panel' };
           const scroll = panel.querySelector('.grimi-scroll');
-          // AI 호출은 키 없이 실패할 수 있다. 패널 자체의 공간과 닫기·탈출 경로를 검증한다.
+          // AI 호출은 키 없이 실패할 수 있다. 패널 자체의 공간과 닫기·나가기 경로를 검증한다.
           for (let attempt = 0; attempt < 50; attempt += 1) { if (!document.querySelector('.grimi-thinking')) break; await wait(200); }
           const box = window.__wiggle.box(panel);
-          const close = panel.querySelector('.grimi-head > button');
-          const exit = panel.querySelector('.free-exit');
+          const close = panel.querySelector('.grimi-head [aria-label="몽그리 닫기"]');
+          const exit = panel.querySelector('.grimi-go-draw');
           const style = getComputedStyle(panel);
           return {
             box, position: style.position, maxHeightPx: box.h, viewportHeight: innerHeight,
@@ -692,7 +699,10 @@ async function main() {
           check(grimi.box.bottom <= grimi.viewportHeight + 1, `${viewport.name} 몽그리 시트가 화면 안에 있음`, grimi.box);
           check(grimi.closeBox && Math.min(grimi.closeBox.w, grimi.closeBox.h) >= 44, `${viewport.name} 몽그리 닫기 44px 이상`, grimi.closeBox);
           check(grimi.closeReachable?.hitsSelf, `${viewport.name} 몽그리 닫기를 바로 누를 수 있음`, grimi.closeReachable);
-          check(grimi.exitReachable?.onScreen, `${viewport.name} 그냥 그릴래 탈출 경로가 화면 안에 있음`, grimi.exitReachable);
+          /* 2026-09-26: 스크롤 밖에 고정돼 있던 「그냥 내 마음대로 그릴래」를 없앴다(×와 같은 동작이라 중복).
+             그래서 **늘 화면에 있는 나갈 길은 머리에 고정된 ×**다. 「그리러 가기」는 답 줄에 있어
+             낮은 시트(844×390)에서는 스크롤해야 닿는다 — 아래 afterScroll 검사가 그것을 지킨다. */
+          check(grimi.closeReachable?.onScreen, `${viewport.name} 늘 보이는 나갈 길(몽그리 닫기)이 화면 안에 있음`, grimi.closeReachable);
         }
 
         // 5-b) 실제 코칭 응답 상태에서: 질문·선택지·다음 행동·확인 버튼이 모두 닿는가
@@ -709,28 +719,63 @@ async function main() {
              (이 문자열은 바깥 템플릿 리터럴 안이라 백틱을 쓰면 문자열이 끊긴다.) */
           const question = panel.querySelector('.grimi-coaching h2');
           const nextAction = panel.querySelector('.next-action');
-          const again = panel.querySelector('.grimi-again');
-          const chips = [...panel.querySelectorAll('.grimi-chips button')];
-          const exit = panel.querySelector('.free-exit');
+          /* 「다른 것도 물어보기」는 2026-09-26에 없앴다(머리 줄 「몽그리 부르기」와 같은 동작).
+             이 검사가 지키는 것은 "시트 맨 아래 행동에 스크롤 한 번으로 닿는다"이므로,
+             이제 그 자리인 주 행동 「이렇게 답할래」를 본다. */
+          const again = panel.querySelector('.grimi-send');
+          const chips = [...panel.querySelectorAll('.grimi-chip')];
+          /* 「그냥 내 마음대로 그릴래」(.free-exit)는 2026-09-26에 없앴다 — ×와 같은 dismissGrimi라 중복이었다.
+             지켜야 할 것은 "답을 강요받지 않고 나갈 길이 늘 닿는다"이고, 이제 그 길은 「그리러 가기」다. */
+          const exit = panel.querySelector('.grimi-go-draw');
           const close = panel.querySelector('.grimi-head [aria-label="몽그리 닫기"]');
           const reach = (element) => element ? window.__wiggle.reachable(element) : null;
-          const startState = { question: reach(question), nextAction: reach(nextAction), close: reach(close), exit: reach(exit), chipCount: chips.length };
-          // 아이가 맨 아래 행동(다른 것도 물어보기)까지 이동하는 경로: 시트 안쪽 스크롤 한 번
+          // 칩을 실제로 눌러 반응을 본다 — 있는지만 세면 "눌러도 아무 일이 없던" 문제를 못 잡는다.
+          const sendButton = panel.querySelector('.grimi-send');
+          const sendDisabledAtFirst = sendButton ? sendButton.disabled : null;
+          let pickShowsMark = null;
+          if (chips[0]) {
+            chips[0].click(); await wait(220);
+            pickShowsMark = chips[0].getAttribute('aria-pressed') === 'true' && Boolean(chips[0].querySelector('.grimi-chip-check'));
+          }
+          const startState = { question: reach(question), nextAction: reach(nextAction), close: reach(close), exit: reach(exit), chipCount: chips.length, sendDisabledAtFirst, pickShowsMark };
+          // 아이가 맨 아래 행동(이렇게 답할래)까지 이동하는 경로: 시트 안쪽 스크롤 한 번
           again?.scrollIntoView({ block: 'center' });
           await wait(250);
           const afterScroll = { confirm: reach(again), close: reach(close), exit: reach(exit), confirmBox: again ? window.__wiggle.box(again) : null };
+          /* 답을 보낸 **뒤에도** 나갈 길이 남는가. 「그리러 가기」를 답하기 블록 안에 두었더니
+             보내는 순간 같이 사라져, 방금 답한 아이에게 남는 길이 dismiss인 ×뿐이었다(2026-09-26). */
+          let afterSend = { skipped: 'send-disabled' };
+          if (sendButton && !sendButton.disabled) {
+            sendButton.click();
+            for (let attempt = 0; attempt < 40 && !panel.querySelector('.grimi-replied'); attempt += 1) await wait(150);
+            const sentExit = panel.querySelector('.grimi-go-draw');
+            sentExit?.scrollIntoView({ block: 'center' });
+            await wait(250);
+            afterSend = { replied: Boolean(panel.querySelector('.grimi-replied')), exit: reach(sentExit),
+              nextActionText: (panel.querySelector('.next-action b')?.textContent ?? '').trim() };
+          }
           const nestedScrollers = [...panel.querySelectorAll('*')].filter((element) => element !== scroll && element.scrollHeight - element.clientHeight > 4 && ['auto', 'scroll'].includes(getComputedStyle(element).overflowY));
-          return { startState, afterScroll, nestedScrollers: nestedScrollers.map((element) => window.__wiggle.label(element)), scrollerHeight: scroll.clientHeight, contentHeight: scroll.scrollHeight };
+          return { startState, afterScroll, afterSend, nestedScrollers: nestedScrollers.map((element) => window.__wiggle.label(element)), scrollerHeight: scroll.clientHeight, contentHeight: scroll.scrollHeight };
         })()`);
         check(!coaching.error, `${viewport.name} 코칭 내용 레이아웃 재현`, coaching.error);
         if (!coaching.error) {
           check(coaching.startState.question?.onScreen, `${viewport.name} 몽그리 첫 질문이 바로 보임`, coaching.startState.question);
           check(coaching.startState.nextAction?.onScreen, `${viewport.name} '이제 그려 볼 일'이 고르지 않아도 바로 보임`, coaching.startState.nextAction);
-          check(coaching.startState.chipCount === 0, `${viewport.name} 답을 되돌려 보내는 칩이 없음(읽기 전용)`, coaching.startState.chipCount);
+          /* 2026-09-26: 칩이 다시 생겼다(제품 결정 25항 개정). 되살리되 읽기 전용으로 가게 만든 이유는
+             막았다 — 고른 즉시 표가 나야 하고(그때는 눌러도 아무 일이 없었다), 빈 답은 보낼 수 없어야 한다. */
+          check(coaching.startState.chipCount > 0, `${viewport.name} 답 고르기 칩이 보임`, coaching.startState.chipCount);
+          check(coaching.startState.sendDisabledAtFirst === true, `${viewport.name} 고르기 전에는 보내기가 잠겨 있음`, coaching.startState.sendDisabledAtFirst);
+          check(coaching.startState.pickShowsMark === true, `${viewport.name} 칩을 고르면 바로 표가 남`, coaching.startState.pickShowsMark);
           check(coaching.startState.close?.hitsSelf, `${viewport.name} 코칭 중에도 닫기가 고정되어 보임`, coaching.startState.close);
-          check(coaching.startState.exit?.hitsSelf, `${viewport.name} 코칭 중에도 탈출 버튼이 고정되어 보임`, coaching.startState.exit);
-          check(coaching.afterScroll.confirm?.hitsSelf, `${viewport.name} 한 번 스크롤로 '다른 것도 물어보기'에 닿음`, coaching.afterScroll.confirm);
-          check(coaching.afterScroll.close?.hitsSelf && coaching.afterScroll.exit?.hitsSelf, `${viewport.name} 스크롤 뒤에도 닫기·탈출이 그대로 보임`, coaching.afterScroll);
+          // 「그리러 가기」는 존재하고 스크롤 뒤에 닿아야 한다(바로 아래 afterScroll 검사). 여기서는 있는지만 본다.
+          check(Boolean(coaching.startState.exit), `${viewport.name} 코칭 중에 「그리러 가기」가 있음`, coaching.startState.exit);
+          check(coaching.afterScroll.confirm?.hitsSelf, `${viewport.name} 한 번 스크롤로 '이렇게 답할래'에 닿음`, coaching.afterScroll.confirm);
+          check(coaching.afterScroll.close?.hitsSelf && coaching.afterScroll.exit?.hitsSelf, `${viewport.name} 스크롤 뒤에도 닫기·「그리러 가기」가 그대로 보임`, coaching.afterScroll);
+          check(coaching.afterSend.replied === true, `${viewport.name} 답을 보내면 알려 줬다는 확인이 뜸`, coaching.afterSend);
+          check(coaching.afterSend.exit?.hitsSelf, `${viewport.name} 답을 보낸 뒤에도 「그리러 가기」로 나갈 수 있음`, coaching.afterSend);
+          /* 답하기 전의 「이제 그려 볼 일」은 아이가 무엇을 그리는지 모르고 쓴 말이다.
+             답을 보내면 그 자리에서 아이 말에 맞춘 줄로 바뀌어야 한다(2026-09-26 사용자 결정). */
+          check(coaching.afterSend.nextActionText === STUB_REPLY_NEXT_ACTION, `${viewport.name} 답을 보내면 '이제 그려 볼 일'이 아이 말에 맞춰 바뀜`, coaching.afterSend.nextActionText);
           check(coaching.nestedScrollers.length === 0, `${viewport.name} 시트 안에 숨은 중첩 스크롤이 없음`, coaching.nestedScrollers);
         }
 
