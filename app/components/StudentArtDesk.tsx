@@ -52,14 +52,14 @@ function ArtworkCard({ artwork }: { artwork: DeskArtwork }) {
 }
 
 function BookCard({ book, index }: { book: DeskStorybook; index: number }) {
-  return <article><a className="desk-book-card" href={`/student/books/${encodeURIComponent(book.id)}`}>
+  return <article className="desk-book-item"><a className="desk-book-card" href={`/student/books/${encodeURIComponent(book.id)}`}>
     {/* 표지 썸네일은 목록 응답에 없다(인계 확인). 임의의 아이 그림을 만들어 넣지 않고 빈 책 틀만 쓴다.
         틀 색은 시안처럼 번갈아 쓴다 — 책을 구분하는 정보가 아니라 장식이라 제목이 따로 적혀 있다. */}
     <span className="desk-book-frame" aria-hidden="true">
       <img src={`/student-desk/book-cover-frame-${index % 2 ? "yellow" : "green"}.svg`} alt="" width={248} height={248} />
     </span>
     <span className="desk-book-meta">
-      <b>{book.title || "이름 없는 그림책"}</b>
+      <b title={book.title || "이름 없는 그림책"}>{book.title || "이름 없는 그림책"}</b>
       <small>{book.pageCount}쪽 · {book.status === "complete" ? "완성" : "만드는 중"}</small>
       <span className="desk-art-go">그림책 보기 <span aria-hidden="true">›</span></span>
     </span>

@@ -77,8 +77,21 @@
 /* 넓으면 한 줄에 펴고, 좁으면 가로로 민다. 390px에서 네 장을 억지로 줄이지 않는다(인계 지시). */
 .desk-art-row, .desk-book-row { display: flex; gap: clamp(10px, 1.4vw, 18px); margin: 0; padding: 2px; list-style: none; overflow-x: auto; overscroll-behavior-x: contain; }
 .desk-art-row > li { flex: 0 0 clamp(200px, 22vw, 260px); }
-.desk-book-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); overflow: visible; }
+.desk-book-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; overflow: visible; }
 .desk-book-row > li { min-width: 0; }
+@media (min-width: 600px) {
+  .desk-book-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1100px) {
+  .desk-book-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1400px) {
+  .desk-book-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (min-width: 600px) and (max-width: 1099px) {
+  .desk-art-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; gap: 16px; }
+  .desk-art-row > li { min-width: 0; }
+}
 @media (min-width: 1100px) {
   .desk-art-row { overflow-x: visible; }
   .desk-art-row > li { flex: 1 1 0; }
@@ -119,8 +132,8 @@
 /* ── 그림책 카드 ─────────────────────────────────────────────────────────── */
 /* 시안은 책 자체가 책상에 놓여 있고 제목·쪽 수·행동이 그 오른쪽에 맨몸으로 있다 — 테두리 카드가 아니다. */
 .desk-book-card {
-  display: grid; grid-template-columns: clamp(86px, 9vw, 124px) minmax(0, 1fr); gap: 16px; align-items: center; height: 100%;
-  padding: 8px 10px; border: 0; border-radius: 12px; background: none; color: var(--desk-ink); text-decoration: none;
+  display: grid; grid-template-columns: var(--desk-cover-size) minmax(0, 1fr); gap: 12px; align-items: center;
+  padding: 0; border: 0; border-radius: 12px; background: none; color: var(--desk-ink); text-decoration: none;
 }
 .desk-book-card:hover { background: rgb(255 255 255 / 45%); }
 .desk-book-card:focus-visible { outline: 3px solid var(--desk-green); outline-offset: 3px; }
@@ -128,16 +141,20 @@
 /* 책이 평면으로 보이지 않게 아주 살짝 눕힌다. 표지 그림은 목록 응답에 없어 틀만 쓴다. */
 .desk-book-frame { display: block; filter: drop-shadow(0 6px 12px rgb(56 40 12 / 26%)); }
 .desk-book-frame img { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1; transform: perspective(600px) rotateY(-11deg); }
-.desk-book-meta { display: grid; gap: 3px; min-width: 0; }
-.desk-book-meta b { font-size: 15px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.desk-book-meta small { color: #5d6f5b; font-size: 12px; font-weight: 700; }
+.desk-book-meta { display: grid; gap: 6px; min-width: 0; align-content: start; }
+.desk-book-meta b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-height: 3em; font-size: 16px; line-height: 1.5; font-weight: 800; overflow: hidden; overflow-wrap: anywhere; }
+.desk-book-meta small { color: #5d6f5b; font-size: 13px; line-height: 1.5; font-weight: 700; }
 .desk-book-empty { margin: 0; color: #5d6f5b; font-size: 15px; font-weight: 700; line-height: 1.7; }
 .desk-book-empty a { min-height: 44px; display: inline-flex; align-items: center; margin-left: 6px; color: var(--desk-green); font-weight: 800; }
-.desk-new-book { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:172px;padding:20px;border:2px dashed #b8c5a0;border-radius:14px;background:#fffdf7;color:var(--desk-green);text-decoration:none; }
+.desk-new-book { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;height:100%;min-height:208px;padding:20px;border:2px dashed #b8c5a0;border-radius:14px;background:#fffdf7;color:var(--desk-green);text-decoration:none;text-align:center; }
+.desk-new-book:focus-visible { outline:3px solid var(--desk-green);outline-offset:3px; }
 .desk-new-book span { font-size:13px; }
-.desk-book-row article { display:flex;flex-direction:column;height:100%; }
-.desk-book-row .storybook-copy-action { padding:0 10px 10px; }
-.desk-section>h3 { margin:24px 0 12px;font-size:17px;color:var(--desk-ink); }
+.desk-book-item { --desk-cover-size:clamp(80px,8vw,108px);display:flex;flex-direction:column;gap:12px;height:100%;min-height:208px;padding:16px 8px;border-bottom:1px solid var(--desk-card-border); }
+.desk-book-item .storybook-copy-action { margin-top:auto;margin-left:calc(var(--desk-cover-size) + 12px);min-width:0; }
+.desk-book-item .storybook-copy-action button { width:100%;min-height:44px;padding:8px 10px;font:inherit;font-size:14px;font-weight:800;white-space:normal; }
+.desk-book-item .storybook-copy-action .error-box { overflow-wrap:anywhere; }
+.desk-section>h3 { margin:28px 0 14px;font-size:17px;color:var(--desk-ink); }
+.desk-book-empty + .desk-book-row { margin-top:14px; }
 
 /* 눕힌 기기는 세로가 귀하다 — 여백과 큰 글자를 줄여 한 화면에 넣는다. */
 @media (orientation: landscape) and (max-height: 480px) {

@@ -372,7 +372,7 @@ function StorybookEditorContent({ teacherBookId, classroomId }: { teacherBookId?
 
   function addText() {
     if (!page || page.elements.length >= MAX_STORYBOOK_ELEMENTS_PER_PAGE) return;
-    const element = { ...createStorybookTextElement(clientId("element")), ...STORYBOOK_TEXT_BOX, y: .4, height: .25, verticalAlign: "middle" as const, fontSize: .035 };
+    const element = { ...createStorybookTextElement(clientId("element")), ...STORYBOOK_TEXT_BOX, verticalAlign: "middle" as const, fontSize: .035 };
     changeDocument(current => ({ ...current, pages: current.pages.map((value, index) => index === pageIndex ? { ...value, elements: [...value.elements, element] } : value) }));
     setSelectedId(null); setSelectedTextId(element.id); setPageToolsOpen(false);
   }
@@ -773,9 +773,8 @@ function StorybookEditorContent({ teacherBookId, classroomId }: { teacherBookId?
           <label>글자 색<input type="color" value={selectedText.color} onChange={event => updatePageText({ color: event.target.value.toUpperCase() })} /></label>
           <fieldset><legend>가로 정렬</legend><div className="storybook-align-buttons">{(["left", "center", "right"] as const).map((align, index) => <button key={align} type="button" aria-pressed={selectedText.align === align} onClick={() => updatePageText({ align })}>{["왼쪽", "가운데", "오른쪽"][index]}</button>)}</div></fieldset>
           <fieldset><legend>세로 정렬</legend><div className="storybook-align-buttons">{(["top", "middle", "bottom"] as const).map((verticalAlign, index) => <button key={verticalAlign} type="button" aria-pressed={(selectedText.verticalAlign ?? "middle") === verticalAlign} onClick={() => updatePageText({ verticalAlign })}>{["위", "중간", "아래"][index]}</button>)}</div></fieldset>
-          <label>이야기 칸 위치<input aria-label="이야기 칸 세로 위치" type="range" min="0" max={1 - selectedText.height} step="0.01" value={selectedText.y} onChange={event => updatePageText({ y: Number(event.target.value) })} /></label>
           <label>이야기 칸 높이<input aria-label="이야기 칸 높이" type="range" min="0.04" max={1 - selectedText.y} step="0.01" value={selectedText.height} onChange={event => updatePageText({ height: Number(event.target.value) })} /></label>
-          <p>글자를 줄이거나 칸을 넓혀 긴 이야기도 쓸 수 있어요.</p>
+          <p>칸의 위쪽은 고정되고 아래로만 늘어나요. 글자를 줄이거나 칸 높이를 늘려 긴 이야기를 써 보세요.</p>
         </section>}
         {pageToolsOpen && !selected && !selectedText && <section className="storybook-template-controls"><h3>이 쪽의 양식</h3><div className="storybook-template-options">{STORYBOOK_TEMPLATES.map(template => <button type="button" key={template} aria-pressed={page.template === template} onClick={() => chooseTemplate(template)}>{STORYBOOK_TEMPLATE_LABELS[template]}</button>)}</div><p>겉표지·속표지에는 제목과 글 / 그림 이름 칸이 있어요. 양식을 바꿔도 써 둔 글과 그림은 남아요. 되돌리기도 할 수 있어요.</p></section>}
         {selected && <><section className="storybook-image-controls">
