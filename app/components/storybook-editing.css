@@ -44,11 +44,15 @@
   .design-surface .storybook-editor-header>button{grid-row:3;grid-column:auto;min-width:0;min-height:44px;font-size:13px;line-height:1.3;padding:6px 3px;white-space:normal}
 }
 .storybook-text-notice{margin:0;padding:10px 16px;background:#fff4cf;color:#58421e;font-size:14px;line-height:1.5}
-.storybook-book-grid>article{min-width:0;padding:16px;border:1px solid #cad2bf;border-radius:14px;background:#fffdf7}
-.storybook-book-grid>article>a{display:flex;align-items:center;gap:14px;color:inherit;text-decoration:none}
-.storybook-book-grid>article>a>div{min-width:0;flex:1}
-.storybook-book-grid>article h3{overflow-wrap:anywhere}
-.storybook-book-grid>article .storybook-copy-action{margin-top:12px}
+.storybook-book-grid>article{display:flex;flex-direction:column;gap:12px;min-width:0;padding:20px;border:1px solid #cad2bf;border-radius:14px;background:#fffdf7}
+.storybook-book-grid>article>a{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:start;gap:8px 14px;color:inherit;text-decoration:none}
+.storybook-book-grid>article>a>svg{width:40px;height:40px;color:var(--primary-dark,#375334)}
+.storybook-book-grid>article>a>div{min-width:0}
+.storybook-book-grid>article>a>b{grid-column:2;display:flex;align-items:center;min-height:44px;color:var(--primary-dark,#375334)}
+.storybook-book-grid>article h3{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;min-height:3em;overflow:hidden;overflow-wrap:anywhere;line-height:1.5}
+.storybook-book-grid>article .storybook-copy-action{margin-top:auto}
+.storybook-book-grid>article .storybook-copy-action button{width:100%;min-height:44px;font:inherit;font-weight:700}
+@media(min-width:681px) and (max-width:1099px){.storybook-library .storybook-book-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .design-surface .storybook-reader{background:#f4f1e7;color:#294329}
 .reader-scene{display:grid;grid-template-columns:48px minmax(0,1fr) 48px;align-items:center;gap:12px;min-height:0;perspective:2000px;background:radial-gradient(ellipse,#e3e0d2,transparent 70%)}
 .reader-arrow{width:44px;min-height:60px;border:0;border-radius:50%;background:#fffdf8;color:#375334;font-size:40px;cursor:pointer;box-shadow:0 3px 12px #26351e15}
